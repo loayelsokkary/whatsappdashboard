@@ -4,7 +4,6 @@ import '../models/models.dart';
 import '../services/supabase_service.dart';
 
 /// Provider for managing conversations state
-/// Exchanges from Supabase are expanded into messages for display
 class ConversationsProvider extends ChangeNotifier {
   // ============================================
   // STATE
@@ -12,6 +11,7 @@ class ConversationsProvider extends ChangeNotifier {
 
   List<RawExchange> _allExchanges = [];
   List<Conversation> _conversations = [];
+  List<Message> _pendingMessages = []; // For optimistic updates
   String? _selectedCustomerPhone;
   String? _selectedCustomerName;
   bool _isLoading = false;
@@ -21,23 +21,19 @@ class ConversationsProvider extends ChangeNotifier {
   ConversationStatus? _statusFilter;
   bool _isSending = false;
 
-  // Subscriptions
   StreamSubscription<List<RawExchange>>? _exchangesSubscription;
 
   // ============================================
   // GETTERS
   // ============================================
 
-  /// All conversations (filtered)
   List<Conversation> get conversations {
     var filtered = _conversations;
 
-    // Apply status filter
     if (_statusFilter != null) {
       filtered = filtered.where((c) => c.status == _statusFilter).toList();
     }
 
-    // Apply search filter
     if (_searchQuery.isNotEmpty) {
       final query = _searchQuery.toLowerCase();
       filtered = filtered.where((c) =>
@@ -48,7 +44,6 @@ class ConversationsProvider extends ChangeNotifier {
     return filtered;
   }
 
-  /// Currently selected conversation
   Conversation? get selectedConversation {
     if (_selectedCustomerPhone == null) return null;
     try {
@@ -60,8 +55,7 @@ class ConversationsProvider extends ChangeNotifier {
     }
   }
 
-  /// Messages for selected conversation
-  /// Each exchange becomes 2 messages: customer then AI
+  /// Messages with pending (optimistic) messages included
   List<Message> get messages {
     if (_selectedCustomerPhone == null) return [];
 
@@ -69,32 +63,52 @@ class ConversationsProvider extends ChangeNotifier {
         .where((ex) => ex.customerPhone == _selectedCustomerPhone)
         .toList();
 
-    // Sort by time
     customerExchanges.sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
-    // Expand each exchange into 2 messages
     final List<Message> result = [];
     for (final ex in customerExchanges) {
-      // Customer message
-      result.add(Message(
-        id: '${ex.id}_customer',
-        content: ex.customerMessage,
-        senderType: SenderType.customer,
-        isOutbound: false,
-        senderName: ex.customerName,
-        createdAt: ex.createdAt,
-      ));
+      // Customer message (skip empty)
+      if (ex.customerMessage.trim().isNotEmpty) {
+        result.add(Message(
+          id: '${ex.id}_customer',
+          content: ex.customerMessage,
+          senderType: SenderType.customer,
+          isOutbound: false,
+          senderName: ex.customerName,
+          createdAt: ex.createdAt,
+        ));
+      }
 
-      // AI/Agent response (slightly after customer message)
-      result.add(Message(
-        id: '${ex.id}_ai',
-        content: ex.aiResponse,
-        senderType: SenderType.ai,
-        isOutbound: true,
-        senderName: null,
-        createdAt: ex.createdAt.add(const Duration(seconds: 1)),
-      ));
+      // AI response (skip empty)
+      if (ex.aiResponse.trim().isNotEmpty) {
+        result.add(Message(
+          id: '${ex.id}_ai',
+          content: ex.aiResponse,
+          senderType: SenderType.ai,
+          isOutbound: true,
+          senderName: null,
+          createdAt: ex.createdAt.add(const Duration(seconds: 1)),
+        ));
+      }
+
+      // Manager response (skip empty)
+      if (ex.managerResponse != null && ex.managerResponse!.trim().isNotEmpty) {
+        result.add(Message(
+          id: '${ex.id}_manager',
+          content: ex.managerResponse!,
+          senderType: SenderType.manager,
+          isOutbound: true,
+          senderName: null,
+          createdAt: ex.createdAt.add(const Duration(seconds: 2)),
+        ));
+      }
     }
+
+    // Add pending messages for this conversation
+    final pending = _pendingMessages
+        .where((m) => m.id.startsWith('pending_$_selectedCustomerPhone'))
+        .toList();
+    result.addAll(pending);
 
     return result;
   }
@@ -107,41 +121,29 @@ class ConversationsProvider extends ChangeNotifier {
   bool get isLoadingMessages => _isLoading;
   bool get isSending => _isSending;
 
-  // Count getters
   int get totalCount => _conversations.length;
   int get needsReplyCount => _conversations.where((c) => c.status == ConversationStatus.needsReply).length;
   int get repliedCount => _conversations.where((c) => c.status == ConversationStatus.replied).length;
-
-  // For compatibility with existing UI
-  int get aiActiveCount => repliedCount;
-  int get humanActiveCount => 0;
-  int get awaitingHandoffCount => needsReplyCount;
-  int get resolvedCount => 0;
 
   // ============================================
   // INITIALIZATION
   // ============================================
 
-  /// Initialize and connect to Supabase
   Future<void> initialize() async {
     _isLoading = true;
     notifyListeners();
 
     try {
       final service = SupabaseService.instance;
-
-      // Fetch all exchanges
       _allExchanges = await service.fetchAllExchanges();
       _isConnected = true;
-
-      // Build conversations from exchanges
       _buildConversations();
 
-      // Subscribe to real-time updates
       service.subscribeToExchanges();
       _exchangesSubscription = service.exchangesStream.listen((exchanges) {
         _allExchanges = exchanges;
         _buildConversations();
+        _clearOldPendingMessages();
         notifyListeners();
       });
 
@@ -155,7 +157,6 @@ class ConversationsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Refresh exchanges
   Future<void> fetchConversations() async {
     _isLoading = true;
     _error = null;
@@ -166,10 +167,10 @@ class ConversationsProvider extends ChangeNotifier {
       _allExchanges = await service.fetchAllExchanges();
       _isConnected = true;
       _buildConversations();
+      _clearOldPendingMessages();
     } catch (e) {
       _error = 'Failed to fetch: $e';
       _isConnected = false;
-      print('Fetch error: $e');
     }
 
     _isLoading = false;
@@ -177,12 +178,10 @@ class ConversationsProvider extends ChangeNotifier {
   }
 
   // ============================================
-  // CONVERSATION BUILDING LOGIC
+  // BUILD CONVERSATIONS
   // ============================================
 
-  /// Build conversations from raw exchanges
   void _buildConversations() {
-    // Group exchanges by customer phone
     final Map<String, List<RawExchange>> grouped = {};
 
     for (final ex in _allExchanges) {
@@ -190,57 +189,54 @@ class ConversationsProvider extends ChangeNotifier {
       grouped[ex.customerPhone]!.add(ex);
     }
 
-    // Convert to conversations
     _conversations = grouped.entries.map((entry) {
       final customerPhone = entry.key;
       final exchanges = entry.value;
 
-      // Sort by time
       exchanges.sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
       final firstEx = exchanges.first;
       final lastEx = exchanges.last;
 
-      // Get customer name from any exchange
       String? customerName;
       for (final ex in exchanges) {
-        if (ex.customerName != null) {
+        if (ex.customerName != null && ex.customerName!.isNotEmpty) {
           customerName = ex.customerName;
           break;
         }
       }
 
-      // Status: All exchanges have AI responses, so always "replied"
-      const status = ConversationStatus.replied;
-
       return Conversation(
         customerPhone: customerPhone,
         customerName: customerName,
-        lastMessage: lastEx.aiResponse,
+        lastMessage: lastEx.aiResponse.isNotEmpty ? lastEx.aiResponse : lastEx.customerMessage,
         lastMessageAt: lastEx.createdAt,
-        status: status,
+        status: ConversationStatus.replied,
         unreadCount: 0,
         startedAt: firstEx.createdAt,
       );
     }).toList();
 
-    // Sort by last message time (newest first)
     _conversations.sort((a, b) => b.lastMessageAt.compareTo(a.lastMessageAt));
+    print('Built ${_conversations.length} conversations');
+  }
 
-    print('Built ${_conversations.length} conversations from ${_allExchanges.length} exchanges');
+  void _clearOldPendingMessages() {
+    final now = DateTime.now();
+    _pendingMessages.removeWhere((msg) => 
+        now.difference(msg.createdAt).inSeconds > 10);
   }
 
   // ============================================
   // SELECTION
   // ============================================
 
-  /// Select a conversation
   Future<void> selectConversation(Conversation conversation) async {
     _selectedCustomerPhone = conversation.customerPhone;
     _selectedCustomerName = conversation.customerName;
 
-    // Mark as read (reset unread count locally)
-    final index = _conversations.indexWhere((c) => c.customerPhone == conversation.customerPhone);
+    final index = _conversations.indexWhere(
+        (c) => c.customerPhone == conversation.customerPhone);
     if (index != -1) {
       _conversations[index] = _conversations[index].copyWith(unreadCount: 0);
     }
@@ -248,7 +244,6 @@ class ConversationsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Clear selection
   void clearSelection() {
     _selectedCustomerPhone = null;
     _selectedCustomerName = null;
@@ -259,27 +254,38 @@ class ConversationsProvider extends ChangeNotifier {
   // FILTERS
   // ============================================
 
-  /// Set status filter
   void setStatusFilter(ConversationStatus? status) {
     _statusFilter = status;
     notifyListeners();
   }
 
-  /// Set search query
   void setSearchQuery(String query) {
     _searchQuery = query;
     notifyListeners();
   }
 
   // ============================================
-  // SEND MESSAGE (HUMAN HANDOVER)
+  // SEND MESSAGE - OPTIMISTIC UPDATE
   // ============================================
 
-  /// Send a message from the dashboard to the customer
-  /// This calls n8n webhook which sends WhatsApp AND saves to Supabase
   Future<bool> sendMessage(String conversationId, String text) async {
-    if (_isSending) return false;
-    
+    if (_isSending || text.trim().isEmpty) return false;
+
+    final customerPhone = conversationId;
+    final trimmedText = text.trim();
+
+    // Create pending message (shows immediately)
+    final pendingId = 'pending_${customerPhone}_${DateTime.now().millisecondsSinceEpoch}';
+    final pendingMessage = Message(
+      id: pendingId,
+      content: trimmedText,
+      senderType: SenderType.manager,
+      isOutbound: true,
+      senderName: null,
+      createdAt: DateTime.now(),
+    );
+
+    _pendingMessages.add(pendingMessage);
     _isSending = true;
     _error = null;
     notifyListeners();
@@ -287,24 +293,14 @@ class ConversationsProvider extends ChangeNotifier {
     try {
       final service = SupabaseService.instance;
 
-      // conversationId is the customer phone
-      final customerPhone = conversationId;
-
-      // Send via n8n webhook (sends WhatsApp + saves to Supabase)
       final success = await service.sendMessageViaWebhook(
         customerPhone: customerPhone,
-        message: text,
+        message: trimmedText,
         customerName: _selectedCustomerName,
       );
 
-      if (success) {
-        print('Message sent to $customerPhone: $text');
-        
-        // The real-time subscription will pick up the new message
-        // But we can also force a refresh
-        await Future.delayed(const Duration(milliseconds: 500));
-        await fetchConversations();
-      } else {
+      if (!success) {
+        _pendingMessages.removeWhere((m) => m.id == pendingId);
         _error = 'Failed to send message';
       }
 
@@ -313,29 +309,12 @@ class ConversationsProvider extends ChangeNotifier {
       return success;
 
     } catch (e) {
-      _error = 'Failed to send message: $e';
-      print('Send message error: $e');
+      _pendingMessages.removeWhere((m) => m.id == pendingId);
+      _error = 'Failed to send: $e';
       _isSending = false;
       notifyListeners();
       return false;
     }
-  }
-
-  // ============================================
-  // TAKEOVER (for UI compatibility)
-  // ============================================
-
-  Future<bool> takeOverConversation(String conversationId) async {
-    print('Manager taking over conversation: $conversationId');
-    // In this simplified model, manager just starts typing
-    // The webhook handles sending to WhatsApp
-    return true;
-  }
-
-  Future<bool> releaseConversation(String conversationId, {String? notes}) async {
-    print('Releasing conversation: $conversationId');
-    // AI will automatically respond to next customer message
-    return true;
   }
 
   // ============================================

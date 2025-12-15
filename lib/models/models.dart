@@ -1,5 +1,5 @@
 /// Simplified Data Models for Vivid WhatsApp Dashboard
-/// Single messages table - each row is one exchange (customer + AI)
+/// Single messages table - each row is one exchange
 
 // ============================================
 // ENUMS
@@ -9,7 +9,7 @@
 enum SenderType {
   customer('customer'),
   ai('ai'),
-  humanAgent('human_agent');
+  manager('manager');
 
   final String value;
   const SenderType(this.value);
@@ -30,7 +30,7 @@ enum ConversationStatus {
 // ============================================
 
 /// Raw exchange exactly as stored in Supabase
-/// One row = customer message + AI response
+/// One row = customer message + AI response + optional manager response
 class RawExchange {
   final String id;
   final String aiPhone;
@@ -38,6 +38,7 @@ class RawExchange {
   final String? customerName;
   final String customerMessage;
   final String aiResponse;
+  final String? managerResponse; // NEW: Manager's response
   final DateTime createdAt;
 
   const RawExchange({
@@ -47,6 +48,7 @@ class RawExchange {
     this.customerName,
     required this.customerMessage,
     required this.aiResponse,
+    this.managerResponse,
     required this.createdAt,
   });
 
@@ -56,8 +58,9 @@ class RawExchange {
       aiPhone: json['ai_phone'] as String,
       customerPhone: json['customer_phone'] as String,
       customerName: json['customer_name'] as String?,
-      customerMessage: json['customer_message'] as String,
-      aiResponse: json['ai_response'] as String,
+      customerMessage: json['customer_message'] as String? ?? '',
+      aiResponse: json['ai_response'] as String? ?? '',
+      managerResponse: json['manager_response'] as String?,
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : DateTime.now(),
@@ -72,6 +75,7 @@ class RawExchange {
       'customer_name': customerName,
       'customer_message': customerMessage,
       'ai_response': aiResponse,
+      'manager_response': managerResponse,
       'created_at': createdAt.toIso8601String(),
     };
   }

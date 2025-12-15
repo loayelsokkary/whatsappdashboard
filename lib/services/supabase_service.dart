@@ -4,33 +4,27 @@ import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/models.dart';
 
-/// Supabase Service with Webhook Support for Human Handover
+/// Supabase Service with real-time updates and webhook support
 class SupabaseService {
   static SupabaseService? _instance;
   static SupabaseClient? _client;
 
-  // Stream controllers
   final _exchangesController = StreamController<List<RawExchange>>.broadcast();
   Stream<List<RawExchange>> get exchangesStream => _exchangesController.stream;
 
-  // Realtime channel
   RealtimeChannel? _channel;
-
-  // Local cache of exchanges
   List<RawExchange> _cachedExchanges = [];
 
   // ============================================
-  // CONFIGURATION - UPDATE THESE
+  // CONFIG - UPDATE THESE!
   // ============================================
   
   static const String _supabaseUrl = 'https://zxvjzaowvzvfgrzdimbm.supabase.co';
   static const String _supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp4dmp6YW93dnp2ZmdyemRpbWJtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU1NjM2MjUsImV4cCI6MjA4MTEzOTYyNX0.NkVPCRTLcQOdkzIhfsnvPBWJ1vcfeMQOysAuq6Erryg';
-  
-  // N8N Webhook URL for sending WhatsApp messages
   static const String _n8nWebhookUrl = 'https://malyooon.app.n8n.cloud/webhook/0a47ebfd-56ae-425a-8e95-0b453b67bad3';
 
   // ============================================
-  // INITIALIZATION
+  // SINGLETON
   // ============================================
 
   SupabaseService._();
@@ -42,34 +36,27 @@ class SupabaseService {
 
   static SupabaseClient get client {
     if (_client == null) {
-      throw Exception('Supabase not initialized. Call initialize() first.');
+      throw Exception('Supabase not initialized');
     }
     return _client!;
   }
 
-  /// Initialize Supabase
   static Future<void> initialize() async {
-    await Supabase.initialize(
-      url: _supabaseUrl,
-      anonKey: _supabaseAnonKey,
-    );
+    await Supabase.initialize(url: _supabaseUrl, anonKey: _supabaseAnonKey);
     _client = Supabase.instance.client;
     print('Supabase initialized');
   }
 
   // ============================================
-  // FETCH EXCHANGES
+  // FETCH
   // ============================================
 
-  /// Fetch all exchanges for this business
   Future<List<RawExchange>> fetchAllExchanges() async {
     try {
-      final businessPhone = BusinessConfig.businessPhone;
-
       final response = await client
           .from('messages')
           .select()
-          .eq('ai_phone', businessPhone)
+          .eq('ai_phone', BusinessConfig.businessPhone)
           .order('created_at', ascending: true);
 
       _cachedExchanges = (response as List)
@@ -79,43 +66,33 @@ class SupabaseService {
       print('Fetched ${_cachedExchanges.length} exchanges');
       return _cachedExchanges;
     } catch (e) {
-      print('Error fetching exchanges: $e');
+      print('Fetch error: $e');
       rethrow;
     }
   }
 
   // ============================================
-  // REAL-TIME SUBSCRIPTION (FIXED)
+  // REAL-TIME SUBSCRIPTION
   // ============================================
 
-  /// Subscribe to real-time exchange updates
   void subscribeToExchanges() {
     final businessPhone = BusinessConfig.businessPhone;
 
-    // Unsubscribe from any existing channel
     _channel?.unsubscribe();
 
-    // Subscribe to INSERT events on messages table
     _channel = client
-        .channel('messages_channel')
+        .channel('messages_realtime')
         .onPostgresChanges(
           event: PostgresChangeEvent.insert,
           schema: 'public',
           table: 'messages',
           callback: (payload) {
-            print('New message received: ${payload.newRecord}');
+            print('New message: ${payload.newRecord}');
             
-            final newExchange = RawExchange.fromJson(payload.newRecord);
-            
-            // Only add if it's for our business
-            if (newExchange.aiPhone == businessPhone) {
-              // Add to cache
-              _cachedExchanges.add(newExchange);
-              
-              // Sort by created_at
+            final exchange = RawExchange.fromJson(payload.newRecord);
+            if (exchange.aiPhone == businessPhone) {
+              _cachedExchanges.add(exchange);
               _cachedExchanges.sort((a, b) => a.createdAt.compareTo(b.createdAt));
-              
-              // Emit updated list
               _exchangesController.add(List.from(_cachedExchanges));
             }
           },
@@ -125,19 +102,16 @@ class SupabaseService {
           schema: 'public',
           table: 'messages',
           callback: (payload) {
-            print('Message updated: ${payload.newRecord}');
+            print('Updated message: ${payload.newRecord}');
             
-            final updatedExchange = RawExchange.fromJson(payload.newRecord);
-            
-            if (updatedExchange.aiPhone == businessPhone) {
-              // Find and update in cache
-              final index = _cachedExchanges.indexWhere((e) => e.id == updatedExchange.id);
+            final exchange = RawExchange.fromJson(payload.newRecord);
+            if (exchange.aiPhone == businessPhone) {
+              final index = _cachedExchanges.indexWhere((e) => e.id == exchange.id);
               if (index != -1) {
-                _cachedExchanges[index] = updatedExchange;
+                _cachedExchanges[index] = exchange;
               } else {
-                _cachedExchanges.add(updatedExchange);
+                _cachedExchanges.add(exchange);
               }
-              
               _cachedExchanges.sort((a, b) => a.createdAt.compareTo(b.createdAt));
               _exchangesController.add(List.from(_cachedExchanges));
             }
@@ -148,8 +122,6 @@ class SupabaseService {
           schema: 'public',
           table: 'messages',
           callback: (payload) {
-            print('Message deleted: ${payload.oldRecord}');
-            
             final deletedId = payload.oldRecord['id'];
             _cachedExchanges.removeWhere((e) => e.id == deletedId);
             _exchangesController.add(List.from(_cachedExchanges));
@@ -161,10 +133,9 @@ class SupabaseService {
   }
 
   // ============================================
-  // SEND MESSAGE VIA N8N WEBHOOK
+  // SEND MESSAGE VIA WEBHOOK (saves to manager_response)
   // ============================================
 
-  /// Send a message from the dashboard via n8n webhook
   Future<bool> sendMessageViaWebhook({
     required String customerPhone,
     required String message,
@@ -173,14 +144,12 @@ class SupabaseService {
     try {
       final response = await http.post(
         Uri.parse(_n8nWebhookUrl),
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'ai_phone': BusinessConfig.businessPhone,
           'customer_phone': customerPhone,
           'customer_name': customerName ?? 'Customer',
-          'message': message,
+          'manager_response': message, // Save to manager_response column
         }),
       );
 
@@ -188,40 +157,12 @@ class SupabaseService {
         print('Message sent via webhook');
         return true;
       } else {
-        print('Webhook error: ${response.statusCode} - ${response.body}');
+        print('Webhook error: ${response.statusCode}');
         return false;
       }
     } catch (e) {
-      print('Error sending via webhook: $e');
+      print('Webhook error: $e');
       return false;
-    }
-  }
-
-  // ============================================
-  // BACKUP: SAVE DIRECTLY TO SUPABASE
-  // ============================================
-
-  /// Save exchange directly to Supabase (backup method)
-  Future<RawExchange?> saveExchangeDirectly({
-    required String customerPhone,
-    required String customerMessage,
-    required String aiResponse,
-    String? customerName,
-  }) async {
-    try {
-      final response = await client.from('messages').insert({
-        'ai_phone': BusinessConfig.businessPhone,
-        'customer_phone': customerPhone,
-        'customer_name': customerName,
-        'customer_message': customerMessage,
-        'ai_response': aiResponse,
-      }).select().single();
-
-      print('Exchange saved directly to Supabase');
-      return RawExchange.fromJson(response);
-    } catch (e) {
-      print('Error saving exchange: $e');
-      rethrow;
     }
   }
 

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/conversations_provider.dart';
 import '../models/models.dart';
 import '../theme/vivid_theme.dart';
-import '../utils/time_utils.dart';
 
 class ConversationDetailPanel extends StatefulWidget {
   final Conversation conversation;
@@ -20,34 +20,73 @@ class ConversationDetailPanel extends StatefulWidget {
 class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final FocusNode _focusNode = FocusNode();
+  int _previousMessageCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _focusNode.requestFocus();
+      _scrollToBottom(animate: false);
+    });
+  }
 
   @override
   void dispose() {
     _messageController.dispose();
     _scrollController.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
-  void _scrollToBottom() {
-    if (_scrollController.hasClients) {
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
-    }
+  void _scrollToBottom({bool animate = true}) {
+    if (!_scrollController.hasClients) return;
+    
+    Future.delayed(const Duration(milliseconds: 50), () {
+      if (!_scrollController.hasClients) return;
+      
+      final maxScroll = _scrollController.position.maxScrollExtent;
+      if (animate) {
+        _scrollController.animateTo(
+          maxScroll,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      } else {
+        _scrollController.jumpTo(maxScroll);
+      }
+    });
   }
 
-  Future<void> _handleSendMessage() async {
+  Future<void> _handleSend() async {
     final text = _messageController.text.trim();
     if (text.isEmpty) return;
 
     final provider = context.read<ConversationsProvider>();
+
+    // Clear immediately
+    _messageController.clear();
+    _focusNode.requestFocus();
+
+    // Send
     final success = await provider.sendMessage(widget.conversation.id, text);
 
-    if (success) {
-      _messageController.clear();
-      Future.delayed(const Duration(milliseconds: 100), _scrollToBottom);
+    if (!success && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Text(provider.error ?? 'Failed to send'),
+            ],
+          ),
+          backgroundColor: VividColors.statusUrgent,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      );
     }
   }
 
@@ -56,125 +95,77 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
     final provider = context.watch<ConversationsProvider>();
     final messages = provider.messages;
 
-    // Auto-scroll when new messages arrive
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (messages.isNotEmpty) {
-        _scrollToBottom();
-      }
-    });
+    // Auto-scroll on new messages
+    if (messages.length != _previousMessageCount) {
+      _previousMessageCount = messages.length;
+      _scrollToBottom();
+    }
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isNarrow = constraints.maxWidth < 500;
-
-        return Container(
-          color: VividColors.darkNavy,
-          child: Column(
-            children: [
-              _buildHeader(isNarrow),
-              Expanded(
-                child: _buildMessageList(messages, provider.isLoadingMessages, isNarrow),
-              ),
-              _buildComposer(isNarrow),
-            ],
-          ),
-        );
-      },
+    return Container(
+      color: VividColors.darkNavy,
+      child: Column(
+        children: [
+          _buildHeader(),
+          Expanded(child: _buildMessages(messages, provider.isLoadingMessages)),
+          _buildInput(provider.isSending),
+        ],
+      ),
     );
   }
 
-  Widget _buildHeader([bool isNarrow = false]) {
-    final statusInfo = _getStatusInfo(widget.conversation.status);
-
+  Widget _buildHeader() {
     return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: isNarrow ? 12 : 24,
-        vertical: isNarrow ? 12 : 16,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       decoration: BoxDecoration(
         color: VividColors.navy,
         border: Border(
-          bottom: BorderSide(
-            color: VividColors.tealBlue.withOpacity(0.2),
-            width: 1,
-          ),
+          bottom: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
         ),
       ),
       child: Row(
         children: [
-          // Customer Info
+          // Avatar
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: VividColors.brightBlue.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Center(
+              child: Text(
+                _getInitials(),
+                style: const TextStyle(
+                  color: VividColors.brightBlue,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          
+          // Info
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        widget.conversation.displayName,
-                        style: TextStyle(
-                          color: VividColors.textPrimary,
-                          fontSize: isNarrow ? 15 : 18,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    // Status chip
-                    Container(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: isNarrow ? 6 : 10,
-                        vertical: isNarrow ? 2 : 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: statusInfo['color'].withOpacity(0.15),
-                        border: Border.all(
-                          color: statusInfo['color'].withOpacity(0.3),
-                        ),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            statusInfo['icon'],
-                            size: isNarrow ? 12 : 14,
-                            color: statusInfo['color'],
-                          ),
-                          if (!isNarrow) ...[
-                            const SizedBox(width: 6),
-                            Text(
-                              statusInfo['label'],
-                              style: TextStyle(
-                                color: statusInfo['color'],
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ],
+                Text(
+                  widget.conversation.displayName,
+                  style: const TextStyle(
+                    color: VividColors.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    Icon(
-                      Icons.phone_outlined,
-                      size: 14,
-                      color: VividColors.textMuted,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      widget.conversation.customerPhone,
-                      style: const TextStyle(
-                        color: VividColors.textMuted,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ],
+                const SizedBox(height: 2),
+                Text(
+                  widget.conversation.customerPhone,
+                  style: const TextStyle(
+                    color: VividColors.textMuted,
+                    fontSize: 13,
+                  ),
                 ),
               ],
             ),
@@ -184,20 +175,10 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
     );
   }
 
-  Widget _buildMessageList(List<Message> messages, bool isLoading, [bool isNarrow = false]) {
+  Widget _buildMessages(List<Message> messages, bool isLoading) {
     if (isLoading && messages.isEmpty) {
       return const Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(color: VividColors.cyan),
-            SizedBox(height: 16),
-            Text(
-              'Loading messages...',
-              style: TextStyle(color: VividColors.textMuted),
-            ),
-          ],
-        ),
+        child: CircularProgressIndicator(color: VividColors.cyan),
       );
     }
 
@@ -206,249 +187,298 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.chat_bubble_outline,
-              size: isNarrow ? 48 : 64,
-              color: VividColors.textMuted.withOpacity(0.5),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'No messages yet',
-              style: TextStyle(
-                color: VividColors.textMuted,
-                fontSize: isNarrow ? 14 : 16,
-              ),
-              textAlign: TextAlign.center,
-            ),
+            Icon(Icons.chat_bubble_outline, size: 48, color: VividColors.textMuted.withOpacity(0.5)),
+            const SizedBox(height: 12),
+            const Text('No messages yet', style: TextStyle(color: VividColors.textMuted)),
           ],
         ),
       );
     }
 
+    // Filter out empty messages
+    final visibleMessages = messages.where((m) => 
+        m.content.isNotEmpty && m.content.trim().isNotEmpty).toList();
+
     return ListView.builder(
       controller: _scrollController,
-      padding: EdgeInsets.symmetric(
-        horizontal: isNarrow ? 12 : 24,
-        vertical: 16,
-      ),
-      itemCount: messages.length,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      itemCount: visibleMessages.length,
       itemBuilder: (context, index) {
-        return _MessageBubble(message: messages[index]);
+        final msg = visibleMessages[index];
+        final isPending = msg.id.startsWith('pending_');
+        return _MessageBubble(message: msg, isPending: isPending);
       },
     );
   }
 
-  Widget _buildComposer([bool isNarrow = false]) {
+  Widget _buildInput(bool isSending) {
     return Container(
-      padding: EdgeInsets.all(isNarrow ? 10 : 16),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: VividColors.navy,
         border: Border(
-          top: BorderSide(
-            color: VividColors.tealBlue.withOpacity(0.2),
-            width: 1,
-          ),
+          top: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
         ),
       ),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _messageController,
-              style: const TextStyle(color: VividColors.textPrimary),
-              decoration: InputDecoration(
-                hintText: 'Type a message...',
-                hintStyle: TextStyle(color: VividColors.textMuted),
-                border: OutlineInputBorder(
+      child: SafeArea(
+        top: false,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            // Text field
+            Expanded(
+              child: Container(
+                constraints: const BoxConstraints(maxHeight: 120),
+                decoration: BoxDecoration(
+                  color: VividColors.darkNavy,
                   borderRadius: BorderRadius.circular(24),
-                  borderSide: BorderSide.none,
+                  border: Border.all(
+                    color: VividColors.tealBlue.withOpacity(0.3),
+                  ),
                 ),
-                filled: true,
-                fillColor: VividColors.darkNavy,
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: isNarrow ? 10 : 14,
+                child: TextField(
+                  controller: _messageController,
+                  focusNode: _focusNode,
+                  enabled: !isSending,
+                  maxLines: null,
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => _handleSend(),
+                  style: const TextStyle(color: VividColors.textPrimary, fontSize: 15),
+                  decoration: InputDecoration(
+                    hintText: isSending ? 'Sending...' : 'Type a message...',
+                    hintStyle: const TextStyle(color: VividColors.textMuted),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
                 ),
               ),
-              onSubmitted: (_) => _handleSendMessage(),
             ),
-          ),
-          const SizedBox(width: 12),
-          Container(
-            decoration: BoxDecoration(
-              gradient: VividColors.primaryGradient,
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: IconButton(
-              onPressed: _handleSendMessage,
-              icon: Icon(
-                Icons.send,
-                color: VividColors.darkNavy,
-                size: isNarrow ? 18 : 20,
+            const SizedBox(width: 10),
+            
+            // Send button
+            GestureDetector(
+              onTap: isSending ? null : _handleSend,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  gradient: isSending ? null : VividColors.primaryGradient,
+                  color: isSending ? VividColors.deepBlue : null,
+                  borderRadius: BorderRadius.circular(23),
+                  boxShadow: isSending ? null : [
+                    BoxShadow(
+                      color: VividColors.brightBlue.withOpacity(0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: isSending
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: VividColors.cyan,
+                          ),
+                        )
+                      : const Icon(
+                          Icons.send_rounded,
+                          color: VividColors.darkNavy,
+                          size: 20,
+                        ),
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  Map<String, dynamic> _getStatusInfo(ConversationStatus status) {
-    switch (status) {
-      case ConversationStatus.needsReply:
-        return {
-          'label': 'Needs Reply',
-          'color': VividColors.statusUrgent,
-          'icon': Icons.priority_high,
-        };
-      case ConversationStatus.replied:
-        return {
-          'label': 'Replied',
-          'color': VividColors.statusSuccess,
-          'icon': Icons.check,
-        };
+  String _getInitials() {
+    final name = widget.conversation.customerName ?? widget.conversation.customerPhone;
+    final parts = name.split(' ');
+    if (parts.length >= 2) {
+      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
     }
+    return name.substring(0, name.length.clamp(0, 2)).toUpperCase();
   }
 }
 
-/// Message Bubble Widget
+// ============================================
+// MESSAGE BUBBLE
+// ============================================
+
 class _MessageBubble extends StatelessWidget {
   final Message message;
+  final bool isPending;
 
-  const _MessageBubble({required this.message});
+  const _MessageBubble({required this.message, this.isPending = false});
 
   @override
   Widget build(BuildContext context) {
     final isCustomer = message.senderType == SenderType.customer;
-    final isAI = message.senderType == SenderType.ai;
+    final isManager = message.senderType == SenderType.manager;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment:
-            isCustomer ? MainAxisAlignment.start : MainAxisAlignment.end,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          if (!isCustomer) const Spacer(flex: 1),
-          Flexible(
-            flex: 3,
-            child: Column(
-              crossAxisAlignment:
-                  isCustomer ? CrossAxisAlignment.start : CrossAxisAlignment.end,
-              children: [
-                // Sender label for non-customer messages
-                if (!isCustomer)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 4, right: 4),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          isAI ? Icons.smart_toy : Icons.person,
-                          size: 12,
-                          color: isAI ? VividColors.cyan : VividColors.brightBlue,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          isAI ? 'Vivid AI' : 'Agent',
-                          style: TextStyle(
-                            color: isAI ? VividColors.cyan : VividColors.brightBlue,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
+    return Opacity(
+      opacity: isPending ? 0.7 : 1.0,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          mainAxisAlignment: isCustomer ? MainAxisAlignment.start : MainAxisAlignment.end,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            if (!isCustomer) const Spacer(flex: 1),
+            
+            Flexible(
+              flex: 3,
+              child: Column(
+                crossAxisAlignment: isCustomer ? CrossAxisAlignment.start : CrossAxisAlignment.end,
+                children: [
+                  // Label for outbound messages
+                  if (!isCustomer)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4, right: 4),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            isManager ? Icons.support_agent : Icons.smart_toy,
+                            size: 12,
+                            color: isManager ? VividColors.brightBlue : VividColors.cyan,
                           ),
+                          const SizedBox(width: 4),
+                          Text(
+                            isManager ? 'Manager' : 'Vivid AI',
+                            style: TextStyle(
+                              color: isManager ? VividColors.brightBlue : VividColors.cyan,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          if (isPending) ...[
+                            const SizedBox(width: 6),
+                            const SizedBox(
+                              width: 10,
+                              height: 10,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 1.5,
+                                color: VividColors.cyan,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+
+                  // Bubble
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: _bubbleColor(),
+                      borderRadius: BorderRadius.only(
+                        topLeft: const Radius.circular(16),
+                        topRight: const Radius.circular(16),
+                        bottomLeft: Radius.circular(isCustomer ? 4 : 16),
+                        bottomRight: Radius.circular(isCustomer ? 16 : 4),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.12),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: isCustomer ? CrossAxisAlignment.start : CrossAxisAlignment.end,
+                      children: [
+                        // Customer name
+                        if (isCustomer && message.senderName != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Text(
+                              message.senderName!,
+                              style: const TextStyle(
+                                color: VividColors.cyan,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+
+                        // Text
+                        Text(
+                          message.content,
+                          style: const TextStyle(
+                            color: VividColors.textPrimary,
+                            fontSize: 15,
+                            height: 1.4,
+                          ),
+                          textDirection: _textDirection(),
+                        ),
+
+                        const SizedBox(height: 4),
+
+                        // Time + status
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              isPending ? 'Sending...' : _formatTime(message.createdAt),
+                              style: TextStyle(
+                                color: VividColors.textPrimary.withOpacity(0.5),
+                                fontSize: 10,
+                              ),
+                            ),
+                            if (!isCustomer && !isPending) ...[
+                              const SizedBox(width: 4),
+                              Icon(
+                                Icons.done_all,
+                                size: 14,
+                                color: VividColors.cyan.withOpacity(0.7),
+                              ),
+                            ],
+                          ],
                         ),
                       ],
                     ),
                   ),
-
-                // Message bubble
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _getBubbleColor(),
-                    borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(16),
-                      topRight: const Radius.circular(16),
-                      bottomLeft: Radius.circular(isCustomer ? 4 : 16),
-                      bottomRight: Radius.circular(isCustomer ? 16 : 4),
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.2),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      // Customer name if available
-                      if (isCustomer && message.senderName != null)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 4),
-                          child: Text(
-                            message.senderName!,
-                            style: TextStyle(
-                              color: VividColors.cyan,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-
-                      // Message text
-                      Text(
-                        message.content,
-                        style: const TextStyle(
-                          color: VividColors.textPrimary,
-                          fontSize: 14,
-                          height: 1.4,
-                        ),
-                        textDirection: _detectTextDirection(message.content),
-                      ),
-
-                      const SizedBox(height: 6),
-
-                      // Timestamp
-                      Text(
-                        TimeUtils.formatTime(message.createdAt),
-                        style: TextStyle(
-                          color: VividColors.textPrimary.withOpacity(0.6),
-                          fontSize: 10,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          if (isCustomer) const Spacer(flex: 1),
-        ],
+            
+            if (isCustomer) const Spacer(flex: 1),
+          ],
+        ),
       ),
     );
   }
 
-  Color _getBubbleColor() {
+  Color _bubbleColor() {
     switch (message.senderType) {
       case SenderType.customer:
         return VividColors.deepBlue;
       case SenderType.ai:
         return VividColors.tealBlue.withOpacity(0.6);
-      case SenderType.humanAgent:
-        return VividColors.brightBlue;
+      case SenderType.manager:
+        return VividColors.brightBlue.withOpacity(0.8);
     }
   }
 
-  TextDirection _detectTextDirection(String text) {
-    final arabicPattern = RegExp(r'[\u0600-\u06FF]');
-    if (arabicPattern.hasMatch(text)) {
+  TextDirection _textDirection() {
+    if (RegExp(r'[\u0600-\u06FF]').hasMatch(message.content)) {
       return TextDirection.rtl;
     }
     return TextDirection.ltr;
+  }
+
+  String _formatTime(DateTime dt) {
+    final hour = dt.hour.toString().padLeft(2, '0');
+    final minute = dt.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
   }
 }
