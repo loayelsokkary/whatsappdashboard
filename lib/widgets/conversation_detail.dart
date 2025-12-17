@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/conversations_provider.dart';
 import '../models/models.dart';
+import '../services/supabase_service.dart';
 import '../theme/vivid_theme.dart';
 
 class ConversationDetailPanel extends StatefulWidget {
@@ -22,6 +23,10 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
   final ScrollController _scrollController = ScrollController();
   final FocusNode _focusNode = FocusNode();
   int _previousMessageCount = 0;
+  
+  // AI Toggle state
+  bool _aiEnabled = true;
+  bool _aiToggleLoading = false;
 
   @override
   void initState() {
@@ -29,7 +34,59 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
       _scrollToBottom(animate: false);
+      _loadAiStatus();
     });
+  }
+
+  @override
+  void didUpdateWidget(ConversationDetailPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.conversation.customerPhone != widget.conversation.customerPhone) {
+      _loadAiStatus();
+    }
+  }
+
+  Future<void> _loadAiStatus() async {
+    final service = SupabaseService.instance;
+    final enabled = await service.getAiEnabled(widget.conversation.customerPhone);
+    if (mounted) {
+      setState(() => _aiEnabled = enabled);
+    }
+  }
+
+  Future<void> _toggleAi(bool value) async {
+    setState(() => _aiToggleLoading = true);
+    
+    final service = SupabaseService.instance;
+    final success = await service.setAiEnabled(widget.conversation.customerPhone, value);
+    
+    if (mounted) {
+      setState(() {
+        if (success) _aiEnabled = value;
+        _aiToggleLoading = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(
+                success ? Icons.check_circle : Icons.error,
+                color: Colors.white,
+                size: 18,
+              ),
+              const SizedBox(width: 8),
+              Text(success 
+                  ? 'AI ${value ? "enabled" : "disabled"} for this customer'
+                  : 'Failed to update AI status'),
+            ],
+          ),
+          backgroundColor: success ? VividColors.statusSuccess : VividColors.statusUrgent,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      );
+    }
   }
 
   @override
@@ -170,6 +227,67 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
               ],
             ),
           ),
+
+          // AI Toggle
+          _buildAiToggle(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAiToggle() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: VividColors.darkNavy,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: _aiEnabled 
+              ? VividColors.cyan.withOpacity(0.3)
+              : VividColors.statusUrgent.withOpacity(0.3),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.smart_toy_rounded,
+            size: 18,
+            color: _aiEnabled ? VividColors.cyan : VividColors.textMuted,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            'AI',
+            style: TextStyle(
+              color: _aiEnabled ? VividColors.cyan : VividColors.textMuted,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(width: 8),
+          if (_aiToggleLoading)
+            const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: VividColors.cyan,
+              ),
+            )
+          else
+            SizedBox(
+              width: 40,
+              height: 24,
+              child: Switch(
+                value: _aiEnabled,
+                onChanged: _toggleAi,
+                activeColor: VividColors.cyan,
+                activeTrackColor: VividColors.cyan.withOpacity(0.3),
+                inactiveThumbColor: VividColors.textMuted,
+                inactiveTrackColor: VividColors.deepBlue,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
         ],
       ),
     );

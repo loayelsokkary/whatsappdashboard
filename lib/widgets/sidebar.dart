@@ -2,21 +2,37 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/agent_provider.dart';
+import '../providers/notification_provider.dart';
 import '../models/models.dart';
 import '../theme/vivid_theme.dart';
 
+/// Navigation destinations
+enum NavDestination {
+  conversations,
+  analytics,
+}
+
 class Sidebar extends StatelessWidget {
   final bool compact;
+  final NavDestination currentDestination;
+  final Function(NavDestination) onDestinationChanged;
 
-  const Sidebar({super.key, this.compact = false});
+  const Sidebar({
+    super.key,
+    this.compact = false,
+    required this.currentDestination,
+    required this.onDestinationChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
     final conversationsProvider = context.watch<ConversationsProvider>();
     final agentProvider = context.watch<AgentProvider>();
+    final notificationProvider = context.watch<NotificationProvider>();
     final agent = agentProvider.agent;
 
     final sidebarWidth = compact ? 60.0 : 72.0;
+    final unreadNotifications = notificationProvider.unreadCount;
 
     return Container(
       width: sidebarWidth,
@@ -61,32 +77,64 @@ class Sidebar extends StatelessWidget {
 
           const SizedBox(height: 32),
 
-          // Navigation Items
+          // Main Navigation
           _NavItem(
             icon: Icons.forum,
-            label: 'All',
-            isSelected: conversationsProvider.statusFilter == null,
+            label: 'Chats',
+            isSelected: currentDestination == NavDestination.conversations,
             badge: conversationsProvider.totalCount,
-            onTap: () => conversationsProvider.setStatusFilter(null),
+            onTap: () => onDestinationChanged(NavDestination.conversations),
           ),
+          
           _NavItem(
-            icon: Icons.priority_high,
-            label: 'Needs Reply',
-            isSelected: conversationsProvider.statusFilter == ConversationStatus.needsReply,
-            badge: conversationsProvider.needsReplyCount,
-            color: VividColors.statusUrgent,
-            onTap: () => conversationsProvider.setStatusFilter(ConversationStatus.needsReply),
+            icon: Icons.analytics,
+            label: 'Analytics',
+            isSelected: currentDestination == NavDestination.analytics,
+            onTap: () => onDestinationChanged(NavDestination.analytics),
           ),
+
+          const SizedBox(height: 16),
+          
+          // Divider
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            height: 1,
+            color: VividColors.tealBlue.withOpacity(0.2),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Notifications Bell
           _NavItem(
-            icon: Icons.check_circle,
-            label: 'Replied',
-            isSelected: conversationsProvider.statusFilter == ConversationStatus.replied,
-            badge: conversationsProvider.repliedCount,
-            color: VividColors.statusSuccess,
-            onTap: () => conversationsProvider.setStatusFilter(ConversationStatus.replied),
+            icon: Icons.notifications,
+            label: 'Alerts',
+            isSelected: false,
+            badge: unreadNotifications,
+            badgeColor: VividColors.statusUrgent,
+            pulse: unreadNotifications > 0,
+            onTap: () => _showNotificationsPanel(context, notificationProvider),
           ),
 
           const Spacer(),
+
+          // Sound toggle
+          IconButton(
+            onPressed: () => notificationProvider.toggleSound(),
+            icon: Icon(
+              notificationProvider.soundEnabled 
+                  ? Icons.volume_up 
+                  : Icons.volume_off,
+              color: notificationProvider.soundEnabled 
+                  ? VividColors.cyan 
+                  : VividColors.textMuted,
+              size: 20,
+            ),
+            tooltip: notificationProvider.soundEnabled 
+                ? 'Sound On' 
+                : 'Sound Off',
+          ),
+
+          const SizedBox(height: 8),
 
           // Agent Avatar & Menu
           _buildAgentAvatar(context, agent, agentProvider),
@@ -94,6 +142,13 @@ class Sidebar extends StatelessWidget {
           const SizedBox(height: 20),
         ],
       ),
+    );
+  }
+
+  void _showNotificationsPanel(BuildContext context, NotificationProvider provider) {
+    showDialog(
+      context: context,
+      builder: (context) => _NotificationsDialog(provider: provider),
     );
   }
 
@@ -205,43 +260,91 @@ class Sidebar extends StatelessWidget {
   }
 }
 
-class _NavItem extends StatelessWidget {
+// ============================================
+// NAV ITEM
+// ============================================
+
+class _NavItem extends StatefulWidget {
   final IconData icon;
   final String label;
   final bool isSelected;
   final int badge;
-  final Color? color;
+  final Color? badgeColor;
+  final bool pulse;
   final VoidCallback onTap;
 
   const _NavItem({
     required this.icon,
     required this.label,
     required this.isSelected,
-    required this.badge,
-    this.color,
+    this.badge = 0,
+    this.badgeColor,
+    this.pulse = false,
     required this.onTap,
   });
 
   @override
+  State<_NavItem> createState() => _NavItemState();
+}
+
+class _NavItemState extends State<_NavItem> with SingleTickerProviderStateMixin {
+  late AnimationController _pulseController;
+  late Animation<double> _pulseAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      duration: const Duration(milliseconds: 1500),
+      vsync: this,
+    );
+    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.2).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
+    
+    if (widget.pulse) {
+      _pulseController.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void didUpdateWidget(_NavItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.pulse && !_pulseController.isAnimating) {
+      _pulseController.repeat(reverse: true);
+    } else if (!widget.pulse && _pulseController.isAnimating) {
+      _pulseController.stop();
+      _pulseController.reset();
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final itemColor = color ?? (isSelected ? VividColors.cyan : VividColors.textMuted);
+    final color = widget.isSelected ? VividColors.cyan : VividColors.textMuted;
+    final badgeColor = widget.badgeColor ?? VividColors.cyan;
 
     return Tooltip(
-      message: label,
+      message: widget.label,
       preferBelow: false,
       child: InkWell(
-        onTap: onTap,
+        onTap: widget.onTap,
         child: Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(vertical: 14),
           decoration: BoxDecoration(
             border: Border(
               left: BorderSide(
-                color: isSelected ? VividColors.cyan : Colors.transparent,
+                color: widget.isSelected ? VividColors.cyan : Colors.transparent,
                 width: 3,
               ),
             ),
-            color: isSelected
+            color: widget.isSelected
                 ? VividColors.brightBlue.withOpacity(0.1)
                 : Colors.transparent,
           ),
@@ -249,38 +352,231 @@ class _NavItem extends StatelessWidget {
             alignment: Alignment.center,
             clipBehavior: Clip.none,
             children: [
-              Icon(
-                icon,
-                color: itemColor,
-                size: 24,
-              ),
-              if (badge > 0)
+              Icon(widget.icon, color: color, size: 24),
+              if (widget.badge > 0)
                 Positioned(
                   right: 14,
                   top: -4,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: color ?? VividColors.cyan,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    constraints: const BoxConstraints(minWidth: 20),
-                    child: Text(
-                      badge > 99 ? '99+' : badge.toString(),
-                      style: TextStyle(
-                        color: color != null ? VividColors.white : VividColors.darkNavy,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
+                  child: AnimatedBuilder(
+                    animation: _pulseAnimation,
+                    builder: (context, child) {
+                      return Transform.scale(
+                        scale: widget.pulse ? _pulseAnimation.value : 1.0,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: badgeColor,
+                            borderRadius: BorderRadius.circular(10),
+                            boxShadow: widget.pulse
+                                ? [
+                                    BoxShadow(
+                                      color: badgeColor.withOpacity(0.5),
+                                      blurRadius: 8,
+                                      spreadRadius: 1,
+                                    ),
+                                  ]
+                                : null,
+                          ),
+                          constraints: const BoxConstraints(minWidth: 20),
+                          child: Text(
+                            widget.badge > 99 ? '99+' : widget.badge.toString(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================
+// NOTIFICATIONS DIALOG
+// ============================================
+
+class _NotificationsDialog extends StatelessWidget {
+  final NotificationProvider provider;
+
+  const _NotificationsDialog({required this.provider});
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: VividColors.navy,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        width: 360,
+        constraints: const BoxConstraints(maxHeight: 500),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.notifications, color: VividColors.cyan),
+                  const SizedBox(width: 12),
+                  const Text(
+                    'Notifications',
+                    style: TextStyle(
+                      color: VividColors.textPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const Spacer(),
+                  if (provider.notifications.isNotEmpty)
+                    TextButton(
+                      onPressed: () {
+                        provider.markAllAsRead();
+                      },
+                      child: const Text(
+                        'Mark all read',
+                        style: TextStyle(color: VividColors.cyan, fontSize: 12),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+
+            // Notifications List
+            Flexible(
+              child: provider.notifications.isEmpty
+                  ? const Padding(
+                      padding: EdgeInsets.all(32),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.notifications_none,
+                            size: 48,
+                            color: VividColors.textMuted,
+                          ),
+                          SizedBox(height: 12),
+                          Text(
+                            'No notifications',
+                            style: TextStyle(color: VividColors.textMuted),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: provider.notifications.length,
+                      itemBuilder: (context, index) {
+                        final notification = provider.notifications[index];
+                        return _NotificationTile(
+                          notification: notification,
+                          onTap: () {
+                            provider.markAsRead(notification.id);
+                            Navigator.pop(context);
+                            // TODO: Navigate to conversation
+                          },
+                        );
+                      },
+                    ),
+            ),
+
+            // Footer
+            Container(
+              padding: const EdgeInsets.all(12),
+              child: TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text(
+                  'Close',
+                  style: TextStyle(color: VividColors.textMuted),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NotificationTile extends StatelessWidget {
+  final ManagerNotification notification;
+  final VoidCallback onTap;
+
+  const _NotificationTile({
+    required this.notification,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: notification.isRead 
+              ? Colors.transparent 
+              : VividColors.brightBlue.withOpacity(0.1),
+          border: Border(
+            bottom: BorderSide(color: VividColors.tealBlue.withOpacity(0.1)),
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: notification.isRead 
+                    ? Colors.transparent 
+                    : VividColors.statusUrgent,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    notification.displayName,
+                    style: TextStyle(
+                      color: VividColors.textPrimary,
+                      fontWeight: notification.isRead 
+                          ? FontWeight.normal 
+                          : FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    notification.message,
+                    style: const TextStyle(
+                      color: VividColors.textMuted,
+                      fontSize: 13,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

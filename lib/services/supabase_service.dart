@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/models.dart';
+import '../providers/analytics_provider.dart';
 
 /// Supabase Service with real-time updates and webhook support
 class SupabaseService {
@@ -162,6 +163,170 @@ class SupabaseService {
       }
     } catch (e) {
       print('Webhook error: $e');
+      return false;
+    }
+  }
+
+  // ============================================
+  // ANALYTICS
+  // ============================================
+
+  Future<AnalyticsData> fetchAnalytics() async {
+    try {
+      final businessPhone = BusinessConfig.businessPhone;
+      final now = DateTime.now();
+      final todayStart = DateTime(now.year, now.month, now.day);
+      final weekStart = todayStart.subtract(Duration(days: now.weekday - 1));
+      final monthStart = DateTime(now.year, now.month, 1);
+
+      // Fetch all messages
+      final allMessages = await client
+          .from('messages')
+          .select()
+          .eq('ai_phone', businessPhone);
+
+      final messages = allMessages as List;
+      
+      // Calculate stats
+      int totalMessages = messages.length;
+      int aiResponses = messages.where((m) => 
+          m['ai_response'] != null && (m['ai_response'] as String).trim().isNotEmpty).length;
+      int managerResponses = messages.where((m) => 
+          m['manager_response'] != null && (m['manager_response'] as String).trim().isNotEmpty).length;
+      
+      // Unique customers
+      final uniquePhones = messages.map((m) => m['customer_phone']).toSet();
+      int uniqueCustomers = uniquePhones.length;
+
+      // Time-based counts
+      int todayMessages = 0;
+      int thisWeekMessages = 0;
+      int thisMonthMessages = 0;
+
+      for (final msg in messages) {
+        if (msg['created_at'] != null) {
+          final createdAt = DateTime.parse(msg['created_at']);
+          if (createdAt.isAfter(todayStart)) todayMessages++;
+          if (createdAt.isAfter(weekStart)) thisWeekMessages++;
+          if (createdAt.isAfter(monthStart)) thisMonthMessages++;
+        }
+      }
+
+      // Last 7 days activity
+      List<DailyActivity> last7Days = [];
+      for (int i = 6; i >= 0; i--) {
+        final date = todayStart.subtract(Duration(days: i));
+        final nextDate = date.add(const Duration(days: 1));
+        final count = messages.where((m) {
+          if (m['created_at'] == null) return false;
+          final createdAt = DateTime.parse(m['created_at']);
+          return createdAt.isAfter(date) && createdAt.isBefore(nextDate);
+        }).length;
+        last7Days.add(DailyActivity(date: date, count: count));
+      }
+
+      // Top customers
+      Map<String, Map<String, dynamic>> customerCounts = {};
+      for (final msg in messages) {
+        final phone = msg['customer_phone'] as String;
+        final name = msg['customer_name'] as String?;
+        if (!customerCounts.containsKey(phone)) {
+          customerCounts[phone] = {'name': name, 'count': 0};
+        }
+        customerCounts[phone]!['count'] = (customerCounts[phone]!['count'] as int) + 1;
+        if (name != null && name.isNotEmpty) {
+          customerCounts[phone]!['name'] = name;
+        }
+      }
+
+      final sortedCustomers = customerCounts.entries.toList()
+        ..sort((a, b) => (b.value['count'] as int).compareTo(a.value['count'] as int));
+
+      List<TopCustomer> topCustomers = sortedCustomers.take(5).map((e) => TopCustomer(
+        phone: e.key,
+        name: e.value['name'] as String?,
+        messageCount: e.value['count'] as int,
+      )).toList();
+
+      return AnalyticsData(
+        totalMessages: totalMessages,
+        aiResponses: aiResponses,
+        managerResponses: managerResponses,
+        uniqueCustomers: uniqueCustomers,
+        todayMessages: todayMessages,
+        thisWeekMessages: thisWeekMessages,
+        thisMonthMessages: thisMonthMessages,
+        last7Days: last7Days,
+        topCustomers: topCustomers,
+      );
+    } catch (e) {
+      print('Analytics error: $e');
+      rethrow;
+    }
+  }
+
+  // ============================================
+  // AI CHAT SETTINGS (Toggle)
+  // ============================================
+
+  /// Get AI enabled status for a customer
+  Future<bool> getAiEnabled(String customerPhone) async {
+    try {
+      final response = await client
+          .from('ai_chat_settings')
+          .select('ai_enabled')
+          .eq('ai_phone', BusinessConfig.businessPhone)
+          .eq('customer_phone', customerPhone)
+          .maybeSingle();
+
+      if (response == null) {
+        // Default to enabled if no setting exists
+        return true;
+      }
+      return response['ai_enabled'] as bool? ?? true;
+    } catch (e) {
+      print('Get AI enabled error: $e');
+      return true; // Default to enabled
+    }
+  }
+
+  /// Set AI enabled status for a customer
+  Future<bool> setAiEnabled(String customerPhone, bool enabled) async {
+    try {
+      // Check if setting exists
+      final existing = await client
+          .from('ai_chat_settings')
+          .select('id')
+          .eq('ai_phone', BusinessConfig.businessPhone)
+          .eq('customer_phone', customerPhone)
+          .maybeSingle();
+
+      if (existing != null) {
+        // Update existing
+        await client
+            .from('ai_chat_settings')
+            .update({
+              'ai_enabled': enabled,
+              'last_changed_by': 'manager',
+              'updated_at': DateTime.now().toIso8601String(),
+            })
+            .eq('ai_phone', BusinessConfig.businessPhone)
+            .eq('customer_phone', customerPhone);
+      } else {
+        // Insert new
+        await client.from('ai_chat_settings').insert({
+          'ai_phone': BusinessConfig.businessPhone,
+          'customer_phone': customerPhone,
+          'ai_enabled': enabled,
+          'last_changed_by': 'manager',
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      }
+
+      print('AI ${enabled ? "enabled" : "disabled"} for $customerPhone');
+      return true;
+    } catch (e) {
+      print('Set AI enabled error: $e');
       return false;
     }
   }
