@@ -6,6 +6,7 @@ import 'providers/conversations_provider.dart';
 import 'providers/agent_provider.dart';
 import 'providers/analytics_provider.dart';
 import 'providers/notification_provider.dart';
+import 'providers/ai_settings_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/analytics_screen.dart';
@@ -29,6 +30,7 @@ class VividDashboardApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ConversationsProvider()),
         ChangeNotifierProvider(create: (_) => AnalyticsProvider()),
         ChangeNotifierProvider(create: (_) => NotificationProvider()),
+        ChangeNotifierProvider(create: (_) => AiSettingsProvider()),
       ],
       child: MaterialApp(
         title: 'Vivid Dashboard',
@@ -74,6 +76,7 @@ class _MainScaffoldState extends State<MainScaffold> {
     Future.microtask(() {
       context.read<ConversationsProvider>().initialize();
       context.read<NotificationProvider>().initialize();
+      context.read<AiSettingsProvider>().fetchAllSettings();
     });
   }
 

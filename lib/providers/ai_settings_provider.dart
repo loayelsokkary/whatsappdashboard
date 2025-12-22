@@ -109,10 +109,20 @@ class AiSettingsProvider extends ChangeNotifier {
 
   /// Toggle AI for a customer
   Future<bool> toggleAi(String customerPhone, bool enabled) async {
-    try {
-      final existingSetting = _settings[customerPhone];
+    // Immediately update local cache for instant UI response
+    final oldSetting = _settings[customerPhone];
+    _settings[customerPhone] = AiChatSetting(
+      id: oldSetting?.id ?? 'temp',
+      aiPhone: BusinessConfig.businessPhone,
+      customerPhone: customerPhone,
+      aiEnabled: enabled,
+      lastChangedBy: 'manager',
+      updatedAt: DateTime.now(),
+    );
+    notifyListeners(); // Instant UI update!
 
-      if (existingSetting != null) {
+    try {
+      if (oldSetting != null) {
         // Update existing
         await _client
             .from('ai_chat_settings')
@@ -121,7 +131,7 @@ class AiSettingsProvider extends ChangeNotifier {
               'last_changed_by': 'manager',
               'updated_at': DateTime.now().toIso8601String(),
             })
-            .eq('id', existingSetting.id);
+            .eq('id', oldSetting.id);
       } else {
         // Create new
         await _client.from('ai_chat_settings').insert({
@@ -132,12 +142,18 @@ class AiSettingsProvider extends ChangeNotifier {
         });
       }
 
-      // Update local cache
+      // Refresh from DB to get actual data
       await fetchSetting(customerPhone);
 
       print('AI ${enabled ? 'enabled' : 'disabled'} for $customerPhone');
       return true;
     } catch (e) {
+      // Revert on error
+      if (oldSetting != null) {
+        _settings[customerPhone] = oldSetting;
+      } else {
+        _settings.remove(customerPhone);
+      }
       _error = 'Failed to update setting: $e';
       print('Toggle AI error: $e');
       notifyListeners();

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/conversations_provider.dart';
+import '../providers/ai_settings_provider.dart';
 import '../models/models.dart';
 import '../theme/vivid_theme.dart';
 import '../utils/time_utils.dart';
@@ -211,6 +212,10 @@ class _ConversationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Watch the AI settings provider for real-time updates
+    final aiSettingsProvider = context.watch<AiSettingsProvider>();
+    final aiEnabled = aiSettingsProvider.isAiEnabled(conversation.customerPhone);
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -238,7 +243,7 @@ class _ConversationCard extends StatelessWidget {
             children: [
               _buildAvatar(),
               const SizedBox(width: 14),
-              Expanded(child: _buildContent(context)),
+              Expanded(child: _buildContent(context, aiEnabled)),
             ],
           ),
         ),
@@ -292,7 +297,7 @@ class _ConversationCard extends StatelessWidget {
     );
   }
 
-  Widget _buildContent(BuildContext context) {
+  Widget _buildContent(BuildContext context, bool aiEnabled) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -382,8 +387,14 @@ class _ConversationCard extends StatelessWidget {
 
         const SizedBox(height: 8),
 
-        // Status badge
-        _buildStatusBadge(),
+        // Status badges row
+        Row(
+          children: [
+            _buildStatusBadge(),
+            const SizedBox(width: 8),
+            _buildAiBadge(aiEnabled),
+          ],
+        ),
       ],
     );
   }
@@ -405,6 +416,35 @@ class _ConversationCard extends StatelessWidget {
         icon = Icons.check;
         break;
     }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAiBadge(bool aiEnabled) {
+    final color = aiEnabled ? VividColors.cyan : const Color(0xFFFF9800);
+    final label = aiEnabled ? 'AI On' : 'AI Off';
+    final icon = aiEnabled ? Icons.smart_toy : Icons.person;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),

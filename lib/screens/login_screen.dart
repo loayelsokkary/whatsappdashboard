@@ -13,8 +13,8 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen>
     with SingleTickerProviderStateMixin {
-  final _emailController = TextEditingController(text: 'manager@3bs.com');
-  final _passwordController = TextEditingController(text: 'demo123');
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
@@ -221,36 +221,6 @@ class _LoginScreenState extends State<LoginScreen>
                                     ),
                                   );
                                 },
-                              ),
-                              const SizedBox(height: 24),
-
-                              // Demo credentials hint
-                              Container(
-                                padding: const EdgeInsets.all(14),
-                                decoration: BoxDecoration(
-                                  color: VividColors.deepBlue.withOpacity(0.3),
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
-                                    color: VividColors.cyan.withOpacity(0.2),
-                                  ),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      Icons.info_outline,
-                                      size: 18,
-                                      color: VividColors.cyan.withOpacity(0.8),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Text(
-                                      'Demo: manager@3bs.com / demo123',
-                                      style: TextStyle(
-                                        color: VividColors.textSecondary,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
-                                ),
                               ),
                             ],
                           ),

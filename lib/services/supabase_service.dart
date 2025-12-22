@@ -22,7 +22,7 @@ class SupabaseService {
   
   static const String _supabaseUrl = 'https://zxvjzaowvzvfgrzdimbm.supabase.co';
   static const String _supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp4dmp6YW93dnp2ZmdyemRpbWJtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU1NjM2MjUsImV4cCI6MjA4MTEzOTYyNX0.NkVPCRTLcQOdkzIhfsnvPBWJ1vcfeMQOysAuq6Erryg';
-  static const String _n8nWebhookUrl = 'https://malyooon.app.n8n.cloud/webhook/0a47ebfd-56ae-425a-8e95-0b453b67bad3';
+  static const String _n8nWebhookUrl = 'https://n8n.vividsystems.cloud/webhook/0a47ebfd-56ae-425a-8e95-0b453b67bad3';
 
   // ============================================
   // SINGLETON

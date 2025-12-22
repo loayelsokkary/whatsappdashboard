@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/conversations_provider.dart';
+import '../providers/ai_settings_provider.dart';
 import '../models/models.dart';
-import '../services/supabase_service.dart';
 import '../theme/vivid_theme.dart';
 
 class ConversationDetailPanel extends StatefulWidget {
@@ -24,8 +24,7 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
   final FocusNode _focusNode = FocusNode();
   int _previousMessageCount = 0;
   
-  // AI Toggle state
-  bool _aiEnabled = true;
+  // AI Toggle loading state only
   bool _aiToggleLoading = false;
 
   @override
@@ -34,37 +33,23 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
       _scrollToBottom(animate: false);
-      _loadAiStatus();
     });
   }
 
   @override
   void didUpdateWidget(ConversationDetailPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.conversation.customerPhone != widget.conversation.customerPhone) {
-      _loadAiStatus();
-    }
-  }
-
-  Future<void> _loadAiStatus() async {
-    final service = SupabaseService.instance;
-    final enabled = await service.getAiEnabled(widget.conversation.customerPhone);
-    if (mounted) {
-      setState(() => _aiEnabled = enabled);
-    }
+    // No need to load AI status - provider handles it
   }
 
   Future<void> _toggleAi(bool value) async {
     setState(() => _aiToggleLoading = true);
     
-    final service = SupabaseService.instance;
-    final success = await service.setAiEnabled(widget.conversation.customerPhone, value);
+    final aiProvider = context.read<AiSettingsProvider>();
+    final success = await aiProvider.toggleAi(widget.conversation.customerPhone, value);
     
     if (mounted) {
-      setState(() {
-        if (success) _aiEnabled = value;
-        _aiToggleLoading = false;
-      });
+      setState(() => _aiToggleLoading = false);
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -236,13 +221,17 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
   }
 
   Widget _buildAiToggle() {
+    // Watch the provider for real-time updates
+    final aiProvider = context.watch<AiSettingsProvider>();
+    final aiEnabled = aiProvider.isAiEnabled(widget.conversation.customerPhone);
+    
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: VividColors.darkNavy,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: _aiEnabled 
+          color: aiEnabled 
               ? VividColors.cyan.withOpacity(0.3)
               : VividColors.statusUrgent.withOpacity(0.3),
         ),
@@ -253,13 +242,13 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
           Icon(
             Icons.smart_toy_rounded,
             size: 18,
-            color: _aiEnabled ? VividColors.cyan : VividColors.textMuted,
+            color: aiEnabled ? VividColors.cyan : VividColors.textMuted,
           ),
           const SizedBox(width: 8),
           Text(
             'AI',
             style: TextStyle(
-              color: _aiEnabled ? VividColors.cyan : VividColors.textMuted,
+              color: aiEnabled ? VividColors.cyan : VividColors.textMuted,
               fontSize: 13,
               fontWeight: FontWeight.w600,
             ),
@@ -279,7 +268,7 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
               width: 40,
               height: 24,
               child: Switch(
-                value: _aiEnabled,
+                value: aiEnabled,
                 onChanged: _toggleAi,
                 activeColor: VividColors.cyan,
                 activeTrackColor: VividColors.cyan.withOpacity(0.3),
@@ -595,8 +584,28 @@ class _MessageBubble extends StatelessWidget {
   }
 
   String _formatTime(DateTime dt) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    final messageDate = DateTime(dt.year, dt.month, dt.day);
+    
     final hour = dt.hour.toString().padLeft(2, '0');
     final minute = dt.minute.toString().padLeft(2, '0');
-    return '$hour:$minute';
+    final time = '$hour:$minute';
+    
+    if (messageDate == today) {
+      return 'Today, $time';
+    } else if (messageDate == yesterday) {
+      return 'Yesterday, $time';
+    } else if (now.difference(dt).inDays < 7) {
+      // Within last week - show day name
+      final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      return '${days[dt.weekday - 1]}, $time';
+    } else {
+      // Older - show full date
+      final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      return '${dt.day} ${months[dt.month - 1]}, $time';
+    }
   }
 }
