@@ -206,13 +206,32 @@ class ConversationsProvider extends ChangeNotifier {
         }
       }
 
+      // Determine status based on last exchange
+      // "Needs Reply" if customer sent message but no AI or manager response
+      final hasCustomerMessage = lastEx.customerMessage.trim().isNotEmpty;
+      final hasAiResponse = lastEx.aiResponse.trim().isNotEmpty;
+      final hasManagerResponse = lastEx.managerResponse != null && 
+                                  lastEx.managerResponse!.trim().isNotEmpty;
+      
+      final status = (hasCustomerMessage && !hasAiResponse && !hasManagerResponse)
+          ? ConversationStatus.needsReply
+          : ConversationStatus.replied;
+
+      // Determine last message to show
+      String lastMessage = lastEx.customerMessage;
+      if (hasManagerResponse) {
+        lastMessage = lastEx.managerResponse!;
+      } else if (hasAiResponse) {
+        lastMessage = lastEx.aiResponse;
+      }
+
       return Conversation(
         customerPhone: customerPhone,
         customerName: customerName,
-        lastMessage: lastEx.aiResponse.isNotEmpty ? lastEx.aiResponse : lastEx.customerMessage,
+        lastMessage: lastMessage,
         lastMessageAt: lastEx.createdAt,
-        status: ConversationStatus.replied,
-        unreadCount: 0,
+        status: status,
+        unreadCount: status == ConversationStatus.needsReply ? 1 : 0,
         startedAt: firstEx.createdAt,
       );
     }).toList();
@@ -299,8 +318,11 @@ class ConversationsProvider extends ChangeNotifier {
         customerName: _selectedCustomerName,
       );
 
+      // Always remove pending message after webhook completes
+      // Real-time subscription will bring the actual message
+      _pendingMessages.removeWhere((m) => m.id == pendingId);
+      
       if (!success) {
-        _pendingMessages.removeWhere((m) => m.id == pendingId);
         _error = 'Failed to send message';
       }
 

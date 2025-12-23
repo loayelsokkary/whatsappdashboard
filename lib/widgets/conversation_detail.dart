@@ -5,6 +5,7 @@ import '../providers/conversations_provider.dart';
 import '../providers/ai_settings_provider.dart';
 import '../models/models.dart';
 import '../theme/vivid_theme.dart';
+import '../utils/time_utils.dart';
 
 class ConversationDetailPanel extends StatefulWidget {
   final Conversation conversation;
@@ -584,28 +585,31 @@ class _MessageBubble extends StatelessWidget {
   }
 
   String _formatTime(DateTime dt) {
-    final now = DateTime.now();
+    // Add 3 hours for Bahrain timezone (UTC+3)
+    final bahrainTime = dt.add(const Duration(hours: 3));
+    
+    final now = DateTime.now().add(const Duration(hours: 3));
     final today = DateTime(now.year, now.month, now.day);
     final yesterday = today.subtract(const Duration(days: 1));
-    final messageDate = DateTime(dt.year, dt.month, dt.day);
+    final messageDate = DateTime(bahrainTime.year, bahrainTime.month, bahrainTime.day);
     
-    final hour = dt.hour.toString().padLeft(2, '0');
-    final minute = dt.minute.toString().padLeft(2, '0');
+    final hour = bahrainTime.hour.toString().padLeft(2, '0');
+    final minute = bahrainTime.minute.toString().padLeft(2, '0');
     final time = '$hour:$minute';
     
     if (messageDate == today) {
       return 'Today, $time';
     } else if (messageDate == yesterday) {
       return 'Yesterday, $time';
-    } else if (now.difference(dt).inDays < 7) {
+    } else if (now.difference(bahrainTime).inDays < 7) {
       // Within last week - show day name
       final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-      return '${days[dt.weekday - 1]}, $time';
+      return '${days[bahrainTime.weekday - 1]}, $time';
     } else {
       // Older - show full date
       final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
                       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      return '${dt.day} ${months[dt.month - 1]}, $time';
+      return '${bahrainTime.day} ${months[bahrainTime.month - 1]}, $time';
     }
   }
 }
