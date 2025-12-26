@@ -66,7 +66,7 @@ class AnalyticsProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final businessPhone = BusinessConfig.businessPhone;
+      final businessPhone = ClientConfig.businessPhone;
       final now = DateTime.now();
       final todayStart = DateTime(now.year, now.month, now.day);
       final weekStart = todayStart.subtract(Duration(days: now.weekday - 1));

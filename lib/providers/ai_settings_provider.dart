@@ -66,7 +66,7 @@ class AiSettingsProvider extends ChangeNotifier {
       final response = await _client
           .from('ai_chat_settings')
           .select()
-          .eq('ai_phone', BusinessConfig.businessPhone);
+          .eq('ai_phone', ClientConfig.businessPhone);
 
       _settings.clear();
       for (final json in response as List) {
@@ -90,7 +90,7 @@ class AiSettingsProvider extends ChangeNotifier {
       final response = await _client
           .from('ai_chat_settings')
           .select()
-          .eq('ai_phone', BusinessConfig.businessPhone)
+          .eq('ai_phone', ClientConfig.businessPhone)
           .eq('customer_phone', customerPhone)
           .maybeSingle();
 
@@ -113,7 +113,7 @@ class AiSettingsProvider extends ChangeNotifier {
     final oldSetting = _settings[customerPhone];
     _settings[customerPhone] = AiChatSetting(
       id: oldSetting?.id ?? 'temp',
-      aiPhone: BusinessConfig.businessPhone,
+      aiPhone: ClientConfig.businessPhone,
       customerPhone: customerPhone,
       aiEnabled: enabled,
       lastChangedBy: 'manager',
@@ -135,7 +135,7 @@ class AiSettingsProvider extends ChangeNotifier {
       } else {
         // Create new
         await _client.from('ai_chat_settings').insert({
-          'ai_phone': BusinessConfig.businessPhone,
+          'ai_phone': ClientConfig.businessPhone,
           'customer_phone': customerPhone,
           'ai_enabled': enabled,
           'last_changed_by': 'manager',

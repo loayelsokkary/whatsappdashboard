@@ -24,6 +24,7 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
   final ScrollController _scrollController = ScrollController();
   final FocusNode _focusNode = FocusNode();
   int _previousMessageCount = 0;
+  Set<String> _seenMessageIds = {};
   
   // AI Toggle loading state only
   bool _aiToggleLoading = false;
@@ -314,7 +315,19 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
       itemBuilder: (context, index) {
         final msg = visibleMessages[index];
         final isPending = msg.id.startsWith('pending_');
-        return _MessageBubble(message: msg, isPending: isPending);
+        
+        // Check if this is a new message we haven't seen
+        final isNew = !_seenMessageIds.contains(msg.id);
+        if (isNew) {
+          _seenMessageIds.add(msg.id);
+        }
+        
+        return _AnimatedMessageBubble(
+          key: ValueKey(msg.id),
+          message: msg,
+          isPending: isPending,
+          animate: isNew && isPending, // Only animate new pending messages
+        );
       },
     );
   }
@@ -417,199 +430,414 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
 }
 
 // ============================================
+// ANIMATED MESSAGE BUBBLE WRAPPER
+// ============================================
+
+class _AnimatedMessageBubble extends StatefulWidget {
+  final Message message;
+  final bool isPending;
+  final bool animate;
+
+  const _AnimatedMessageBubble({
+    super.key,
+    required this.message,
+    this.isPending = false,
+    this.animate = false,
+  });
+
+  @override
+  State<_AnimatedMessageBubble> createState() => _AnimatedMessageBubbleState();
+}
+
+class _AnimatedMessageBubbleState extends State<_AnimatedMessageBubble>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _slideAnimation;
+  late Animation<double> _fadeAnimation;
+  late Animation<double> _scaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+
+    _slideAnimation = Tween<double>(begin: 20.0, end: 0.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+    );
+
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOut),
+    );
+
+    _scaleAnimation = Tween<double>(begin: 0.95, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutBack),
+    );
+
+    // Animate in if this is a new message
+    if (widget.animate) {
+      _controller.forward();
+    } else {
+      _controller.value = 1.0;
+    }
+  }
+
+  @override
+  void didUpdateWidget(_AnimatedMessageBubble oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    
+    // Animate when transitioning from pending to confirmed
+    if (oldWidget.isPending && !widget.isPending) {
+      _controller.reset();
+      _controller.forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isOutbound = widget.message.senderType != SenderType.customer;
+
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return Transform.translate(
+          offset: Offset(
+            isOutbound ? _slideAnimation.value : -_slideAnimation.value,
+            0,
+          ),
+          child: Transform.scale(
+            scale: _scaleAnimation.value,
+            alignment: isOutbound ? Alignment.centerRight : Alignment.centerLeft,
+            child: Opacity(
+              opacity: _fadeAnimation.value,
+              child: child,
+            ),
+          ),
+        );
+      },
+      child: _MessageBubble(
+        message: widget.message,
+        isPending: widget.isPending,
+      ),
+    );
+  }
+}
+
+// ============================================
 // MESSAGE BUBBLE
 // ============================================
 
-class _MessageBubble extends StatelessWidget {
+class _MessageBubble extends StatefulWidget {
   final Message message;
   final bool isPending;
 
   const _MessageBubble({required this.message, this.isPending = false});
 
   @override
+  State<_MessageBubble> createState() => _MessageBubbleState();
+}
+
+class _MessageBubbleState extends State<_MessageBubble>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _pulseController;
+  late Animation<double> _pulseAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      duration: const Duration(milliseconds: 1500),
+      vsync: this,
+    );
+
+    _pulseAnimation = Tween<double>(begin: 0.85, end: 1.0).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
+
+    if (widget.isPending) {
+      _pulseController.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void didUpdateWidget(_MessageBubble oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    
+    if (widget.isPending && !_pulseController.isAnimating) {
+      _pulseController.repeat(reverse: true);
+    } else if (!widget.isPending && _pulseController.isAnimating) {
+      _pulseController.stop();
+      _pulseController.value = 1.0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final isCustomer = message.senderType == SenderType.customer;
-    final isManager = message.senderType == SenderType.manager;
+    final isCustomer = widget.message.senderType == SenderType.customer;
+    final isManager = widget.message.senderType == SenderType.manager;
 
-    return Opacity(
-      opacity: isPending ? 0.7 : 1.0,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          mainAxisAlignment: isCustomer ? MainAxisAlignment.start : MainAxisAlignment.end,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            if (!isCustomer) const Spacer(flex: 1),
-            
-            Flexible(
-              flex: 3,
-              child: Column(
-                crossAxisAlignment: isCustomer ? CrossAxisAlignment.start : CrossAxisAlignment.end,
-                children: [
-                  // Label for outbound messages
-                  if (!isCustomer)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 4, right: 4),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            isManager ? Icons.support_agent : Icons.smart_toy,
-                            size: 12,
-                            color: isManager ? VividColors.brightBlue : VividColors.cyan,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            isManager ? 'Manager' : 'Vivid AI',
-                            style: TextStyle(
-                              color: isManager ? VividColors.brightBlue : VividColors.cyan,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          if (isPending) ...[
-                            const SizedBox(width: 6),
-                            const SizedBox(
-                              width: 10,
-                              height: 10,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 1.5,
-                                color: VividColors.cyan,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-
-                  // Bubble
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: _bubbleColor(),
-                      borderRadius: BorderRadius.only(
-                        topLeft: const Radius.circular(16),
-                        topRight: const Radius.circular(16),
-                        bottomLeft: Radius.circular(isCustomer ? 4 : 16),
-                        bottomRight: Radius.circular(isCustomer ? 16 : 4),
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.12),
-                          blurRadius: 4,
-                          offset: const Offset(0, 2),
+    Widget bubble = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: isCustomer ? MainAxisAlignment.start : MainAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (!isCustomer) const Spacer(flex: 1),
+          
+          Flexible(
+            flex: 3,
+            child: Column(
+              crossAxisAlignment: isCustomer ? CrossAxisAlignment.start : CrossAxisAlignment.end,
+              children: [
+                // Label for outbound messages
+                if (!isCustomer)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4, right: 4),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          isManager ? Icons.support_agent : Icons.smart_toy,
+                          size: 12,
+                          color: isManager ? VividColors.brightBlue : VividColors.cyan,
                         ),
+                        const SizedBox(width: 4),
+                        Text(
+                          isManager ? 'Manager' : 'Vivid AI',
+                          style: TextStyle(
+                            color: isManager ? VividColors.brightBlue : VividColors.cyan,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        if (widget.isPending) ...[
+                          const SizedBox(width: 6),
+                          _SendingIndicator(),
+                        ],
                       ],
                     ),
-                    child: Column(
-                      crossAxisAlignment: isCustomer ? CrossAxisAlignment.start : CrossAxisAlignment.end,
-                      children: [
-                        // Customer name
-                        if (isCustomer && message.senderName != null)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 4),
-                            child: Text(
-                              message.senderName!,
-                              style: const TextStyle(
-                                color: VividColors.cyan,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                              ),
+                  ),
+
+                // Bubble
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: _bubbleColor(),
+                    borderRadius: BorderRadius.only(
+                      topLeft: const Radius.circular(16),
+                      topRight: const Radius.circular(16),
+                      bottomLeft: Radius.circular(isCustomer ? 4 : 16),
+                      bottomRight: Radius.circular(isCustomer ? 16 : 4),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: widget.isPending 
+                            ? VividColors.brightBlue.withOpacity(0.2)
+                            : Colors.black.withOpacity(0.12),
+                        blurRadius: widget.isPending ? 8 : 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: isCustomer ? CrossAxisAlignment.start : CrossAxisAlignment.end,
+                    children: [
+                      // Customer name
+                      if (isCustomer && widget.message.senderName != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Text(
+                            widget.message.senderName!,
+                            style: const TextStyle(
+                              color: VividColors.cyan,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
-
-                        // Text
-                        Text(
-                          message.content,
-                          style: const TextStyle(
-                            color: VividColors.textPrimary,
-                            fontSize: 15,
-                            height: 1.4,
-                          ),
-                          textDirection: _textDirection(),
                         ),
 
-                        const SizedBox(height: 4),
+                      // Text
+                      Text(
+                        widget.message.content,
+                        style: const TextStyle(
+                          color: VividColors.textPrimary,
+                          fontSize: 15,
+                          height: 1.4,
+                        ),
+                        textDirection: _textDirection(),
+                      ),
 
-                        // Time + status
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              isPending ? 'Sending...' : _formatTime(message.createdAt),
+                      const SizedBox(height: 4),
+
+                      // Time + status
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 200),
+                            child: Text(
+                              widget.isPending ? 'Sending...' : _formatTime(widget.message.createdAt),
+                              key: ValueKey(widget.isPending ? 'pending' : 'sent'),
                               style: TextStyle(
                                 color: VividColors.textPrimary.withOpacity(0.5),
                                 fontSize: 10,
                               ),
                             ),
-                            if (!isCustomer && !isPending) ...[
-                              const SizedBox(width: 4),
-                              Icon(
+                          ),
+                          if (!isCustomer && !widget.isPending) ...[
+                            const SizedBox(width: 4),
+                            TweenAnimationBuilder<double>(
+                              tween: Tween(begin: 0.0, end: 1.0),
+                              duration: const Duration(milliseconds: 300),
+                              builder: (context, value, child) {
+                                return Transform.scale(
+                                  scale: value,
+                                  child: Opacity(
+                                    opacity: value,
+                                    child: child,
+                                  ),
+                                );
+                              },
+                              child: Icon(
                                 Icons.done_all,
                                 size: 14,
                                 color: VividColors.cyan.withOpacity(0.7),
                               ),
-                            ],
+                            ),
                           ],
-                        ),
-                      ],
-                    ),
+                        ],
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            
-            if (isCustomer) const Spacer(flex: 1),
-          ],
-        ),
+          ),
+          
+          if (isCustomer) const Spacer(flex: 1),
+        ],
       ),
     );
+
+    // Wrap with pulse animation if pending
+    if (widget.isPending) {
+      return AnimatedBuilder(
+        animation: _pulseAnimation,
+        builder: (context, child) {
+          return Opacity(
+            opacity: _pulseAnimation.value,
+            child: child,
+          );
+        },
+        child: bubble,
+      );
+    }
+
+    return bubble;
   }
 
   Color _bubbleColor() {
-    switch (message.senderType) {
+    switch (widget.message.senderType) {
       case SenderType.customer:
         return VividColors.deepBlue;
       case SenderType.ai:
         return VividColors.tealBlue.withOpacity(0.6);
       case SenderType.manager:
-        return VividColors.brightBlue.withOpacity(0.8);
+        return VividColors.brightBlue.withOpacity(widget.isPending ? 0.6 : 0.8);
     }
   }
 
   TextDirection _textDirection() {
-    if (RegExp(r'[\u0600-\u06FF]').hasMatch(message.content)) {
-      return TextDirection.rtl;
-    }
-    return TextDirection.ltr;
+    final text = widget.message.content;
+    if (text.isEmpty) return TextDirection.ltr;
+    final firstChar = text.trim().characters.first;
+    final arabicRegex = RegExp(r'[\u0600-\u06FF]');
+    return arabicRegex.hasMatch(firstChar) ? TextDirection.rtl : TextDirection.ltr;
   }
 
   String _formatTime(DateTime dt) {
-    // Add 3 hours for Bahrain timezone (UTC+3)
-    final bahrainTime = dt.add(const Duration(hours: 3));
-    
-    final now = DateTime.now().add(const Duration(hours: 3));
-    final today = DateTime(now.year, now.month, now.day);
-    final yesterday = today.subtract(const Duration(days: 1));
-    final messageDate = DateTime(bahrainTime.year, bahrainTime.month, bahrainTime.day);
-    
-    final hour = bahrainTime.hour.toString().padLeft(2, '0');
-    final minute = bahrainTime.minute.toString().padLeft(2, '0');
-    final time = '$hour:$minute';
-    
-    if (messageDate == today) {
-      return 'Today, $time';
-    } else if (messageDate == yesterday) {
-      return 'Yesterday, $time';
-    } else if (now.difference(bahrainTime).inDays < 7) {
-      // Within last week - show day name
-      final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-      return '${days[bahrainTime.weekday - 1]}, $time';
-    } else {
-      // Older - show full date
-      final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
-                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      return '${bahrainTime.day} ${months[bahrainTime.month - 1]}, $time';
-    }
+    final hour = dt.hour;
+    final minute = dt.minute.toString().padLeft(2, '0');
+    final period = hour >= 12 ? 'PM' : 'AM';
+    final hour12 = hour > 12 ? hour - 12 : (hour == 0 ? 12 : hour);
+    return '$hour12:$minute $period';
+  }
+}
+
+// ============================================
+// SENDING INDICATOR (animated dots)
+// ============================================
+
+class _SendingIndicator extends StatefulWidget {
+  @override
+  State<_SendingIndicator> createState() => _SendingIndicatorState();
+}
+
+class _SendingIndicatorState extends State<_SendingIndicator>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 1200),
+      vsync: this,
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(3, (index) {
+            final delay = index * 0.2;
+            final progress = (_controller.value - delay).clamp(0.0, 1.0);
+            final bounce = (progress < 0.5)
+                ? progress * 2
+                : 2 - (progress * 2);
+            
+            return Container(
+              margin: EdgeInsets.only(left: index > 0 ? 2 : 0),
+              child: Transform.translate(
+                offset: Offset(0, -2 * bounce),
+                child: Container(
+                  width: 4,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: VividColors.cyan.withOpacity(0.5 + (0.5 * bounce)),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            );
+          }),
+        );
+      },
+    );
   }
 }

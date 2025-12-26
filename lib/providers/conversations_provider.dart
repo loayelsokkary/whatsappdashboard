@@ -104,9 +104,19 @@ class ConversationsProvider extends ChangeNotifier {
       }
     }
 
-    // Add pending messages for this conversation
+    // Add pending messages for this conversation (only if no matching real message exists)
     final pending = _pendingMessages
         .where((m) => m.id.startsWith('pending_$_selectedCustomerPhone'))
+        .where((pending) {
+          // Check if this pending message already has a matching real message
+          for (final ex in customerExchanges) {
+            if (ex.managerResponse != null && 
+                ex.managerResponse!.trim() == pending.content.trim()) {
+              return false; // Real message exists, don't show pending
+            }
+          }
+          return true; // No matching real message, show pending
+        })
         .toList();
     result.addAll(pending);
 
@@ -242,8 +252,29 @@ class ConversationsProvider extends ChangeNotifier {
 
   void _clearOldPendingMessages() {
     final now = DateTime.now();
+    
+    // Remove pending messages that are older than 30 seconds (timeout)
     _pendingMessages.removeWhere((msg) => 
-        now.difference(msg.createdAt).inSeconds > 10);
+        now.difference(msg.createdAt).inSeconds > 30);
+    
+    // Remove pending messages that now have matching real messages
+    // (real message arrived via real-time subscription)
+    _pendingMessages.removeWhere((pending) {
+      final phone = pending.id.split('_')[1]; // Extract phone from pending_PHONE_timestamp
+      
+      // Find exchanges for this customer
+      final customerExchanges = _allExchanges.where((ex) => ex.customerPhone == phone);
+      
+      // Check if any exchange has a manager_response matching our pending content
+      for (final ex in customerExchanges) {
+        if (ex.managerResponse != null && 
+            ex.managerResponse!.trim() == pending.content.trim()) {
+          // Real message exists, remove pending
+          return true;
+        }
+      }
+      return false;
+    });
   }
 
   // ============================================
@@ -318,11 +349,13 @@ class ConversationsProvider extends ChangeNotifier {
         customerName: _selectedCustomerName,
       );
 
-      // Always remove pending message after webhook completes
+      // DON'T remove pending message here!
       // Real-time subscription will bring the actual message
-      _pendingMessages.removeWhere((m) => m.id == pendingId);
+      // and _removePendingIfExists() will handle the swap
       
       if (!success) {
+        // Only remove on failure
+        _pendingMessages.removeWhere((m) => m.id == pendingId);
         _error = 'Failed to send message';
       }
 

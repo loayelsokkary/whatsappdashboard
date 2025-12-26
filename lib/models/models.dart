@@ -156,34 +156,177 @@ class Conversation {
 }
 
 // ============================================
-// BUSINESS CONFIG
+// CLIENT CONFIG (Loaded from Supabase after login)
 // ============================================
 
-/// Business configuration - hardcode per deployment
-class BusinessConfig {
-  static const String businessPhone = '97334653659'; // 3B's Gents Salon
-  static const String businessName = "3B's Gents Salon";
+/// User roles
+enum UserRole {
+  admin('admin'),
+  client('client');
 
-  // Login credentials (for demo)
-  static const String managerEmail = 'manager@3bs.com';
-  static const String managerPassword = 'demo123';
-  static const String managerName = '3B\'s Manager';
+  final String value;
+  const UserRole(this.value);
+
+  static UserRole fromString(String value) {
+    return UserRole.values.firstWhere(
+      (r) => r.value == value,
+      orElse: () => UserRole.client,
+    );
+  }
+}
+
+/// Unified user model (admins and client users)
+class AppUser {
+  final String id;
+  final String email;
+  final String name;
+  final UserRole role;
+  final String? clientId;
+  final DateTime createdAt;
+
+  const AppUser({
+    required this.id,
+    required this.email,
+    required this.name,
+    required this.role,
+    this.clientId,
+    required this.createdAt,
+  });
+
+  bool get isAdmin => role == UserRole.admin;
+
+  factory AppUser.fromJson(Map<String, dynamic> json) {
+    return AppUser(
+      id: json['id'] as String,
+      email: json['email'] as String,
+      name: json['name'] as String,
+      role: UserRole.fromString(json['role'] as String? ?? 'client'),
+      clientId: json['client_id'] as String?,
+      createdAt: DateTime.parse(json['created_at'] as String),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'email': email,
+      'name': name,
+      'role': role.value,
+      'client_id': clientId,
+      'created_at': createdAt.toIso8601String(),
+    };
+  }
+}
+
+/// Client configuration - loaded dynamically after login
+class ClientConfig {
+  static Client? _currentClient;
+  static AppUser? _currentUser;
+
+  static bool get isAdmin => _currentUser?.isAdmin ?? false;
+
+  static Client get client {
+    if (_currentClient == null) {
+      throw Exception('Client not loaded. User must log in first.');
+    }
+    return _currentClient!;
+  }
+
+  static AppUser get user {
+    if (_currentUser == null) {
+      throw Exception('User not loaded. User must log in first.');
+    }
+    return _currentUser!;
+  }
+
+  static String get businessPhone => _currentClient?.businessPhone ?? '';
+  static String get businessName => _currentClient?.name ?? 'Vivid Dashboard';
+  static String get webhookUrl => _currentClient?.webhookUrl ?? '';
+  static List<String> get enabledFeatures => _currentClient?.enabledFeatures ?? [];
+
+  static bool hasFeature(String feature) {
+    if (isAdmin) return true; // Admins see everything
+    return enabledFeatures.contains(feature);
+  }
+
+  static void setClientUser(Client client, AppUser user) {
+    _currentClient = client;
+    _currentUser = user;
+  }
+
+  static void setAdmin(AppUser user) {
+    _currentUser = user;
+    _currentClient = null;
+  }
+
+  static void clear() {
+    _currentClient = null;
+    _currentUser = null;
+  }
+
+  static String get currentUserName => _currentUser?.name ?? 'User';
+  static String get currentUserEmail => _currentUser?.email ?? '';
+}
+
+/// Client model from Supabase
+class Client {
+  final String id;
+  final String name;
+  final String slug;
+  final String? webhookUrl;
+  final List<String> enabledFeatures;
+  final String? businessPhone;
+  final DateTime createdAt;
+
+  const Client({
+    required this.id,
+    required this.name,
+    required this.slug,
+    this.webhookUrl,
+    required this.enabledFeatures,
+    this.businessPhone,
+    required this.createdAt,
+  });
+
+  factory Client.fromJson(Map<String, dynamic> json) {
+    return Client(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      slug: json['slug'] as String,
+      webhookUrl: json['webhook_url'] as String?,
+      enabledFeatures: (json['enabled_features'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList() ?? [],
+      businessPhone: json['business_phone'] as String?,
+      createdAt: DateTime.parse(json['created_at'] as String),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'slug': slug,
+      'webhook_url': webhookUrl,
+      'enabled_features': enabledFeatures,
+      'business_phone': businessPhone,
+      'created_at': createdAt.toIso8601String(),
+    };
+  }
 }
 
 // ============================================
-// AGENT (for authentication)
+// AGENT (for UI display)
 // ============================================
 
 /// Simple agent model for UI
 class Agent {
   final String name;
   final String email;
-  final bool isOnline;
 
   const Agent({
     required this.name,
     required this.email,
-    this.isOnline = true,
   });
 
   String get initials {
@@ -192,13 +335,5 @@ class Agent {
       return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
     }
     return name.substring(0, name.length.clamp(0, 2)).toUpperCase();
-  }
-
-  Agent copyWith({String? name, String? email, bool? isOnline}) {
-    return Agent(
-      name: name ?? this.name,
-      email: email ?? this.email,
-      isOnline: isOnline ?? this.isOnline,
-    );
   }
 }

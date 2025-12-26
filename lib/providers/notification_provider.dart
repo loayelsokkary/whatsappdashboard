@@ -74,7 +74,7 @@ class NotificationProvider extends ChangeNotifier {
             final customerPhone = newMessage['customer_phone'] as String?;
 
             // Only process messages for our business
-            if (aiPhone != BusinessConfig.businessPhone) return;
+            if (aiPhone != ClientConfig.businessPhone) return;
             if (customerPhone == null) return;
 
             // Check if AI is disabled for this customer
@@ -105,7 +105,7 @@ class NotificationProvider extends ChangeNotifier {
       final response = await _client
           .from('ai_chat_settings')
           .select('ai_enabled')
-          .eq('ai_phone', BusinessConfig.businessPhone)
+          .eq('ai_phone', ClientConfig.businessPhone)
           .eq('customer_phone', customerPhone)
           .maybeSingle();
 

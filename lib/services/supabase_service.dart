@@ -22,7 +22,7 @@ class SupabaseService {
   
   static const String _supabaseUrl = 'https://zxvjzaowvzvfgrzdimbm.supabase.co';
   static const String _supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp4dmp6YW93dnp2ZmdyemRpbWJtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU1NjM2MjUsImV4cCI6MjA4MTEzOTYyNX0.NkVPCRTLcQOdkzIhfsnvPBWJ1vcfeMQOysAuq6Erryg';
-  static const String _n8nWebhookUrl = 'https://n8n.vividsystems.cloud/webhook/dashboard';
+  // Webhook URL is now loaded from ClientConfig
 
   // ============================================
   // SINGLETON
@@ -49,6 +49,239 @@ class SupabaseService {
   }
 
   // ============================================
+  // AUTHENTICATION
+  // ============================================
+
+  /// Login with email and password (unified for admins and clients)
+  /// Returns AppUser if successful, null otherwise
+  Future<AppUser?> login(String email, String password) async {
+    try {
+      // Find user by email and password
+      final userResponse = await client
+          .from('users')
+          .select()
+          .eq('email', email)
+          .eq('password', password)
+          .maybeSingle();
+
+      if (userResponse == null) {
+        print('Invalid credentials');
+        return null;
+      }
+
+      final user = AppUser.fromJson(userResponse);
+
+      if (user.isAdmin) {
+        // Admin user - no client needed
+        ClientConfig.setAdmin(user);
+        print('Admin logged in: ${user.name}');
+      } else {
+        // Client user - fetch their client config
+        if (user.clientId == null) {
+          print('Client user has no client_id');
+          return null;
+        }
+
+        final clientResponse = await client
+            .from('clients')
+            .select()
+            .eq('id', user.clientId!)
+            .single();
+
+        final clientData = Client.fromJson(clientResponse);
+        ClientConfig.setClientUser(clientData, user);
+
+        print('Logged in as ${user.name} for ${clientData.name}');
+        print('Enabled features: ${clientData.enabledFeatures}');
+      }
+
+      return user;
+    } catch (e) {
+      print('Login error: $e');
+      return null;
+    }
+  }
+
+  /// Logout - clear client config
+  void logout() {
+    ClientConfig.clear();
+    _cachedExchanges.clear();
+    _channel?.unsubscribe();
+    print('Logged out');
+  }
+
+  // ============================================
+  // ADMIN: CLIENT MANAGEMENT
+  // ============================================
+
+  /// Fetch all clients
+  Future<List<Client>> fetchAllClients() async {
+    try {
+      final response = await client
+          .from('clients')
+          .select()
+          .order('created_at', ascending: false);
+
+      return (response as List).map((json) => Client.fromJson(json)).toList();
+    } catch (e) {
+      print('Fetch clients error: $e');
+      return [];
+    }
+  }
+
+  /// Create a new client
+  Future<Client?> createClient({
+    required String name,
+    required String slug,
+    String? webhookUrl,
+    List<String> enabledFeatures = const [],
+    String? businessPhone,
+  }) async {
+    try {
+      final response = await client.from('clients').insert({
+        'name': name,
+        'slug': slug,
+        'webhook_url': webhookUrl,
+        'enabled_features': enabledFeatures,
+        'business_phone': businessPhone,
+      }).select().single();
+
+      return Client.fromJson(response);
+    } catch (e) {
+      print('Create client error: $e');
+      return null;
+    }
+  }
+
+  /// Update a client
+  Future<bool> updateClient({
+    required String clientId,
+    String? name,
+    String? slug,
+    String? webhookUrl,
+    List<String>? enabledFeatures,
+    String? businessPhone,
+  }) async {
+    try {
+      final updates = <String, dynamic>{};
+      if (name != null) updates['name'] = name;
+      if (slug != null) updates['slug'] = slug;
+      if (webhookUrl != null) updates['webhook_url'] = webhookUrl;
+      if (enabledFeatures != null) updates['enabled_features'] = enabledFeatures;
+      if (businessPhone != null) updates['business_phone'] = businessPhone;
+
+      await client.from('clients').update(updates).eq('id', clientId);
+      return true;
+    } catch (e) {
+      print('Update client error: $e');
+      return false;
+    }
+  }
+
+  /// Delete a client
+  Future<bool> deleteClient(String clientId) async {
+    try {
+      await client.from('clients').delete().eq('id', clientId);
+      return true;
+    } catch (e) {
+      print('Delete client error: $e');
+      return false;
+    }
+  }
+
+  // ============================================
+  // ADMIN: USER MANAGEMENT
+  // ============================================
+
+  /// Fetch all users for a client
+  Future<List<AppUser>> fetchClientUsers(String clientId) async {
+    try {
+      final response = await client
+          .from('users')
+          .select()
+          .eq('client_id', clientId)
+          .eq('role', 'client')
+          .order('created_at', ascending: false);
+
+      return (response as List).map((json) => AppUser.fromJson(json)).toList();
+    } catch (e) {
+      print('Fetch client users error: $e');
+      return [];
+    }
+  }
+
+  /// Fetch all users (both admins and clients)
+  Future<List<Map<String, dynamic>>> fetchAllUsers() async {
+    try {
+      final response = await client
+          .from('users')
+          .select('*, clients(name)')
+          .order('created_at', ascending: false);
+
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('Fetch all users error: $e');
+      return [];
+    }
+  }
+
+  /// Create a new user
+  Future<AppUser?> createUser({
+    required String email,
+    required String password,
+    required String name,
+    required String role,
+    String? clientId,
+  }) async {
+    try {
+      final response = await client.from('users').insert({
+        'email': email,
+        'password': password,
+        'name': name,
+        'role': role,
+        'client_id': clientId,
+      }).select().single();
+
+      return AppUser.fromJson(response);
+    } catch (e) {
+      print('Create user error: $e');
+      return null;
+    }
+  }
+
+  /// Update a user
+  Future<bool> updateUser({
+    required String userId,
+    String? email,
+    String? password,
+    String? name,
+  }) async {
+    try {
+      final updates = <String, dynamic>{};
+      if (email != null) updates['email'] = email;
+      if (password != null) updates['password'] = password;
+      if (name != null) updates['name'] = name;
+
+      await client.from('users').update(updates).eq('id', userId);
+      return true;
+    } catch (e) {
+      print('Update user error: $e');
+      return false;
+    }
+  }
+
+  /// Delete a user
+  Future<bool> deleteUser(String userId) async {
+    try {
+      await client.from('users').delete().eq('id', userId);
+      return true;
+    } catch (e) {
+      print('Delete user error: $e');
+      return false;
+    }
+  }
+
+  // ============================================
   // FETCH
   // ============================================
 
@@ -57,7 +290,7 @@ class SupabaseService {
       final response = await client
           .from('messages')
           .select()
-          .eq('ai_phone', BusinessConfig.businessPhone)
+          .eq('ai_phone', ClientConfig.businessPhone)
           .order('created_at', ascending: true);
 
       _cachedExchanges = (response as List)
@@ -77,7 +310,7 @@ class SupabaseService {
   // ============================================
 
   void subscribeToExchanges() {
-    final businessPhone = BusinessConfig.businessPhone;
+    final businessPhone = ClientConfig.businessPhone;
 
     _channel?.unsubscribe();
 
@@ -143,14 +376,20 @@ class SupabaseService {
     String? customerName,
   }) async {
     try {
+      final webhookUrl = ClientConfig.webhookUrl;
+      if (webhookUrl.isEmpty) {
+        print('No webhook URL configured');
+        return false;
+      }
+
       final response = await http.post(
-        Uri.parse(_n8nWebhookUrl),
+        Uri.parse(webhookUrl),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
-          'ai_phone': BusinessConfig.businessPhone,
+          'ai_phone': ClientConfig.businessPhone,
           'customer_phone': customerPhone,
           'customer_name': customerName ?? 'Customer',
-          'manager_response': message, // Save to manager_response column
+          'manager_response': message,
         }),
       );
 
@@ -173,7 +412,7 @@ class SupabaseService {
 
   Future<AnalyticsData> fetchAnalytics() async {
     try {
-      final businessPhone = BusinessConfig.businessPhone;
+      final businessPhone = ClientConfig.businessPhone;
       final now = DateTime.now();
       final todayStart = DateTime(now.year, now.month, now.day);
       final weekStart = todayStart.subtract(Duration(days: now.weekday - 1));
@@ -275,7 +514,7 @@ class SupabaseService {
       final response = await client
           .from('ai_chat_settings')
           .select('ai_enabled')
-          .eq('ai_phone', BusinessConfig.businessPhone)
+          .eq('ai_phone', ClientConfig.businessPhone)
           .eq('customer_phone', customerPhone)
           .maybeSingle();
 
@@ -297,7 +536,7 @@ class SupabaseService {
       final existing = await client
           .from('ai_chat_settings')
           .select('id')
-          .eq('ai_phone', BusinessConfig.businessPhone)
+          .eq('ai_phone', ClientConfig.businessPhone)
           .eq('customer_phone', customerPhone)
           .maybeSingle();
 
@@ -310,12 +549,12 @@ class SupabaseService {
               'last_changed_by': 'manager',
               'updated_at': DateTime.now().toIso8601String(),
             })
-            .eq('ai_phone', BusinessConfig.businessPhone)
+            .eq('ai_phone', ClientConfig.businessPhone)
             .eq('customer_phone', customerPhone);
       } else {
         // Insert new
         await client.from('ai_chat_settings').insert({
-          'ai_phone': BusinessConfig.businessPhone,
+          'ai_phone': ClientConfig.businessPhone,
           'customer_phone': customerPhone,
           'ai_enabled': enabled,
           'last_changed_by': 'manager',

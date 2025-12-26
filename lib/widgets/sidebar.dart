@@ -9,6 +9,7 @@ import '../theme/vivid_theme.dart';
 /// Navigation destinations
 enum NavDestination {
   conversations,
+  broadcasts,
   analytics,
 }
 
@@ -77,21 +78,31 @@ class Sidebar extends StatelessWidget {
 
           const SizedBox(height: 32),
 
-          // Main Navigation
-          _NavItem(
-            icon: Icons.forum,
-            label: 'Chats',
-            isSelected: currentDestination == NavDestination.conversations,
-            badge: conversationsProvider.totalCount,
-            onTap: () => onDestinationChanged(NavDestination.conversations),
-          ),
+          // Main Navigation - Only show enabled features
+          if (ClientConfig.hasFeature('conversations'))
+            _NavItem(
+              icon: Icons.forum,
+              label: 'Chats',
+              isSelected: currentDestination == NavDestination.conversations,
+              badge: conversationsProvider.totalCount,
+              onTap: () => onDestinationChanged(NavDestination.conversations),
+            ),
           
-          _NavItem(
-            icon: Icons.analytics,
-            label: 'Analytics',
-            isSelected: currentDestination == NavDestination.analytics,
-            onTap: () => onDestinationChanged(NavDestination.analytics),
-          ),
+          if (ClientConfig.hasFeature('broadcasts'))
+            _NavItem(
+              icon: Icons.campaign,
+              label: 'Broadcasts',
+              isSelected: currentDestination == NavDestination.broadcasts,
+              onTap: () => onDestinationChanged(NavDestination.broadcasts),
+            ),
+          
+          if (ClientConfig.hasFeature('analytics'))
+            _NavItem(
+              icon: Icons.analytics,
+              label: 'Analytics',
+              isSelected: currentDestination == NavDestination.analytics,
+              onTap: () => onDestinationChanged(NavDestination.analytics),
+            ),
 
           const SizedBox(height: 16),
           
@@ -188,29 +199,6 @@ class Sidebar extends StatelessWidget {
           ),
         ),
         const PopupMenuDivider(),
-        PopupMenuItem(
-          value: 'status',
-          child: Row(
-            children: [
-              Container(
-                width: 10,
-                height: 10,
-                decoration: BoxDecoration(
-                  color: agent?.isOnline == true
-                      ? VividColors.statusSuccess
-                      : VividColors.textMuted,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Text(
-                agent?.isOnline == true ? 'Online' : 'Offline',
-                style: const TextStyle(color: VividColors.textSecondary),
-              ),
-            ],
-          ),
-        ),
-        const PopupMenuDivider(),
         const PopupMenuItem(
           value: 'logout',
           child: Row(
@@ -228,8 +216,6 @@ class Sidebar extends StatelessWidget {
       onSelected: (value) {
         if (value == 'logout') {
           agentProvider.logout();
-        } else if (value == 'status') {
-          agentProvider.updateOnlineStatus(!agent!.isOnline);
         }
       },
       child: Container(
@@ -239,9 +225,7 @@ class Sidebar extends StatelessWidget {
           color: VividColors.deepBlue,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: agent?.isOnline == true
-                ? VividColors.statusSuccess.withOpacity(0.5)
-                : VividColors.tealBlue.withOpacity(0.3),
+            color: VividColors.tealBlue.withOpacity(0.3),
             width: 2,
           ),
         ),
