@@ -6,10 +6,12 @@ import 'providers/conversations_provider.dart';
 import 'providers/agent_provider.dart';
 import 'providers/analytics_provider.dart';
 import 'providers/broadcast_analytics_provider.dart';
+import 'providers/admin_analytics_provider.dart';
 import 'providers/notification_provider.dart';
 import 'providers/ai_settings_provider.dart';
 import 'providers/broadcasts_provider.dart';
 import 'providers/admin_provider.dart';
+import 'providers/manager_chat_provider.dart';
 import 'models/models.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
@@ -18,6 +20,7 @@ import 'screens/broadcast_analytics_screen.dart';
 import 'screens/admin_panel.dart';
 import 'widgets/sidebar.dart';
 import 'widgets/broadcasts_panel.dart';
+import 'widgets/manager_chat_panel.dart';
 import 'theme/vivid_theme.dart';
 
 void main() async {
@@ -37,10 +40,12 @@ class VividDashboardApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ConversationsProvider()),
         ChangeNotifierProvider(create: (_) => AnalyticsProvider()),
         ChangeNotifierProvider(create: (_) => BroadcastAnalyticsProvider()),
+        ChangeNotifierProvider(create: (_) => AdminAnalyticsProvider()),
         ChangeNotifierProvider(create: (_) => NotificationProvider()),
         ChangeNotifierProvider(create: (_) => AiSettingsProvider()),
         ChangeNotifierProvider(create: (_) => BroadcastsProvider()),
         ChangeNotifierProvider(create: (_) => AdminProvider()),
+        ChangeNotifierProvider(create: (_) => ManagerChatProvider()),
       ],
       child: MaterialApp(
         title: 'Vivid Dashboard',
@@ -110,6 +115,8 @@ class _MainScaffoldState extends State<MainScaffold> {
       _currentDestination = NavDestination.conversations;
     } else if (ClientConfig.hasFeature('broadcasts')) {
       _currentDestination = NavDestination.broadcasts;
+    } else if (ClientConfig.hasFeature('manager_chat')) {
+      _currentDestination = NavDestination.managerChat;
     } else if (ClientConfig.hasFeature('analytics')) {
       _currentDestination = NavDestination.analytics;
     }
@@ -146,6 +153,8 @@ class _MainScaffoldState extends State<MainScaffold> {
         return const DashboardScreen();
       case NavDestination.broadcasts:
         return const BroadcastsPanel();
+      case NavDestination.managerChat:
+        return const ManagerChatPanel();
       case NavDestination.analytics:
         // Show broadcast analytics for broadcast clients, regular for conversation clients
         if (ClientConfig.hasFeature('broadcasts') && !ClientConfig.hasFeature('conversations')) {

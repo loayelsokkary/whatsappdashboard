@@ -56,7 +56,55 @@ class SupabaseService {
   /// Returns AppUser if successful, null otherwise
   Future<AppUser?> login(String email, String password) async {
     try {
-      // Find user by email and password
+      print('Attempting login for: $email');
+      
+      // Try secure login function first (hashed passwords)
+      try {
+        final loginResponse = await client
+            .rpc('login_user', params: {
+              'p_email': email,
+              'p_password': password,
+            });
+
+        if (loginResponse != null && (loginResponse as List).isNotEmpty) {
+          final userData = loginResponse[0];
+          print('User found via secure login: ${userData['name']} (${userData['role']})');
+          
+          // Fetch full user data
+          final userResponse = await client
+              .from('users')
+              .select()
+              .eq('id', userData['id'])
+              .single();
+
+          final user = AppUser.fromJson(userResponse);
+          
+          if (user.isAdmin) {
+            ClientConfig.setAdmin(user);
+            print('Admin login successful');
+            return user;
+          }
+
+          // Load client config
+          if (user.clientId != null) {
+            final clientResponse = await client
+                .from('clients')
+                .select()
+                .eq('id', user.clientId!)
+                .single();
+
+            final clientData = Client.fromJson(clientResponse);
+            ClientConfig.setClientUser(clientData, user);
+          }
+
+          print('Client login successful');
+          return user;
+        }
+      } catch (rpcError) {
+        print('Secure login not available, trying fallback: $rpcError');
+      }
+      
+      // Fallback: plain text password (for transition period)
       final userResponse = await client
           .from('users')
           .select()
@@ -65,10 +113,12 @@ class SupabaseService {
           .maybeSingle();
 
       if (userResponse == null) {
-        print('Invalid credentials');
+        print('No user found with email: $email');
         return null;
       }
 
+      print('User found via fallback: ${userResponse['name']} (${userResponse['role']})');
+      
       final user = AppUser.fromJson(userResponse);
 
       if (user.isAdmin) {
@@ -78,15 +128,22 @@ class SupabaseService {
       } else {
         // Client user - fetch their client config
         if (user.clientId == null) {
-          print('Client user has no client_id');
+          print('ERROR: Client user has no client_id');
           return null;
         }
 
+        print('Fetching client with id: ${user.clientId}');
+        
         final clientResponse = await client
             .from('clients')
             .select()
             .eq('id', user.clientId!)
-            .single();
+            .maybeSingle();
+
+        if (clientResponse == null) {
+          print('ERROR: No client found with id: ${user.clientId}');
+          return null;
+        }
 
         final clientData = Client.fromJson(clientResponse);
         ClientConfig.setClientUser(clientData, user);
@@ -96,8 +153,9 @@ class SupabaseService {
       }
 
       return user;
-    } catch (e) {
+    } catch (e, stack) {
       print('Login error: $e');
+      print('Stack trace: $stack');
       return null;
     }
   }
@@ -234,13 +292,33 @@ class SupabaseService {
     String? clientId,
   }) async {
     try {
-      final response = await client.from('users').insert({
+      // Try to hash the password using pgcrypto
+      String? hashedPassword;
+      try {
+        final hashResult = await client.rpc('hash_password', params: {
+          'password': password,
+        });
+        hashedPassword = hashResult as String?;
+      } catch (e) {
+        print('Hash function not available, storing plain (temporary): $e');
+      }
+      
+      final userData = <String, dynamic>{
         'email': email,
-        'password': password,
         'name': name,
         'role': role,
         'client_id': clientId,
-      }).select().single();
+      };
+      
+      // Use hashed password if available, otherwise plain
+      if (hashedPassword != null) {
+        userData['password_hash'] = hashedPassword;
+        userData['password'] = password; // Keep both during transition
+      } else {
+        userData['password'] = password;
+      }
+      
+      final response = await client.from('users').insert(userData).select().single();
 
       return AppUser.fromJson(response);
     } catch (e) {
@@ -259,8 +337,21 @@ class SupabaseService {
     try {
       final updates = <String, dynamic>{};
       if (email != null) updates['email'] = email;
-      if (password != null) updates['password'] = password;
       if (name != null) updates['name'] = name;
+      
+      // Hash the password if provided
+      if (password != null) {
+        try {
+          final hashResult = await client.rpc('hash_password', params: {
+            'password': password,
+          });
+          updates['password_hash'] = hashResult;
+          updates['password'] = password; // Keep both during transition
+        } catch (e) {
+          print('Hash function not available, storing plain (temporary): $e');
+          updates['password'] = password;
+        }
+      }
 
       await client.from('users').update(updates).eq('id', userId);
       return true;

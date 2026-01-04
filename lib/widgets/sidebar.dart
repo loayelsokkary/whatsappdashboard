@@ -11,6 +11,7 @@ enum NavDestination {
   conversations,
   broadcasts,
   analytics,
+  managerChat,
 }
 
 class Sidebar extends StatelessWidget {
@@ -63,7 +64,8 @@ class Sidebar extends StatelessWidget {
                   height: 14,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: conversationsProvider.isConnected
+                    // Show green if no conversations feature, or if connected
+                    color: !ClientConfig.hasFeature('conversations') || conversationsProvider.isConnected
                         ? VividColors.statusSuccess
                         : VividColors.statusUrgent,
                     border: Border.all(
@@ -102,6 +104,14 @@ class Sidebar extends StatelessWidget {
               label: 'Analytics',
               isSelected: currentDestination == NavDestination.analytics,
               onTap: () => onDestinationChanged(NavDestination.analytics),
+            ),
+          
+          if (ClientConfig.hasFeature('manager_chat'))
+            _NavItem(
+              icon: Icons.psychology,
+              label: 'AI Chat',
+              isSelected: currentDestination == NavDestination.managerChat,
+              onTap: () => onDestinationChanged(NavDestination.managerChat),
             ),
 
           const SizedBox(height: 16),

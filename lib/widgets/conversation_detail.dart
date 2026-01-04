@@ -684,10 +684,19 @@ class _MessageBubbleState extends State<_MessageBubble>
 
                       const SizedBox(height: 4),
 
-                      // Time + status
+                      // Time + status + voice indicator
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          // Voice message indicator (subtle)
+                          if (isCustomer && widget.message.isVoiceMessage) ...[
+                            Icon(
+                              Icons.mic,
+                              size: 11,
+                              color: VividColors.textPrimary.withOpacity(0.4),
+                            ),
+                            const SizedBox(width: 3),
+                          ],
                           AnimatedSwitcher(
                             duration: const Duration(milliseconds: 200),
                             child: Text(

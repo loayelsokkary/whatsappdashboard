@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/admin_provider.dart';
+import '../providers/admin_analytics_provider.dart';
 import '../providers/agent_provider.dart';
 import '../models/models.dart';
 import '../theme/vivid_theme.dart';
+import '../widgets/client_analytics_view.dart';
+import '../widgets/vivid_company_analytics_view.dart';
 
 /// Admin Panel - Manage clients and users
 class AdminPanel extends StatefulWidget {
@@ -19,7 +22,7 @@ class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateM
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = context.read<AdminProvider>();
@@ -48,6 +51,8 @@ class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateM
               children: [
                 _ClientsTab(),
                 _UsersTab(),
+                _AnalyticsTab(),
+                const VividCompanyAnalyticsView(),
               ],
             ),
           ),
@@ -167,6 +172,14 @@ class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateM
           Tab(
             icon: Icon(Icons.people),
             text: 'Users',
+          ),
+          Tab(
+            icon: Icon(Icons.insights),
+            text: 'Client Analytics',
+          ),
+          Tab(
+            icon: Icon(Icons.auto_graph),
+            text: 'Vivid Analytics',
           ),
         ],
       ),
@@ -695,12 +708,6 @@ class _UsersTab extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              const Spacer(),
-              IconButton(
-                onPressed: () => provider.fetchAllUsers(),
-                icon: const Icon(Icons.refresh),
-                color: VividColors.textMuted,
-              ),
             ],
           ),
         ),
@@ -719,7 +726,7 @@ class _UsersTab extends StatelessWidget {
               Expanded(flex: 2, child: Text('Name', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
               Expanded(flex: 3, child: Text('Email', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
               Expanded(flex: 2, child: Text('Client', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
-              SizedBox(width: 80, child: Text('Actions', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
+              SizedBox(width: 50, child: Text('Actions', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
             ],
           ),
         ),
@@ -775,23 +782,10 @@ class _UsersTab extends StatelessWidget {
                                 ),
                               ),
                               SizedBox(
-                                width: 80,
+                                width: 50,
                                 child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.end,
                                   children: [
-                                    IconButton(
-                                      onPressed: () {
-                                        // Find the client and select it
-                                        final clientId = user['client_id'];
-                                        final client = provider.clients.firstWhere(
-                                          (c) => c.id == clientId,
-                                          orElse: () => provider.clients.first,
-                                        );
-                                        provider.selectClient(client);
-                                      },
-                                      icon: const Icon(Icons.visibility, size: 18),
-                                      color: VividColors.textMuted,
-                                      tooltip: 'View Client',
-                                    ),
                                     IconButton(
                                       onPressed: () {
                                         provider.deleteUser(user['id']);
@@ -890,10 +884,10 @@ class _ClientDialogState extends State<_ClientDialog> {
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
-                  children: ['conversations', 'broadcasts', 'analytics'].map((feature) {
+                  children: ['conversations', 'broadcasts', 'analytics', 'manager_chat'].map((feature) {
                     final isSelected = _selectedFeatures.contains(feature);
                     return FilterChip(
-                      label: Text(feature),
+                      label: Text(_formatFeatureName(feature)),
                       selected: isSelected,
                       onSelected: (selected) {
                         setState(() {
@@ -994,6 +988,21 @@ class _ClientDialogState extends State<_ClientDialog> {
 
     if (success && mounted) {
       Navigator.pop(context);
+    }
+  }
+
+  String _formatFeatureName(String feature) {
+    switch (feature) {
+      case 'conversations':
+        return 'Conversations';
+      case 'broadcasts':
+        return 'Broadcasts';
+      case 'analytics':
+        return 'Analytics';
+      case 'manager_chat':
+        return 'AI Assistant';
+      default:
+        return feature;
     }
   }
 }
@@ -1143,5 +1152,237 @@ class _UserDialogState extends State<_UserDialog> {
     if (success && mounted) {
       Navigator.pop(context);
     }
+  }
+}
+
+// ============================================
+// ANALYTICS TAB
+// ============================================
+
+class _AnalyticsTab extends StatefulWidget {
+  @override
+  State<_AnalyticsTab> createState() => _AnalyticsTabState();
+}
+
+class _AnalyticsTabState extends State<_AnalyticsTab> {
+  Client? _selectedClient;
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<AdminProvider>(
+      builder: (context, provider, _) {
+        if (provider.isLoading && provider.clients.isEmpty) {
+          return const Center(
+            child: CircularProgressIndicator(color: VividColors.cyan),
+          );
+        }
+
+        return Row(
+          children: [
+            // Client list sidebar
+            Container(
+              width: 280,
+              decoration: BoxDecoration(
+                color: VividColors.navy,
+                border: Border(
+                  right: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Header
+                  Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Select Client',
+                          style: TextStyle(
+                            color: VividColors.textPrimary,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'View internal metrics',
+                          style: TextStyle(
+                            color: VividColors.textMuted.withOpacity(0.7),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(color: VividColors.tealBlue, height: 1),
+                  
+                  // Client list
+                  Expanded(
+                    child: ListView.builder(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      itemCount: provider.clients.length,
+                      itemBuilder: (context, index) {
+                        final client = provider.clients[index];
+                        final isSelected = _selectedClient?.id == client.id;
+                        
+                        return _ClientListItem(
+                          client: client,
+                          isSelected: isSelected,
+                          onTap: () {
+                            setState(() => _selectedClient = client);
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            // Analytics content
+            Expanded(
+              child: _selectedClient == null
+                  ? _buildEmptyState()
+                  : ClientAnalyticsView(client: _selectedClient!),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.insights_outlined,
+            size: 64,
+            color: VividColors.textMuted.withOpacity(0.3),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Select a client to view analytics',
+            style: TextStyle(
+              color: VividColors.textMuted,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Choose from the list on the left',
+            style: TextStyle(
+              color: VividColors.textMuted.withOpacity(0.7),
+              fontSize: 13,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ClientListItem extends StatelessWidget {
+  final Client client;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _ClientListItem({
+    required this.client,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        decoration: BoxDecoration(
+          color: isSelected ? VividColors.brightBlue.withOpacity(0.15) : null,
+          border: Border(
+            left: BorderSide(
+              color: isSelected ? VividColors.cyan : Colors.transparent,
+              width: 3,
+            ),
+          ),
+        ),
+        child: Row(
+          children: [
+            // Avatar
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: isSelected 
+                    ? VividColors.cyan.withOpacity(0.2) 
+                    : VividColors.deepBlue,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                client.name.substring(0, 1).toUpperCase(),
+                style: TextStyle(
+                  color: isSelected ? VividColors.cyan : VividColors.textMuted,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            
+            // Info
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    client.name,
+                    style: TextStyle(
+                      color: isSelected ? VividColors.textPrimary : VividColors.textMuted,
+                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      Icon(
+                        client.hasFeature('conversations') 
+                            ? Icons.chat_bubble_outline 
+                            : Icons.campaign_outlined,
+                        size: 12,
+                        color: VividColors.textMuted.withOpacity(0.7),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        client.hasFeature('conversations') 
+                            ? 'Conversations' 
+                            : 'Broadcasts',
+                        style: TextStyle(
+                          color: VividColors.textMuted.withOpacity(0.7),
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            
+            // Arrow
+            Icon(
+              Icons.chevron_right,
+              color: isSelected ? VividColors.cyan : VividColors.textMuted.withOpacity(0.3),
+              size: 20,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

@@ -67,8 +67,20 @@ class ConversationsProvider extends ChangeNotifier {
 
     final List<Message> result = [];
     for (final ex in customerExchanges) {
-      // Customer message (skip empty)
-      if (ex.customerMessage.trim().isNotEmpty) {
+      // Customer message - check for voice or text
+      if (ex.isVoiceMessage) {
+        // Voice message (transcribed)
+        result.add(Message(
+          id: '${ex.id}_customer',
+          content: ex.voiceResponse!,
+          senderType: SenderType.customer,
+          isOutbound: false,
+          senderName: ex.customerName,
+          createdAt: ex.createdAt,
+          isVoiceMessage: true,
+        ));
+      } else if (ex.customerMessage.trim().isNotEmpty) {
+        // Regular text message
         result.add(Message(
           id: '${ex.id}_customer',
           content: ex.customerMessage,
@@ -76,6 +88,7 @@ class ConversationsProvider extends ChangeNotifier {
           isOutbound: false,
           senderName: ex.customerName,
           createdAt: ex.createdAt,
+          isVoiceMessage: false,
         ));
       }
 
@@ -218,17 +231,21 @@ class ConversationsProvider extends ChangeNotifier {
 
       // Determine status based on last exchange
       // "Needs Reply" if customer sent message but no AI or manager response
-      final hasCustomerMessage = lastEx.customerMessage.trim().isNotEmpty;
+      final hasCustomerMessage = lastEx.customerMessage.trim().isNotEmpty || lastEx.isVoiceMessage;
       final hasAiResponse = lastEx.aiResponse.trim().isNotEmpty;
       final hasManagerResponse = lastEx.managerResponse != null && 
                                   lastEx.managerResponse!.trim().isNotEmpty;
       
-      final status = (hasCustomerMessage && !hasAiResponse && !hasManagerResponse)
+      // Check if AI response is just a handoff message (doesn't count as real reply)
+      final isHandoffMessage = hasAiResponse && _isHandoffMessage(lastEx.aiResponse);
+      final hasRealAiResponse = hasAiResponse && !isHandoffMessage;
+      
+      final status = (hasCustomerMessage && !hasRealAiResponse && !hasManagerResponse)
           ? ConversationStatus.needsReply
           : ConversationStatus.replied;
 
-      // Determine last message to show
-      String lastMessage = lastEx.customerMessage;
+      // Determine last message to show (use customerInput to handle voice messages)
+      String lastMessage = lastEx.customerInput;
       if (hasManagerResponse) {
         lastMessage = lastEx.managerResponse!;
       } else if (hasAiResponse) {
@@ -370,6 +387,24 @@ class ConversationsProvider extends ChangeNotifier {
       notifyListeners();
       return false;
     }
+  }
+
+  // ============================================
+  // HELPERS
+  // ============================================
+
+  /// Check if a message is an automated handoff message (manager takeover)
+  bool _isHandoffMessage(String message) {
+    final lowerMessage = message.toLowerCase().trim();
+    
+    // English handoff phrases
+    if (lowerMessage.contains('manager will be with you shortly')) return true;
+    if (lowerMessage.contains('the manager will be with you')) return true;
+    
+    // Arabic handoff phrases
+    if (message.contains('المدير سيكون معك')) return true;
+    
+    return false;
   }
 
   // ============================================

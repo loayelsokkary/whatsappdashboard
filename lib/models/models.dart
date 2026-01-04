@@ -37,6 +37,7 @@ class RawExchange {
   final String customerPhone;
   final String? customerName;
   final String customerMessage;
+  final String? voiceResponse; // NEW: Transcribed voice message
   final String aiResponse;
   final String? managerResponse; // NEW: Manager's response
   final DateTime createdAt;
@@ -47,6 +48,7 @@ class RawExchange {
     required this.customerPhone,
     this.customerName,
     required this.customerMessage,
+    this.voiceResponse,
     required this.aiResponse,
     this.managerResponse,
     required this.createdAt,
@@ -59,6 +61,7 @@ class RawExchange {
       customerPhone: json['customer_phone'] as String,
       customerName: json['customer_name'] as String?,
       customerMessage: json['customer_message'] as String? ?? '',
+      voiceResponse: json['Voice_Response'] as String?,
       aiResponse: json['ai_response'] as String? ?? '',
       managerResponse: json['manager_response'] as String?,
       createdAt: json['created_at'] != null
@@ -67,6 +70,12 @@ class RawExchange {
     );
   }
 
+  /// Check if this exchange was from a voice message
+  bool get isVoiceMessage => voiceResponse != null && voiceResponse!.trim().isNotEmpty;
+
+  /// Get the customer's input (text or voice transcription)
+  String get customerInput => isVoiceMessage ? voiceResponse! : customerMessage;
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -74,6 +83,7 @@ class RawExchange {
       'customer_phone': customerPhone,
       'customer_name': customerName,
       'customer_message': customerMessage,
+      'Voice_Response': voiceResponse,
       'ai_response': aiResponse,
       'manager_response': managerResponse,
       'created_at': createdAt.toIso8601String(),
@@ -93,6 +103,7 @@ class Message {
   final bool isOutbound;
   final String? senderName;
   final DateTime createdAt;
+  final bool isVoiceMessage; // NEW: Was this transcribed from voice?
 
   const Message({
     required this.id,
@@ -101,6 +112,7 @@ class Message {
     required this.isOutbound,
     this.senderName,
     required this.createdAt,
+    this.isVoiceMessage = false,
   });
 }
 
@@ -202,7 +214,9 @@ class AppUser {
       name: json['name'] as String,
       role: UserRole.fromString(json['role'] as String? ?? 'client'),
       clientId: json['client_id'] as String?,
-      createdAt: DateTime.parse(json['created_at'] as String),
+      createdAt: json['created_at'] != null 
+          ? DateTime.parse(json['created_at'] as String)
+          : DateTime.now(),
     );
   }
 
@@ -222,6 +236,10 @@ class AppUser {
 class ClientConfig {
   static Client? _currentClient;
   static AppUser? _currentUser;
+
+  // Nullable getters for safe access
+  static Client? get currentClient => _currentClient;
+  static AppUser? get currentUser => _currentUser;
 
   static bool get isAdmin => _currentUser?.isAdmin ?? false;
 
@@ -312,6 +330,11 @@ class Client {
       'business_phone': businessPhone,
       'created_at': createdAt.toIso8601String(),
     };
+  }
+
+  /// Check if client has a specific feature enabled
+  bool hasFeature(String feature) {
+    return enabledFeatures.contains(feature);
   }
 }
 

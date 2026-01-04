@@ -71,21 +71,6 @@ class ConversationListPanel extends StatelessWidget {
                   ),
                 ),
               ),
-              const Spacer(),
-              IconButton(
-                onPressed: () => provider.fetchConversations(),
-                icon: provider.isLoading
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: VividColors.cyan,
-                        ),
-                      )
-                    : const Icon(Icons.refresh, size: 20),
-                color: VividColors.textMuted,
-              ),
             ],
           ),
           const SizedBox(height: 16),

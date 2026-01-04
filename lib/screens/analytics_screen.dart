@@ -83,12 +83,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const Spacer(),
-                    IconButton(
-                      onPressed: () => context.read<AnalyticsProvider>().fetchAnalytics(),
-                      icon: const Icon(Icons.refresh, color: VividColors.cyan),
-                      tooltip: 'Refresh',
-                    ),
                   ],
                 ),
                 const SizedBox(height: 24),

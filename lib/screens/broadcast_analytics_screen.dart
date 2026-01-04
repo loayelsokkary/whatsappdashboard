@@ -51,13 +51,6 @@ class _BroadcastAnalyticsScreenState extends State<BroadcastAnalyticsScreen> {
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          const Spacer(),
-                          IconButton(
-                            onPressed: () => provider.fetchAnalytics(),
-                            icon: const Icon(Icons.refresh),
-                            color: VividColors.textMuted,
-                            tooltip: 'Refresh',
-                          ),
                         ],
                       ),
                       const SizedBox(height: 24),
