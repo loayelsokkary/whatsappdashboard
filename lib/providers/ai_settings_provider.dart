@@ -21,14 +21,18 @@ class AiChatSetting {
   });
 
   factory AiChatSetting.fromJson(Map<String, dynamic> json) {
+    // Handle phone numbers being either int or string
+    final rawAiPhone = json['ai_phone'];
+    final rawCustomerPhone = json['customer_phone'];
+    
     return AiChatSetting(
       id: json['id'] as String,
-      aiPhone: json['ai_phone'] as String,
-      customerPhone: json['customer_phone'] as String,
+      aiPhone: rawAiPhone?.toString() ?? '',
+      customerPhone: rawCustomerPhone?.toString() ?? '',
       aiEnabled: json['ai_enabled'] as bool? ?? true,
       lastChangedBy: json['last_changed_by'] as String?,
       updatedAt: json['updated_at'] != null 
-          ? DateTime.parse(json['updated_at']) 
+          ? DateTime.parse(json['updated_at'].toString()) 
           : null,
     );
   }

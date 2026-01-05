@@ -108,8 +108,8 @@ class Sidebar extends StatelessWidget {
           
           if (ClientConfig.hasFeature('manager_chat'))
             _NavItem(
-              icon: Icons.psychology,
-              label: 'AI Chat',
+              icon: Icons.chat_bubble_rounded,
+              label: 'Vivid AI',
               isSelected: currentDestination == NavDestination.managerChat,
               onTap: () => onDestinationChanged(NavDestination.managerChat),
             ),

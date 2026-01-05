@@ -70,8 +70,8 @@ class NotificationProvider extends ChangeNotifier {
           table: 'messages',
           callback: (payload) async {
             final newMessage = payload.newRecord;
-            final aiPhone = newMessage['ai_phone'] as String?;
-            final customerPhone = newMessage['customer_phone'] as String?;
+            final aiPhone = newMessage['ai_phone']?.toString();
+            final customerPhone = newMessage['customer_phone']?.toString();
 
             // Only process messages for our business
             if (aiPhone != ClientConfig.businessPhone) return;

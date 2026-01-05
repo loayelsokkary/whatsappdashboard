@@ -55,10 +55,14 @@ class RawExchange {
   });
 
   factory RawExchange.fromJson(Map<String, dynamic> json) {
+    // Handle phone numbers being either int or string
+    final rawAiPhone = json['ai_phone'];
+    final rawCustomerPhone = json['customer_phone'];
+    
     return RawExchange(
       id: json['id'] as String,
-      aiPhone: json['ai_phone'] as String,
-      customerPhone: json['customer_phone'] as String,
+      aiPhone: rawAiPhone?.toString() ?? '',
+      customerPhone: rawCustomerPhone?.toString() ?? '',
       customerName: json['customer_name'] as String?,
       customerMessage: json['customer_message'] as String? ?? '',
       voiceResponse: json['Voice_Response'] as String?,
@@ -307,6 +311,10 @@ class Client {
   });
 
   factory Client.fromJson(Map<String, dynamic> json) {
+    // Handle business_phone being either int or string
+    final rawPhone = json['business_phone'];
+    final businessPhone = rawPhone != null ? rawPhone.toString() : null;
+    
     return Client(
       id: json['id'] as String,
       name: json['name'] as String,
@@ -315,7 +323,7 @@ class Client {
       enabledFeatures: (json['enabled_features'] as List<dynamic>?)
           ?.map((e) => e as String)
           .toList() ?? [],
-      businessPhone: json['business_phone'] as String?,
+      businessPhone: businessPhone,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
   }
