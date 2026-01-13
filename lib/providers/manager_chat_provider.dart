@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 import '../services/supabase_service.dart';
+import '../models/models.dart';
 
 /// Message model for manager chat
 class ManagerChatMessage {
@@ -191,6 +194,39 @@ class ManagerChatProvider extends ChangeNotifier {
       if (!_messages.any((m) => m.id == message.id)) {
         _messages.add(message);
         notifyListeners();
+      }
+
+      // Call the webhook to trigger AI processing
+      final webhookUrl = ClientConfig.webhookUrl;
+      if (webhookUrl.isNotEmpty) {
+        final payload = {
+          'source': 'dashboard',
+          'type': 'query',
+          'body': {
+            'record': {
+              'id': message.id,
+              'agent_id': _agentId,
+              'manager_phone_number': _managerPhoneNumber,
+              'message': text.trim(),
+              'role': 'manager',
+              'status': 'pending',
+            }
+          },
+          'timestamp': DateTime.now().toIso8601String(),
+        };
+
+        print('📱 Calling webhook: $webhookUrl');
+        
+        // Fire and forget - don't wait for response
+        http.post(
+          Uri.parse(webhookUrl),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(payload),
+        ).then((res) {
+          print('📱 Webhook response: ${res.statusCode}');
+        }).catchError((e) {
+          print('📱 Webhook error: $e');
+        });
       }
 
       // Start timeout timer - if no response in 30 seconds, show error

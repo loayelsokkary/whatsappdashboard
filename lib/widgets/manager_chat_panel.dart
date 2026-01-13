@@ -91,23 +91,12 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
       ),
       child: Row(
         children: [
-          // Avatar - Vivid AI logo style
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              gradient: VividColors.primaryGradient,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Center(
-              child: Icon(
-                Icons.chat_bubble_rounded,
-                color: Colors.white,
-                size: 22,
-              ),
-            ),
+          // Avatar - Vivid AI logo
+          ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: VividWidgets.icon(size: 56),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 10),
           
           // Info
           Expanded(
@@ -299,7 +288,11 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.chat_bubble_rounded, size: 12, color: VividColors.cyan),
+                    Icon(
+                      Icons.chat_bubble_rounded,
+                      size: 12,
+                      color: VividColors.cyan,
+                    ),
                     const SizedBox(width: 4),
                     Text(
                       'Vivid AI',
@@ -454,7 +447,7 @@ class _MessageBubble extends StatelessWidget {
             child: Column(
               crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
               children: [
-                // Label for AI messages
+                // Label for messages
                 if (!isUser)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 4, left: 4),
@@ -478,13 +471,38 @@ class _MessageBubble extends StatelessWidget {
                       ],
                     ),
                   ),
+                
+                // Manager label for outgoing messages
+                if (isUser)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4, right: 4),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.support_agent,
+                          size: 12,
+                          color: VividColors.brightBlue,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Manager',
+                          style: TextStyle(
+                            color: VividColors.brightBlue,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
 
                 // Bubble
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
                     color: isUser 
-                        ? VividColors.brightBlue.withOpacity(0.15) 
+                        ? VividColors.brightBlue
                         : VividColors.deepBlue,
                     borderRadius: BorderRadius.only(
                       topLeft: const Radius.circular(16),
@@ -492,11 +510,16 @@ class _MessageBubble extends StatelessWidget {
                       bottomLeft: Radius.circular(isUser ? 16 : 4),
                       bottomRight: Radius.circular(isUser ? 4 : 16),
                     ),
-                    border: Border.all(
-                      color: isUser 
-                          ? VividColors.brightBlue.withOpacity(0.3) 
-                          : VividColors.tealBlue.withOpacity(0.2),
+                    border: isUser ? null : Border.all(
+                      color: VividColors.tealBlue.withOpacity(0.2),
                     ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.12),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
                   child: Column(
                     crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,

@@ -364,7 +364,26 @@ class SupabaseService {
   /// Delete a user
   Future<bool> deleteUser(String userId) async {
     try {
+      // First check if user exists
+      final existing = await client.from('users').select('id').eq('id', userId).maybeSingle();
+      
+      if (existing == null) {
+        print('User not found: $userId');
+        return false;
+      }
+      
+      // Perform delete
       await client.from('users').delete().eq('id', userId);
+      
+      // Verify deletion
+      final stillExists = await client.from('users').select('id').eq('id', userId).maybeSingle();
+      
+      if (stillExists != null) {
+        print('Delete failed - user still exists. Check RLS policies.');
+        return false;
+      }
+      
+      print('User deleted successfully: $userId');
       return true;
     } catch (e) {
       print('Delete user error: $e');

@@ -576,7 +576,7 @@ class _ClientDetail extends StatelessWidget {
   void _confirmDeleteUser(BuildContext context, AppUser user) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         backgroundColor: VividColors.navy,
         title: const Text('Delete User', style: TextStyle(color: VividColors.textPrimary)),
         content: Text(
@@ -585,13 +585,37 @@ class _ClientDetail extends StatelessWidget {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () {
-              context.read<AdminProvider>().deleteUser(user.id);
-              Navigator.pop(context);
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              
+              final success = await context.read<AdminProvider>().deleteUser(user.id);
+              
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Row(
+                      children: [
+                        Icon(
+                          success ? Icons.check_circle : Icons.error,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(success 
+                            ? 'User "${user.name}" deleted successfully' 
+                            : 'Failed to delete user. Check RLS policies in Supabase.'),
+                      ],
+                    ),
+                    backgroundColor: success ? VividColors.statusSuccess : Colors.red,
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                );
+              }
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             child: const Text('Delete'),
@@ -787,8 +811,58 @@ class _UsersTab extends StatelessWidget {
                                   mainAxisAlignment: MainAxisAlignment.end,
                                   children: [
                                     IconButton(
-                                      onPressed: () {
-                                        provider.deleteUser(user['id']);
+                                      onPressed: () async {
+                                        final userId = user['id'];
+                                        final userName = user['name'] ?? 'User';
+                                        
+                                        final confirmed = await showDialog<bool>(
+                                          context: context,
+                                          builder: (ctx) => AlertDialog(
+                                            backgroundColor: VividColors.navy,
+                                            title: const Text('Delete User', style: TextStyle(color: VividColors.textPrimary)),
+                                            content: Text(
+                                              'Are you sure you want to delete "$userName"?',
+                                              style: const TextStyle(color: VividColors.textMuted),
+                                            ),
+                                            actions: [
+                                              TextButton(
+                                                onPressed: () => Navigator.pop(ctx, false),
+                                                child: const Text('Cancel'),
+                                              ),
+                                              ElevatedButton(
+                                                onPressed: () => Navigator.pop(ctx, true),
+                                                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                                                child: const Text('Delete'),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                        
+                                        if (confirmed == true && context.mounted) {
+                                          final success = await provider.deleteUser(userId);
+                                          
+                                          if (context.mounted) {
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              SnackBar(
+                                                content: Row(
+                                                  children: [
+                                                    Icon(
+                                                      success ? Icons.check_circle : Icons.error,
+                                                      color: Colors.white,
+                                                      size: 18,
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    Text(success 
+                                                        ? 'User "$userName" deleted' 
+                                                        : 'Failed to delete. Check Supabase RLS.'),
+                                                  ],
+                                                ),
+                                                backgroundColor: success ? VividColors.statusSuccess : Colors.red,
+                                                behavior: SnackBarBehavior.floating,
+                                              ),
+                                            );
+                                          }
+                                        }
                                       },
                                       icon: const Icon(Icons.delete, size: 18),
                                       color: Colors.red.withOpacity(0.7),

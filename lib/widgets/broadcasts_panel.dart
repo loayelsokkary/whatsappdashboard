@@ -95,6 +95,30 @@ class _BroadcastsList extends StatelessWidget {
                     ),
                   ),
                 ),
+                const SizedBox(width: 12),
+                // Compose button
+                GestureDetector(
+                  onTap: () => _showComposeBroadcastDialog(context),
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      gradient: VividColors.primaryGradient,
+                      borderRadius: BorderRadius.circular(10),
+                      boxShadow: [
+                        BoxShadow(
+                          color: VividColors.brightBlue.withOpacity(0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.add,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -123,6 +147,13 @@ class _BroadcastsList extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  void _showComposeBroadcastDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => const _ComposeBroadcastDialog(),
     );
   }
 
@@ -600,5 +631,278 @@ class _RecipientTile extends StatelessWidget {
       return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
     }
     return name.substring(0, name.length.clamp(0, 2)).toUpperCase();
+  }
+}
+
+// ============================================
+// COMPOSE BROADCAST DIALOG
+// ============================================
+
+class _ComposeBroadcastDialog extends StatefulWidget {
+  const _ComposeBroadcastDialog();
+
+  @override
+  State<_ComposeBroadcastDialog> createState() => _ComposeBroadcastDialogState();
+}
+
+class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
+  final TextEditingController _controller = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(() => _focusNode.requestFocus());
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _send() async {
+    final text = _controller.text.trim();
+    if (text.isEmpty) return;
+
+    final provider = context.read<BroadcastsProvider>();
+    final success = await provider.sendBroadcast(text);
+
+    if (success && mounted) {
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              const Text('Broadcast sent! Processing recipients...'),
+            ],
+          ),
+          backgroundColor: VividColors.statusSuccess,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = context.watch<BroadcastsProvider>();
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      child: Container(
+        width: 500,
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: VividColors.navy,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: VividColors.tealBlue.withOpacity(0.3)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.3),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    gradient: VividColors.primaryGradient,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.campaign, color: Colors.white, size: 22),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'New Broadcast',
+                        style: TextStyle(
+                          color: VividColors.textPrimary,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Describe who should receive the message',
+                        style: TextStyle(
+                          color: VividColors.textMuted,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close, color: VividColors.textMuted),
+                ),
+              ],
+            ),
+            
+            const SizedBox(height: 20),
+
+            // Instructions
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: VividColors.deepBlue.withOpacity(0.5),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: VividColors.cyan.withOpacity(0.2)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.lightbulb_outline, color: VividColors.cyan, size: 18),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Example: "Send everyone with a laser appointment this week a 10% discount offer"',
+                      style: TextStyle(
+                        color: VividColors.textMuted,
+                        fontSize: 12,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // Input field
+            Container(
+              decoration: BoxDecoration(
+                color: VividColors.darkNavy,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: VividColors.tealBlue.withOpacity(0.3)),
+              ),
+              child: TextField(
+                controller: _controller,
+                focusNode: _focusNode,
+                enabled: !provider.isSending,
+                maxLines: 4,
+                style: const TextStyle(color: VividColors.textPrimary, fontSize: 15),
+                decoration: const InputDecoration(
+                  hintText: 'Type your broadcast instruction...',
+                  hintStyle: TextStyle(color: VividColors.textMuted),
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.all(16),
+                ),
+              ),
+            ),
+
+            // Error message
+            if (provider.sendError != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline, color: Colors.red, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        provider.sendError!,
+                        style: const TextStyle(color: Colors.red, fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 20),
+
+            // Buttons
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: provider.isSending ? null : () => Navigator.of(context).pop(),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(color: VividColors.textMuted),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                GestureDetector(
+                  onTap: provider.isSending ? null : _send,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    decoration: BoxDecoration(
+                      gradient: provider.isSending ? null : VividColors.primaryGradient,
+                      color: provider.isSending ? VividColors.deepBlue : null,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: provider.isSending ? null : [
+                        BoxShadow(
+                          color: VividColors.brightBlue.withOpacity(0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (provider.isSending) ...[
+                          const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: VividColors.cyan,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Sending...',
+                            style: TextStyle(
+                              color: VividColors.textMuted,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ] else ...[
+                          const Icon(Icons.send, color: Colors.white, size: 18),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Send Broadcast',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
