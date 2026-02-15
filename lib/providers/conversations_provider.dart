@@ -1,5 +1,8 @@
 import 'dart:async';
+import 'dart:js_interop';
 import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:web/web.dart' as web;
 import '../models/models.dart';
 import '../services/supabase_service.dart';
 
@@ -19,7 +22,12 @@ class ConversationsProvider extends ChangeNotifier {
   String? _error;
   String _searchQuery = '';
   ConversationStatus? _statusFilter;
+  String? _labelFilter;
   bool _isSending = false;
+  bool _soundEnabled = true;
+  bool _browserNotificationsEnabled = false;
+  Set<String> _knownExchangeIds = {};
+  bool _initialLoadDone = false;
 
   StreamSubscription<List<RawExchange>>? _exchangesSubscription;
 
@@ -34,6 +42,10 @@ class ConversationsProvider extends ChangeNotifier {
       filtered = filtered.where((c) => c.status == _statusFilter).toList();
     }
 
+    if (_labelFilter != null) {
+      filtered = filtered.where((c) => c.label == _labelFilter).toList();
+    }
+
     if (_searchQuery.isNotEmpty) {
       final query = _searchQuery.toLowerCase();
       filtered = filtered.where((c) =>
@@ -42,6 +54,17 @@ class ConversationsProvider extends ChangeNotifier {
     }
 
     return filtered;
+  }
+
+  /// All unique labels across conversations (for filter UI)
+  List<String> get availableLabels {
+    final labels = _conversations
+        .where((c) => c.label != null && c.label!.isNotEmpty)
+        .map((c) => c.label!)
+        .toSet()
+        .toList();
+    labels.sort();
+    return labels;
   }
 
   Conversation? get selectedConversation {
@@ -67,9 +90,17 @@ class ConversationsProvider extends ChangeNotifier {
 
     final List<Message> result = [];
     for (final ex in customerExchanges) {
-      // Customer message - check for voice or text
+      // Determine if this is a manager-initiated exchange (no customer input)
+      // Media attribution relies on null vs empty string for managerResponse:
+      //   - null: no manager involved → media is from the customer
+      //   - '' (empty string): manager responded with no text (e.g. photo only) → media is from manager
+      final bool hasManagerResponse = ex.managerResponse != null;
+      final bool isManagerInitiated = ex.customerMessage.trim().isEmpty && !ex.isVoiceMessage && hasManagerResponse;
+      final bool mediaIsFromManager = ex.hasMedia && isManagerInitiated;
+
+      // Customer message - check for voice, text, or media
       if (ex.isVoiceMessage) {
-        // Voice message (transcribed)
+        // Voice message (transcribed) - media always from customer
         result.add(Message(
           id: '${ex.id}_customer',
           content: ex.voiceResponse!,
@@ -78,9 +109,13 @@ class ConversationsProvider extends ChangeNotifier {
           senderName: ex.customerName,
           createdAt: ex.createdAt,
           isVoiceMessage: true,
+          label: ex.label,
+          mediaUrl: ex.mediaUrl,
+          mediaType: ex.mediaType,
+          mediaFilename: ex.mediaFilename,
         ));
-      } else if (ex.customerMessage.trim().isNotEmpty) {
-        // Regular text message
+      } else if (ex.customerMessage.trim().isNotEmpty || (ex.hasMedia && !mediaIsFromManager)) {
+        // Regular text message or customer media message
         result.add(Message(
           id: '${ex.id}_customer',
           content: ex.customerMessage,
@@ -89,6 +124,10 @@ class ConversationsProvider extends ChangeNotifier {
           senderName: ex.customerName,
           createdAt: ex.createdAt,
           isVoiceMessage: false,
+          label: ex.label,
+          mediaUrl: mediaIsFromManager ? null : ex.mediaUrl,
+          mediaType: mediaIsFromManager ? null : ex.mediaType,
+          mediaFilename: mediaIsFromManager ? null : ex.mediaFilename,
         ));
       }
 
@@ -104,15 +143,18 @@ class ConversationsProvider extends ChangeNotifier {
         ));
       }
 
-      // Manager response (skip empty)
-      if (ex.managerResponse != null && ex.managerResponse!.trim().isNotEmpty) {
+      // Manager response (show if has text OR if has manager-sent media)
+      if ((ex.managerResponse != null && ex.managerResponse!.trim().isNotEmpty) || mediaIsFromManager) {
         result.add(Message(
           id: '${ex.id}_manager',
-          content: ex.managerResponse!,
+          content: ex.managerResponse?.trim().isNotEmpty == true ? ex.managerResponse! : '',
           senderType: SenderType.manager,
           isOutbound: true,
           senderName: null,
           createdAt: ex.createdAt.add(const Duration(seconds: 2)),
+          mediaUrl: mediaIsFromManager ? ex.mediaUrl : null,
+          mediaType: mediaIsFromManager ? ex.mediaType : null,
+          mediaFilename: mediaIsFromManager ? ex.mediaFilename : null,
         ));
       }
     }
@@ -141,12 +183,15 @@ class ConversationsProvider extends ChangeNotifier {
   String? get error => _error;
   String get searchQuery => _searchQuery;
   ConversationStatus? get statusFilter => _statusFilter;
+  String? get labelFilter => _labelFilter;
   bool get isLoadingMessages => _isLoading;
   bool get isSending => _isSending;
 
   int get totalCount => _conversations.length;
   int get needsReplyCount => _conversations.where((c) => c.status == ConversationStatus.needsReply).length;
   int get repliedCount => _conversations.where((c) => c.status == ConversationStatus.replied).length;
+  int get totalUnreadCount => _conversations.fold<int>(0, (sum, c) => sum + c.unreadCount);
+  bool get soundEnabled => _soundEnabled;
 
   // ============================================
   // INITIALIZATION
@@ -156,15 +201,38 @@ class ConversationsProvider extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
+    // Request browser notification permission
+    _requestNotificationPermission();
+
     try {
       final service = SupabaseService.instance;
       _allExchanges = await service.fetchAllExchanges();
       _isConnected = true;
+      _knownExchangeIds = _allExchanges.map((e) => e.id).toSet();
+      _initialLoadDone = true;
       _buildConversations();
 
       service.subscribeToExchanges();
       _exchangesSubscription = service.exchangesStream.listen((exchanges) {
+        final previousIds = _knownExchangeIds;
         _allExchanges = exchanges;
+        _knownExchangeIds = exchanges.map((e) => e.id).toSet();
+
+        // Detect new customer messages (only after initial load)
+        if (_initialLoadDone) {
+          final newIds = _knownExchangeIds.difference(previousIds);
+          for (final newId in newIds) {
+            try {
+              final exchange = exchanges.firstWhere((e) => e.id == newId);
+              final hasCustomerMsg = exchange.customerMessage.trim().isNotEmpty || exchange.isVoiceMessage;
+              final isSelected = exchange.customerPhone == _selectedCustomerPhone;
+              if (hasCustomerMsg && !isSelected) {
+                _triggerNewMessageNotification(exchange);
+              }
+            } catch (_) {}
+          }
+        }
+
         _buildConversations();
         _clearOldPendingMessages();
         notifyListeners();
@@ -252,16 +320,51 @@ class ConversationsProvider extends ChangeNotifier {
         lastMessage = lastEx.aiResponse;
       }
 
+      // Get the most recent label (from latest exchange with a label)
+      String? label;
+      for (int i = exchanges.length - 1; i >= 0; i--) {
+        if (exchanges[i].label != null && exchanges[i].label!.isNotEmpty) {
+          label = exchanges[i].label;
+          break;
+        }
+      }
+
+      // Count consecutive unread exchanges from the end
+      int unread = 0;
+      if (status == ConversationStatus.needsReply) {
+        for (int i = exchanges.length - 1; i >= 0; i--) {
+          final ex = exchanges[i];
+          final hasCust = ex.customerMessage.trim().isNotEmpty || ex.isVoiceMessage;
+          final hasAi = ex.aiResponse.trim().isNotEmpty && !_isHandoffMessage(ex.aiResponse);
+          final hasMgr = ex.managerResponse != null && ex.managerResponse!.trim().isNotEmpty;
+          if (hasCust && !hasAi && !hasMgr) {
+            unread++;
+          } else {
+            break;
+          }
+        }
+      }
+
       return Conversation(
         customerPhone: customerPhone,
         customerName: customerName,
         lastMessage: lastMessage,
         lastMessageAt: lastEx.createdAt,
         status: status,
-        unreadCount: status == ConversationStatus.needsReply ? 1 : 0,
+        unreadCount: unread,
         startedAt: firstEx.createdAt,
+        label: label,
       );
     }).toList();
+
+    // Reset unread count for the currently selected conversation
+    if (_selectedCustomerPhone != null) {
+      final idx = _conversations.indexWhere(
+          (c) => c.customerPhone == _selectedCustomerPhone);
+      if (idx != -1) {
+        _conversations[idx] = _conversations[idx].copyWith(unreadCount: 0);
+      }
+    }
 
     _conversations.sort((a, b) => b.lastMessageAt.compareTo(a.lastMessageAt));
     print('Built ${_conversations.length} conversations');
@@ -331,21 +434,75 @@ class ConversationsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setLabelFilter(String? label) {
+    _labelFilter = label;
+    notifyListeners();
+  }
+
+  // ============================================
+  // MEDIA UPLOAD
+  // ============================================
+
+  Future<String?> uploadMedia(Uint8List bytes, String filename) async {
+    try {
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final slug = ClientConfig.currentClient?.slug ?? 'uploads';
+      final path = '$slug/${timestamp}_$filename';
+
+      // Determine content type from extension to avoid dart:io Platform detection on web
+      final ext = filename.split('.').last.toLowerCase();
+      final contentType = switch (ext) {
+        'jpg' || 'jpeg' => 'image/jpeg',
+        'png' => 'image/png',
+        'pdf' => 'application/pdf',
+        _ => 'application/octet-stream',
+      };
+
+      await SupabaseService.client.storage
+          .from('media')
+          .uploadBinary(
+            path,
+            bytes,
+            fileOptions: FileOptions(contentType: contentType),
+          );
+
+      final url = SupabaseService.client.storage
+          .from('media')
+          .getPublicUrl(path);
+
+      debugPrint('Uploaded media: $url');
+      return url;
+    } catch (e) {
+      debugPrint('Upload error: $e');
+      return null;
+    }
+  }
+
   // ============================================
   // SEND MESSAGE - OPTIMISTIC UPDATE
   // ============================================
 
-  Future<bool> sendMessage(String conversationId, String text) async {
-    if (_isSending || text.trim().isEmpty) return false;
+  Future<bool> sendMessage(
+    String conversationId,
+    String text, {
+    String? mediaUrl,
+    String? mediaType,
+    String? mediaFilename,
+  }) async {
+    if (_isSending) return false;
+    if (text.trim().isEmpty && mediaUrl == null) return false;
 
     final customerPhone = conversationId;
     final trimmedText = text.trim();
 
     // Create pending message (shows immediately)
     final pendingId = 'pending_${customerPhone}_${DateTime.now().millisecondsSinceEpoch}';
+    final pendingContent = mediaUrl != null && trimmedText.isEmpty
+        ? (mediaFilename ?? 'Media')
+        : trimmedText;
     final pendingMessage = Message(
       id: pendingId,
-      content: trimmedText,
+      content: pendingContent,
       senderType: SenderType.manager,
       isOutbound: true,
       senderName: null,
@@ -364,12 +521,15 @@ class ConversationsProvider extends ChangeNotifier {
         customerPhone: customerPhone,
         message: trimmedText,
         customerName: _selectedCustomerName,
+        mediaUrl: mediaUrl,
+        mediaType: mediaType,
+        mediaFilename: mediaFilename,
       );
 
       // DON'T remove pending message here!
       // Real-time subscription will bring the actual message
       // and _removePendingIfExists() will handle the swap
-      
+
       if (!success) {
         // Only remove on failure
         _pendingMessages.removeWhere((m) => m.id == pendingId);
@@ -386,6 +546,91 @@ class ConversationsProvider extends ChangeNotifier {
       _isSending = false;
       notifyListeners();
       return false;
+    }
+  }
+
+  // ============================================
+  // NOTIFICATIONS
+  // ============================================
+
+  void toggleSound() {
+    _soundEnabled = !_soundEnabled;
+    notifyListeners();
+  }
+
+  void _requestNotificationPermission() {
+    try {
+      final permission = web.Notification.permission;
+      if (permission == 'granted') {
+        _browserNotificationsEnabled = true;
+      } else if (permission != 'denied') {
+        web.Notification.requestPermission().toDart.then((result) {
+          _browserNotificationsEnabled = result.toDart == 'granted';
+          print('Browser notification permission: $_browserNotificationsEnabled');
+        });
+      }
+    } catch (e) {
+      print('Notification permission error: $e');
+    }
+  }
+
+  void _triggerNewMessageNotification(RawExchange exchange) {
+    final name = exchange.customerName ?? exchange.customerPhone;
+    final message = exchange.isVoiceMessage
+        ? (exchange.voiceResponse ?? 'Voice message')
+        : exchange.customerMessage;
+
+    // Play notification sound
+    if (_soundEnabled) {
+      _playNotificationSound();
+    }
+
+    // Show browser notification
+    if (_browserNotificationsEnabled) {
+      _showBrowserNotification(name, message);
+    }
+  }
+
+  void _playNotificationSound() {
+    try {
+      final context = web.AudioContext();
+      final oscillator = context.createOscillator();
+      final gainNode = context.createGain();
+
+      oscillator.connect(gainNode);
+      gainNode.connect(context.destination);
+
+      oscillator.type = 'sine';
+      oscillator.frequency.value = 880;
+      gainNode.gain.value = 0.2;
+
+      oscillator.start();
+      oscillator.stop(context.currentTime + 0.15);
+
+      // Second tone after short pause
+      final osc2 = context.createOscillator();
+      final gain2 = context.createGain();
+      osc2.connect(gain2);
+      gain2.connect(context.destination);
+      osc2.type = 'sine';
+      osc2.frequency.value = 1100;
+      gain2.gain.value = 0.2;
+      osc2.start(context.currentTime + 0.2);
+      osc2.stop(context.currentTime + 0.35);
+    } catch (e) {
+      print('Sound error: $e');
+    }
+  }
+
+  void _showBrowserNotification(String name, String message) {
+    try {
+      final truncated = message.length > 100 ? '${message.substring(0, 100)}...' : message;
+      web.Notification(
+        'New message from $name',
+        web.NotificationOptions(body: truncated),
+      );
+    } catch (e) {
+      print('Browser notification error: $e');
     }
   }
 

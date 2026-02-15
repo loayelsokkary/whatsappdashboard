@@ -37,6 +37,14 @@ dependencies:
   # Cupertino Icons
   cupertino_icons: ^1.0.6
 
+  pdf: ^3.10.8
+
+  # File Picker (for media uploads)
+  file_picker: ^10.3.10
+
+  # Web APIs (for file downloads)
+  web: ^1.0.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

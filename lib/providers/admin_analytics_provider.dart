@@ -18,6 +18,31 @@ class VividCompanyAnalytics {
   final List<ClientActivity> mostActiveClients;
   final Map<String, int> messagesByDay; // Last 7 days
 
+  // Time-bucketed message counts
+  final int todayMessages;
+  final int thisWeekMessages;
+  final int thisMonthMessages;
+
+  // Broadcast delivery stats
+  final int broadcastDeliveredCount;
+  final int broadcastReadCount;
+  final int broadcastFailedCount;
+  final int broadcastTotalRecipients;
+
+  // Busiest hours distribution (hour 0-23 -> count)
+  final Map<int, int> messagesByHour;
+
+  // Top customers across all clients
+  final List<TopCustomerInfo> topCustomers;
+
+  // AI performance
+  final int handoffCount;
+  final int aiEnabledCustomers;
+  final int aiDisabledCustomers;
+
+  // Full client breakdown
+  final List<ClientActivity> allClientActivities;
+
   const VividCompanyAnalytics({
     required this.totalClients,
     required this.totalMessages,
@@ -30,6 +55,19 @@ class VividCompanyAnalytics {
     this.lastActivityAcrossAll,
     required this.mostActiveClients,
     required this.messagesByDay,
+    this.todayMessages = 0,
+    this.thisWeekMessages = 0,
+    this.thisMonthMessages = 0,
+    this.broadcastDeliveredCount = 0,
+    this.broadcastReadCount = 0,
+    this.broadcastFailedCount = 0,
+    this.broadcastTotalRecipients = 0,
+    this.messagesByHour = const {},
+    this.topCustomers = const [],
+    this.handoffCount = 0,
+    this.aiEnabledCustomers = 0,
+    this.aiDisabledCustomers = 0,
+    this.allClientActivities = const [],
   });
 }
 
@@ -40,6 +78,10 @@ class ClientActivity {
   final int messageCount;
   final int broadcastCount;
   final DateTime? lastActivity;
+  final int aiMessages;
+  final int managerMessages;
+  final int uniqueCustomers;
+  final double automationRate;
 
   const ClientActivity({
     required this.clientId,
@@ -47,6 +89,25 @@ class ClientActivity {
     required this.messageCount,
     required this.broadcastCount,
     this.lastActivity,
+    this.aiMessages = 0,
+    this.managerMessages = 0,
+    this.uniqueCustomers = 0,
+    this.automationRate = 0.0,
+  });
+}
+
+/// Top customer by message count across all clients
+class TopCustomerInfo {
+  final String phone;
+  final String? name;
+  final int messageCount;
+  final String clientName;
+
+  const TopCustomerInfo({
+    required this.phone,
+    this.name,
+    required this.messageCount,
+    required this.clientName,
   });
 }
 
@@ -116,13 +177,54 @@ class AdminAnalyticsProvider extends ChangeNotifier {
   // Real-time subscriptions
   RealtimeChannel? _messagesChannel;
   RealtimeChannel? _broadcastsChannel;
-  RealtimeChannel? _companyMessagesChannel;
+  final List<RealtimeChannel> _companyChannels = [];
   Client? _currentClient;
 
   bool get isLoading => _isLoading;
   bool get isLoadingCompany => _isLoadingCompany;
   String? get error => _error;
   VividCompanyAnalytics? get companyAnalytics => _companyAnalytics;
+
+  // ============================================
+  // TABLE NAME HELPERS
+  // ============================================
+
+  /// Get messages table name for a client
+  String _getMessagesTable(Client client) {
+    if (client.messagesTable != null && client.messagesTable!.isNotEmpty) {
+      return client.messagesTable!;
+    }
+    if (client.slug.isNotEmpty) {
+      return '${client.slug}_messages';
+    }
+    return 'messages';
+  }
+
+  /// Get broadcasts table name for a client
+  String _getBroadcastsTable(Client client) {
+    if (client.broadcastsTable != null && client.broadcastsTable!.isNotEmpty) {
+      return client.broadcastsTable!;
+    }
+    if (client.slug.isNotEmpty) {
+      return '${client.slug}_broadcasts';
+    }
+    return 'broadcasts';
+  }
+
+  /// Get broadcast recipients table name for a client
+  String _getRecipientsTable(Client client) {
+    final broadcastsTable = _getBroadcastsTable(client);
+    final prefix = broadcastsTable.replaceAll('_broadcasts', '');
+    if (prefix.isNotEmpty && prefix != broadcastsTable) {
+      return '${prefix}_broadcast_recipients';
+    }
+    return 'broadcast_recipients';
+  }
+
+  /// Get the phone number to use for conversation queries
+  String? _getConversationsPhone(Client client) {
+    return client.conversationsPhone ?? client.businessPhone;
+  }
 
   ConversationClientAnalytics? getConversationAnalytics(String clientId) {
     return _conversationAnalytics[clientId];
@@ -134,7 +236,8 @@ class AdminAnalyticsProvider extends ChangeNotifier {
 
   /// Fetch analytics for a conversation-based client
   Future<void> fetchConversationAnalytics(Client client) async {
-    if (client.businessPhone == null || client.businessPhone!.isEmpty) {
+    final phone = _getConversationsPhone(client);
+    if (phone == null || phone.isEmpty) {
       _error = 'No business phone configured for this client';
       notifyListeners();
       return;
@@ -147,12 +250,13 @@ class AdminAnalyticsProvider extends ChangeNotifier {
 
     try {
       final supabase = SupabaseService.client;
-      
-      // Fetch all messages for this client's phone number
+      final table = _getMessagesTable(client);
+
+      // Fetch all messages for this client's phone number from their slug-based table
       final response = await supabase
-          .from('messages')
+          .from(table)
           .select()
-          .eq('ai_phone', client.businessPhone!)
+          .eq('ai_phone', phone)
           .order('created_at', ascending: false);
 
       final messages = response as List;
@@ -291,37 +395,40 @@ class AdminAnalyticsProvider extends ChangeNotifier {
     _messagesChannel?.unsubscribe();
 
     final supabase = SupabaseService.client;
+    final table = _getMessagesTable(client);
+    final phone = _getConversationsPhone(client);
 
     _messagesChannel = supabase
         .channel('admin_messages_${client.id}')
         .onPostgresChanges(
           event: PostgresChangeEvent.all,
           schema: 'public',
-          table: 'messages',
-          filter: PostgresChangeFilter(
+          table: table,
+          filter: phone != null ? PostgresChangeFilter(
             type: PostgresChangeFilterType.eq,
             column: 'ai_phone',
-            value: client.businessPhone!,
-          ),
+            value: phone,
+          ) : null,
           callback: (payload) {
             print('📊 Real-time analytics update for ${client.name}');
-            // Refetch analytics on any change
             _refetchConversationAnalytics(client);
           },
         )
         .subscribe();
 
-    print('📊 Subscribed to real-time analytics for ${client.name}');
+    print('📊 Subscribed to real-time analytics for ${client.name} on table: $table');
   }
 
   Future<void> _refetchConversationAnalytics(Client client) async {
     try {
       final supabase = SupabaseService.client;
-      
+      final table = _getMessagesTable(client);
+      final phone = _getConversationsPhone(client);
+
       final response = await supabase
-          .from('messages')
+          .from(table)
           .select()
-          .eq('ai_phone', client.businessPhone!)
+          .eq('ai_phone', phone!)
           .order('created_at', ascending: false);
 
       final messages = response as List;
@@ -341,12 +448,12 @@ class AdminAnalyticsProvider extends ChangeNotifier {
 
     try {
       final supabase = SupabaseService.client;
+      final table = _getBroadcastsTable(client);
 
-      // Fetch all broadcasts for this client
+      // Fetch all broadcasts from the client's slug-based table
       final broadcastsResponse = await supabase
-          .from('broadcasts')
+          .from(table)
           .select()
-          .eq('client_id', client.id)
           .order('sent_at', ascending: false);
 
       final broadcasts = broadcastsResponse as List;
@@ -367,10 +474,11 @@ class AdminAnalyticsProvider extends ChangeNotifier {
 
   Future<void> _processBroadcasts(Client client, List broadcasts) async {
     final supabase = SupabaseService.client;
-    
+    final recipientsTable = _getRecipientsTable(client);
+
     // Fetch all recipients for this client's broadcasts
     final broadcastIds = broadcasts.map((b) => b['id'] as String).toList();
-    
+
     int totalRecipients = 0;
     int deliveredCount = 0;
     int readCount = 0;
@@ -379,7 +487,7 @@ class AdminAnalyticsProvider extends ChangeNotifier {
 
     if (broadcastIds.isNotEmpty) {
       final recipientsResponse = await supabase
-          .from('broadcast_recipients')
+          .from(recipientsTable)
           .select()
           .inFilter('broadcast_id', broadcastIds);
 
@@ -409,20 +517,20 @@ class AdminAnalyticsProvider extends ChangeNotifier {
     }
 
     // Calculate rates
-    final deliveryRate = totalRecipients > 0 
-        ? (deliveredCount / totalRecipients) * 100 
+    final deliveryRate = totalRecipients > 0
+        ? (deliveredCount / totalRecipients) * 100
         : 0.0;
-    final readRate = totalRecipients > 0 
-        ? (readCount / totalRecipients) * 100 
+    final readRate = totalRecipients > 0
+        ? (readCount / totalRecipients) * 100
         : 0.0;
-    final failedRate = totalRecipients > 0 
-        ? (failedCount / totalRecipients) * 100 
+    final failedRate = totalRecipients > 0
+        ? (failedCount / totalRecipients) * 100
         : 0.0;
 
     // Universal metrics
     final daysSinceOnboarding = DateTime.now().difference(client.createdAt).inDays;
-    final avgCampaignSize = broadcasts.isNotEmpty 
-        ? totalRecipients / broadcasts.length 
+    final avgCampaignSize = broadcasts.isNotEmpty
+        ? totalRecipients / broadcasts.length
         : 0.0;
 
     _broadcastAnalytics[client.id] = BroadcastClientAnalytics(
@@ -442,18 +550,15 @@ class AdminAnalyticsProvider extends ChangeNotifier {
     _broadcastsChannel?.unsubscribe();
 
     final supabase = SupabaseService.client;
+    final broadcastsTable = _getBroadcastsTable(client);
+    final recipientsTable = _getRecipientsTable(client);
 
     _broadcastsChannel = supabase
         .channel('admin_broadcasts_${client.id}')
         .onPostgresChanges(
           event: PostgresChangeEvent.all,
           schema: 'public',
-          table: 'broadcasts',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'client_id',
-            value: client.id,
-          ),
+          table: broadcastsTable,
           callback: (payload) {
             print('📊 Real-time broadcast analytics update for ${client.name}');
             _refetchBroadcastAnalytics(client);
@@ -467,7 +572,7 @@ class AdminAnalyticsProvider extends ChangeNotifier {
         .onPostgresChanges(
           event: PostgresChangeEvent.update,
           schema: 'public',
-          table: 'broadcast_recipients',
+          table: recipientsTable,
           callback: (payload) {
             print('📊 Real-time recipient update for ${client.name}');
             _refetchBroadcastAnalytics(client);
@@ -475,17 +580,17 @@ class AdminAnalyticsProvider extends ChangeNotifier {
         )
         .subscribe();
 
-    print('📊 Subscribed to real-time broadcast analytics for ${client.name}');
+    print('📊 Subscribed to real-time broadcast analytics for ${client.name} on table: $broadcastsTable');
   }
 
   Future<void> _refetchBroadcastAnalytics(Client client) async {
     try {
       final supabase = SupabaseService.client;
+      final table = _getBroadcastsTable(client);
 
       final broadcastsResponse = await supabase
-          .from('broadcasts')
+          .from(table)
           .select()
-          .eq('client_id', client.id)
           .order('sent_at', ascending: false);
 
       final broadcasts = broadcastsResponse as List;
@@ -536,6 +641,7 @@ class AdminAnalyticsProvider extends ChangeNotifier {
   }
 
   /// Fetch company-wide analytics (all clients combined)
+  /// Iterates over each client's slug-based tables and aggregates results
   Future<void> fetchCompanyAnalytics(List<Client> clients) async {
     _isLoadingCompany = true;
     _error = null;
@@ -544,108 +650,214 @@ class AdminAnalyticsProvider extends ChangeNotifier {
     try {
       final supabase = SupabaseService.client;
 
-      // Fetch all messages
-      final messagesResponse = await supabase
-          .from('messages')
-          .select()
-          .order('created_at', ascending: false);
-      final allMessages = messagesResponse as List;
-
-      // Fetch all broadcasts
-      final broadcastsResponse = await supabase
-          .from('broadcasts')
-          .select()
-          .order('sent_at', ascending: false);
-      final allBroadcasts = broadcastsResponse as List;
-
-      // Fetch all broadcast recipients
-      final recipientsResponse = await supabase
-          .from('broadcast_recipients')
-          .select();
-      final allRecipients = recipientsResponse as List;
-
-      // Calculate metrics
       int totalAiMessages = 0;
       int totalManagerMessages = 0;
+      int totalMessageCount = 0;
+      int totalBroadcastCount = 0;
+      int totalRecipientsCount = 0;
       Set<String> uniqueCustomers = {};
       DateTime? lastActivity;
       Map<String, int> messagesByDay = {};
       Map<String, ClientActivity> clientActivityMap = {};
 
-      // Initialize client activity map
+      // New tracking variables
+      final now = DateTime.now();
+      final todayStart = DateTime(now.year, now.month, now.day);
+      final weekStart = todayStart.subtract(Duration(days: now.weekday - 1));
+      final monthStart = DateTime(now.year, now.month, 1);
+      int todayMessages = 0;
+      int thisWeekMessages = 0;
+      int thisMonthMessages = 0;
+      Map<int, int> messagesByHour = {};
+      Map<String, Map<String, dynamic>> globalCustomerCounts = {};
+      int handoffCount = 0;
+      int totalBroadcastDelivered = 0;
+      int totalBroadcastRead = 0;
+      int totalBroadcastFailed = 0;
+      int totalBroadcastRecipients = 0;
+      Map<String, int> clientAiMessages = {};
+      Map<String, int> clientManagerMessages = {};
+      Map<String, Set<String>> clientUniqueCustomers = {};
+
+      // Query each client's tables individually
       for (final client in clients) {
-        clientActivityMap[client.businessPhone ?? client.id] = ClientActivity(
-          clientId: client.id,
-          clientName: client.name,
-          messageCount: 0,
-          broadcastCount: 0,
-        );
-      }
+        int clientMessageCount = 0;
+        int clientBroadcastCount = 0;
+        DateTime? clientLastActivity;
 
-      // Process messages
-      for (final msg in allMessages) {
-        final aiResponse = msg['ai_response'] as String? ?? '';
-        final managerResponse = msg['manager_response'] as String?;
-        final customerPhone = msg['customer_phone'] as String?;
-        final aiPhone = msg['ai_phone'] as String?;
-        final createdAt = msg['created_at'] as String?;
+        // Fetch messages if client has conversations feature
+        if (client.hasFeature('conversations')) {
+          try {
+            final messagesTable = _getMessagesTable(client);
+            final phone = _getConversationsPhone(client);
 
-        if (aiResponse.trim().isNotEmpty) totalAiMessages++;
-        if (managerResponse != null && managerResponse.trim().isNotEmpty) {
-          totalManagerMessages++;
-        }
-        if (customerPhone != null) uniqueCustomers.add(customerPhone);
+            var query = supabase
+                .from(messagesTable)
+                .select()
+                .order('created_at', ascending: false);
 
-        // Track last activity
-        if (lastActivity == null && createdAt != null) {
-          lastActivity = DateTime.tryParse(createdAt);
-        }
-
-        // Count messages by day (last 7 days)
-        if (createdAt != null) {
-          final date = DateTime.tryParse(createdAt);
-          if (date != null) {
-            final dayKey = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-            final now = DateTime.now();
-            if (now.difference(date).inDays < 7) {
-              messagesByDay[dayKey] = (messagesByDay[dayKey] ?? 0) + 1;
+            if (phone != null && phone.isNotEmpty) {
+              query = supabase
+                  .from(messagesTable)
+                  .select()
+                  .eq('ai_phone', phone)
+                  .order('created_at', ascending: false);
             }
-          }
-        }
 
-        // Update client activity
-        if (aiPhone != null && clientActivityMap.containsKey(aiPhone)) {
-          final existing = clientActivityMap[aiPhone]!;
-          clientActivityMap[aiPhone] = ClientActivity(
-            clientId: existing.clientId,
-            clientName: existing.clientName,
-            messageCount: existing.messageCount + 1,
-            broadcastCount: existing.broadcastCount,
-            lastActivity: existing.lastActivity ?? (createdAt != null ? DateTime.tryParse(createdAt) : null),
-          );
-        }
-      }
+            final messagesResponse = await query;
+            final messages = messagesResponse as List;
+            clientMessageCount = messages.length;
+            totalMessageCount += messages.length;
 
-      // Process broadcasts for client activity
-      for (final broadcast in allBroadcasts) {
-        final clientId = broadcast['client_id'] as String?;
-        if (clientId != null) {
-          // Find the client by ID
-          for (final entry in clientActivityMap.entries) {
-            if (clients.any((c) => c.id == clientId && (c.businessPhone == entry.key || c.id == entry.key))) {
-              final existing = entry.value;
-              if (existing.clientId == clientId) {
-                clientActivityMap[entry.key] = ClientActivity(
-                  clientId: existing.clientId,
-                  clientName: existing.clientName,
-                  messageCount: existing.messageCount,
-                  broadcastCount: existing.broadcastCount + 1,
-                  lastActivity: existing.lastActivity,
-                );
+            for (final msg in messages) {
+              final aiResponse = msg['ai_response'] as String? ?? '';
+              final managerResponse = msg['manager_response'] as String?;
+              final customerPhone = msg['customer_phone'] as String?;
+              final createdAt = msg['created_at'] as String?;
+
+              final hasAi = aiResponse.trim().isNotEmpty;
+              final hasManager = managerResponse != null && managerResponse.trim().isNotEmpty;
+
+              if (hasAi) {
+                totalAiMessages++;
+                clientAiMessages[client.id] = (clientAiMessages[client.id] ?? 0) + 1;
+              }
+              if (hasManager) {
+                totalManagerMessages++;
+                clientManagerMessages[client.id] = (clientManagerMessages[client.id] ?? 0) + 1;
+              }
+              if (customerPhone != null) {
+                uniqueCustomers.add(customerPhone);
+                clientUniqueCustomers.putIfAbsent(client.id, () => {});
+                clientUniqueCustomers[client.id]!.add(customerPhone);
+
+                // Track top customers globally
+                globalCustomerCounts.putIfAbsent(customerPhone, () => {
+                  'name': msg['customer_name'] as String?,
+                  'count': 0,
+                  'clientName': client.name,
+                });
+                globalCustomerCounts[customerPhone]!['count'] =
+                    (globalCustomerCounts[customerPhone]!['count'] as int) + 1;
+                final custName = msg['customer_name'] as String?;
+                if (custName != null && custName.isNotEmpty) {
+                  globalCustomerCounts[customerPhone]!['name'] = custName;
+                }
+              }
+
+              // Handoff: AI tried but manager also stepped in
+              if (hasAi && hasManager) handoffCount++;
+
+              // Track last activity and time-based metrics
+              if (createdAt != null) {
+                final date = DateTime.tryParse(createdAt);
+                if (date != null) {
+                  if (lastActivity == null || date.isAfter(lastActivity)) {
+                    lastActivity = date;
+                  }
+                  if (clientLastActivity == null || date.isAfter(clientLastActivity)) {
+                    clientLastActivity = date;
+                  }
+
+                  // Time-bucketed counts
+                  if (date.isAfter(todayStart)) todayMessages++;
+                  if (date.isAfter(weekStart)) thisWeekMessages++;
+                  if (date.isAfter(monthStart)) thisMonthMessages++;
+
+                  // Busiest hours
+                  messagesByHour[date.hour] = (messagesByHour[date.hour] ?? 0) + 1;
+
+                  // Count messages by day (last 7 days)
+                  if (now.difference(date).inDays < 7) {
+                    final dayKey = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+                    messagesByDay[dayKey] = (messagesByDay[dayKey] ?? 0) + 1;
+                  }
+                }
               }
             }
+          } catch (e) {
+            print('Error fetching messages for ${client.name}: $e');
           }
         }
+
+        // Fetch broadcasts if client has broadcasts feature
+        if (client.hasFeature('broadcasts')) {
+          try {
+            final broadcastsTable = _getBroadcastsTable(client);
+            final recipientsTable = _getRecipientsTable(client);
+
+            final broadcastsResponse = await supabase
+                .from(broadcastsTable)
+                .select()
+                .order('sent_at', ascending: false);
+
+            final broadcasts = broadcastsResponse as List;
+            clientBroadcastCount = broadcasts.length;
+            totalBroadcastCount += broadcasts.length;
+
+            // Track last broadcast activity
+            if (broadcasts.isNotEmpty && broadcasts.first['sent_at'] != null) {
+              final broadcastDate = DateTime.tryParse(broadcasts.first['sent_at']);
+              if (broadcastDate != null) {
+                if (lastActivity == null || broadcastDate.isAfter(lastActivity)) {
+                  lastActivity = broadcastDate;
+                }
+                if (clientLastActivity == null || broadcastDate.isAfter(clientLastActivity)) {
+                  clientLastActivity = broadcastDate;
+                }
+              }
+            }
+
+            // Fetch recipients and count delivery statuses
+            final broadcastIds = broadcasts.map((b) => b['id'] as String).toList();
+            if (broadcastIds.isNotEmpty) {
+              final recipientsResponse = await supabase
+                  .from(recipientsTable)
+                  .select()
+                  .inFilter('broadcast_id', broadcastIds);
+              final recipients = recipientsResponse as List;
+              totalRecipientsCount += recipients.length;
+              totalBroadcastRecipients += recipients.length;
+
+              for (final recipient in recipients) {
+                final status = recipient['status'] as String? ?? 'sent';
+                switch (status.toLowerCase()) {
+                  case 'delivered':
+                    totalBroadcastDelivered++;
+                    break;
+                  case 'read':
+                    totalBroadcastRead++;
+                    totalBroadcastDelivered++; // Read implies delivered
+                    break;
+                  case 'failed':
+                    totalBroadcastFailed++;
+                    break;
+                }
+              }
+            }
+          } catch (e) {
+            print('Error fetching broadcasts for ${client.name}: $e');
+          }
+        }
+
+        // Build client activity entry
+        final cAi = clientAiMessages[client.id] ?? 0;
+        final cMgr = clientManagerMessages[client.id] ?? 0;
+        final cUniq = clientUniqueCustomers[client.id]?.length ?? 0;
+        final cTotal = cAi + cMgr;
+        final cAutoRate = cTotal > 0 ? (cAi / cTotal) * 100 : 0.0;
+
+        clientActivityMap[client.id] = ClientActivity(
+          clientId: client.id,
+          clientName: client.name,
+          messageCount: clientMessageCount,
+          broadcastCount: clientBroadcastCount,
+          lastActivity: clientLastActivity,
+          aiMessages: cAi,
+          managerMessages: cMgr,
+          uniqueCustomers: cUniq,
+          automationRate: cAutoRate,
+        );
       }
 
       // Calculate automation rate
@@ -654,17 +866,47 @@ class AdminAnalyticsProvider extends ChangeNotifier {
           ? (totalAiMessages / totalResponses) * 100
           : 0.0;
 
-      // Get most active clients (sorted by message count)
+      // Get most active clients (sorted by activity)
       final sortedClients = clientActivityMap.values.toList()
         ..sort((a, b) => (b.messageCount + b.broadcastCount * 10)
             .compareTo(a.messageCount + a.broadcastCount * 10));
       final mostActive = sortedClients.take(5).toList();
 
+      // Build top customers list
+      final sortedCustomerEntries = globalCustomerCounts.entries.toList()
+        ..sort((a, b) => (b.value['count'] as int).compareTo(a.value['count'] as int));
+      final topCustomers = sortedCustomerEntries.take(10).map((e) => TopCustomerInfo(
+        phone: e.key,
+        name: e.value['name'] as String?,
+        messageCount: e.value['count'] as int,
+        clientName: e.value['clientName'] as String,
+      )).toList();
+
+      // Fetch AI chat settings
+      int aiEnabledCount = 0;
+      int aiDisabledCount = 0;
+      try {
+        final aiSettingsResponse = await supabase
+            .from('ai_chat_settings')
+            .select('ai_enabled');
+        final settings = aiSettingsResponse as List;
+        for (final setting in settings) {
+          final enabled = setting['ai_enabled'] as bool? ?? true;
+          if (enabled) {
+            aiEnabledCount++;
+          } else {
+            aiDisabledCount++;
+          }
+        }
+      } catch (e) {
+        print('Error fetching AI chat settings: $e');
+      }
+
       _companyAnalytics = VividCompanyAnalytics(
         totalClients: clients.length,
-        totalMessages: allMessages.length,
-        totalBroadcasts: allBroadcasts.length,
-        totalRecipientsReached: allRecipients.length,
+        totalMessages: totalMessageCount,
+        totalBroadcasts: totalBroadcastCount,
+        totalRecipientsReached: totalRecipientsCount,
         overallAutomationRate: automationRate,
         totalAiMessages: totalAiMessages,
         totalManagerMessages: totalManagerMessages,
@@ -672,6 +914,19 @@ class AdminAnalyticsProvider extends ChangeNotifier {
         lastActivityAcrossAll: lastActivity,
         mostActiveClients: mostActive,
         messagesByDay: messagesByDay,
+        todayMessages: todayMessages,
+        thisWeekMessages: thisWeekMessages,
+        thisMonthMessages: thisMonthMessages,
+        broadcastDeliveredCount: totalBroadcastDelivered,
+        broadcastReadCount: totalBroadcastRead,
+        broadcastFailedCount: totalBroadcastFailed,
+        broadcastTotalRecipients: totalBroadcastRecipients,
+        messagesByHour: messagesByHour,
+        topCustomers: topCustomers,
+        handoffCount: handoffCount,
+        aiEnabledCustomers: aiEnabledCount,
+        aiDisabledCustomers: aiDisabledCount,
+        allClientActivities: clientActivityMap.values.toList(),
       );
 
       // Subscribe to real-time updates
@@ -688,31 +943,62 @@ class AdminAnalyticsProvider extends ChangeNotifier {
   }
 
   void _subscribeToCompanyUpdates(List<Client> clients) {
-    _companyMessagesChannel?.unsubscribe();
+    // Unsubscribe from all existing company channels
+    for (final channel in _companyChannels) {
+      channel.unsubscribe();
+    }
+    _companyChannels.clear();
 
     final supabase = SupabaseService.client;
 
-    _companyMessagesChannel = supabase
-        .channel('company_messages_all')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.all,
-          schema: 'public',
-          table: 'messages',
-          callback: (payload) {
-            print('📊 Company-wide analytics update');
-            fetchCompanyAnalytics(clients);
-          },
-        )
-        .subscribe();
+    // Subscribe to each client's tables individually
+    for (final client in clients) {
+      if (client.hasFeature('conversations')) {
+        final messagesTable = _getMessagesTable(client);
+        final channel = supabase
+            .channel('company_messages_${client.id}')
+            .onPostgresChanges(
+              event: PostgresChangeEvent.all,
+              schema: 'public',
+              table: messagesTable,
+              callback: (payload) {
+                print('📊 Company-wide analytics update from ${client.name}');
+                fetchCompanyAnalytics(clients);
+              },
+            )
+            .subscribe();
+        _companyChannels.add(channel);
+      }
 
-    print('📊 Subscribed to company-wide real-time analytics');
+      if (client.hasFeature('broadcasts')) {
+        final broadcastsTable = _getBroadcastsTable(client);
+        final channel = supabase
+            .channel('company_broadcasts_${client.id}')
+            .onPostgresChanges(
+              event: PostgresChangeEvent.all,
+              schema: 'public',
+              table: broadcastsTable,
+              callback: (payload) {
+                print('📊 Company-wide broadcast update from ${client.name}');
+                fetchCompanyAnalytics(clients);
+              },
+            )
+            .subscribe();
+        _companyChannels.add(channel);
+      }
+    }
+
+    print('📊 Subscribed to company-wide real-time analytics (${_companyChannels.length} channels)');
   }
 
   /// Clear cached analytics and unsubscribe
   void clearCache() {
     _messagesChannel?.unsubscribe();
     _broadcastsChannel?.unsubscribe();
-    _companyMessagesChannel?.unsubscribe();
+    for (final channel in _companyChannels) {
+      channel.unsubscribe();
+    }
+    _companyChannels.clear();
     _conversationAnalytics.clear();
     _broadcastAnalytics.clear();
     _companyAnalytics = null;
@@ -724,7 +1010,10 @@ class AdminAnalyticsProvider extends ChangeNotifier {
   void dispose() {
     _messagesChannel?.unsubscribe();
     _broadcastsChannel?.unsubscribe();
-    _companyMessagesChannel?.unsubscribe();
+    for (final channel in _companyChannels) {
+      channel.unsubscribe();
+    }
+    _companyChannels.clear();
     super.dispose();
   }
 }

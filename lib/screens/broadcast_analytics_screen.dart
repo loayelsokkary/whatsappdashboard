@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/broadcast_analytics_provider.dart';
 import '../theme/vivid_theme.dart';
+import '../utils/analytics_exporter.dart';
 
 /// Analytics screen for broadcast campaigns
 class BroadcastAnalyticsScreen extends StatefulWidget {
@@ -12,12 +13,149 @@ class BroadcastAnalyticsScreen extends StatefulWidget {
 }
 
 class _BroadcastAnalyticsScreenState extends State<BroadcastAnalyticsScreen> {
+  bool _isExporting = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<BroadcastAnalyticsProvider>().fetchAnalytics();
     });
+  }
+
+  Future<void> _handleExport(String format, BroadcastAnalyticsData data) async {
+    setState(() => _isExporting = true);
+    try {
+      switch (format) {
+        case 'csv':
+          AnalyticsExporter.exportBroadcastAnalyticsToCsv(data: data);
+          _showExportSuccess('CSV');
+          break;
+        case 'excel':
+          AnalyticsExporter.exportBroadcastAnalyticsToExcel(data: data);
+          _showExportSuccess('Excel');
+          break;
+        case 'pdf':
+          await AnalyticsExporter.exportBroadcastAnalyticsToPdf(data: data);
+          _showExportSuccess('PDF');
+          break;
+        case 'all':
+          AnalyticsExporter.exportBroadcastAnalyticsToCsv(data: data);
+          await Future.delayed(const Duration(milliseconds: 300));
+          AnalyticsExporter.exportBroadcastAnalyticsToExcel(data: data);
+          await Future.delayed(const Duration(milliseconds: 300));
+          await AnalyticsExporter.exportBroadcastAnalyticsToPdf(data: data);
+          _showExportSuccess('All formats');
+          break;
+      }
+    } catch (e) {
+      _showExportError(e.toString());
+    } finally {
+      setState(() => _isExporting = false);
+    }
+  }
+
+  void _showExportSuccess(String format) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Row(children: [
+        const Icon(Icons.check_circle, color: Colors.white, size: 20),
+        const SizedBox(width: 12),
+        Text('$format exported successfully'),
+      ]),
+      backgroundColor: VividColors.statusSuccess,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      margin: const EdgeInsets.all(16),
+    ));
+  }
+
+  void _showExportError(String error) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Row(children: [
+        const Icon(Icons.error, color: Colors.white, size: 20),
+        const SizedBox(width: 12),
+        Expanded(child: Text('Export failed: $error')),
+      ]),
+      backgroundColor: Colors.red,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      margin: const EdgeInsets.all(16),
+    ));
+  }
+
+  Widget _buildExportButton(BroadcastAnalyticsData data) {
+    final menuColors = {
+      'csv': Colors.green,
+      'excel': const Color(0xFF217346),
+      'pdf': Colors.red,
+      'all': VividColors.cyan,
+    };
+    return PopupMenuButton<String>(
+      onSelected: (format) => _handleExport(format, data),
+      enabled: !_isExporting,
+      offset: const Offset(0, 45),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      color: VividColors.navy,
+      itemBuilder: (context) => [
+        _buildExportMenuItem('csv',   'CSV',        Icons.table_chart,    'Spreadsheet format', menuColors),
+        _buildExportMenuItem('excel', 'Excel',      Icons.grid_on,        'Formatted workbook', menuColors),
+        _buildExportMenuItem('pdf',   'PDF',        Icons.picture_as_pdf, 'Professional report', menuColors),
+        const PopupMenuDivider(),
+        _buildExportMenuItem('all',   'Export All', Icons.download,       'All formats', menuColors),
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(colors: [Color(0xFF9C27B0), Color(0xFFE040FB)]),
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: [BoxShadow(color: const Color(0xFF9C27B0).withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 2))],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_isExporting)
+              const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+            else
+              const Icon(Icons.download, color: Colors.white, size: 18),
+            const SizedBox(width: 8),
+            Text(
+              _isExporting ? 'Exporting...' : 'Export',
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(width: 4),
+            const Icon(Icons.arrow_drop_down, color: Colors.white, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  PopupMenuItem<String> _buildExportMenuItem(
+    String value, String title, IconData icon, String subtitle,
+    Map<String, Color> colors,
+  ) {
+    return PopupMenuItem<String>(
+      value: value,
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(color: colors[value]!.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
+            child: Icon(icon, color: colors[value], size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(color: VividColors.textPrimary, fontWeight: FontWeight.w600)),
+                Text(subtitle, style: const TextStyle(color: VividColors.textMuted, fontSize: 11)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -43,14 +181,17 @@ class _BroadcastAnalyticsScreenState extends State<BroadcastAnalyticsScreen> {
                         children: [
                           const Icon(Icons.analytics, color: VividColors.cyan, size: 28),
                           const SizedBox(width: 12),
-                          const Text(
-                            'Broadcast Analytics',
-                            style: TextStyle(
-                              color: VividColors.textPrimary,
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
+                          const Expanded(
+                            child: Text(
+                              'Broadcast Analytics',
+                              style: TextStyle(
+                                color: VividColors.textPrimary,
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
+                          _buildExportButton(analytics),
                         ],
                       ),
                       const SizedBox(height: 24),
@@ -78,18 +219,27 @@ class _BroadcastAnalyticsScreenState extends State<BroadcastAnalyticsScreen> {
                           const SizedBox(width: 16),
                           Expanded(
                             child: _MetricCard(
-                              icon: Icons.done_all,
-                              label: 'Delivery Rate',
-                              value: '${analytics.deliveryRate.toStringAsFixed(1)}%',
+                              icon: Icons.check_circle,
+                              label: 'Total Sent',
+                              value: _formatNumber(analytics.totalDelivered),
                               color: Colors.green,
                             ),
                           ),
                           const SizedBox(width: 16),
                           Expanded(
                             child: _MetricCard(
-                              icon: Icons.visibility,
-                              label: 'Read Rate',
-                              value: '${analytics.readRate.toStringAsFixed(1)}%',
+                              icon: Icons.error_outline,
+                              label: 'Total Failed',
+                              value: _formatNumber(analytics.totalFailed),
+                              color: Colors.red,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: _MetricCard(
+                              icon: Icons.done_all,
+                              label: 'Delivery Rate',
+                              value: '${analytics.deliveryRate.toStringAsFixed(1)}%',
                               color: Colors.blue,
                             ),
                           ),
@@ -244,7 +394,6 @@ class _StatusBreakdown extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final total = analytics.totalRecipients;
-    final sent = total - analytics.totalRead - analytics.totalDelivered - analytics.totalFailed;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -268,24 +417,10 @@ class _StatusBreakdown extends StatelessWidget {
           ),
           const SizedBox(height: 20),
           _StatusRow(
-            label: 'Read',
-            count: analytics.totalRead,
-            total: total,
-            color: Colors.blue,
-          ),
-          const SizedBox(height: 12),
-          _StatusRow(
-            label: 'Delivered',
+            label: 'Accepted',
             count: analytics.totalDelivered,
             total: total,
             color: Colors.green,
-          ),
-          const SizedBox(height: 12),
-          _StatusRow(
-            label: 'Sent',
-            count: sent,
-            total: total,
-            color: Colors.orange,
           ),
           const SizedBox(height: 12),
           _StatusRow(
@@ -547,10 +682,9 @@ class _CampaignPerformanceTable extends StatelessWidget {
               children: const [
                 Expanded(flex: 3, child: Text('Campaign', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12))),
                 Expanded(flex: 1, child: Text('Recipients', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12), textAlign: TextAlign.center)),
-                Expanded(flex: 1, child: Text('Delivered', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12), textAlign: TextAlign.center)),
-                Expanded(flex: 1, child: Text('Read', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12), textAlign: TextAlign.center)),
+                Expanded(flex: 1, child: Text('Accepted', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12), textAlign: TextAlign.center)),
                 Expanded(flex: 1, child: Text('Failed', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12), textAlign: TextAlign.center)),
-                Expanded(flex: 1, child: Text('Read Rate', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12), textAlign: TextAlign.center)),
+                Expanded(flex: 1, child: Text('Delivery Rate', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12), textAlign: TextAlign.center)),
               ],
             ),
           ),
@@ -618,14 +752,6 @@ class _CampaignPerformanceTable extends StatelessWidget {
           Expanded(
             flex: 1,
             child: Text(
-              campaign.read.toString(),
-              style: const TextStyle(color: Colors.blue),
-              textAlign: TextAlign.center,
-            ),
-          ),
-          Expanded(
-            flex: 1,
-            child: Text(
               campaign.failed.toString(),
               style: TextStyle(
                 color: campaign.failed > 0 ? Colors.red : VividColors.textMuted,
@@ -638,13 +764,13 @@ class _CampaignPerformanceTable extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: _getRateColor(campaign.readRate).withOpacity(0.2),
+                color: _getRateColor(campaign.deliveryRate).withOpacity(0.2),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
-                '${campaign.readRate.toStringAsFixed(1)}%',
+                '${campaign.deliveryRate.toStringAsFixed(1)}%',
                 style: TextStyle(
-                  color: _getRateColor(campaign.readRate),
+                  color: _getRateColor(campaign.deliveryRate),
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                 ),
@@ -664,17 +790,18 @@ class _CampaignPerformanceTable extends StatelessWidget {
   }
 
   String _formatDate(DateTime date) {
-    final now = DateTime.now();
-    final diff = now.difference(date);
+    final bh = date.toUtc().add(const Duration(hours: 3));
+    final nowBh = DateTime.now().toUtc().add(const Duration(hours: 3));
+    final diff = nowBh.difference(bh);
 
-    if (diff.inDays == 0) {
+    if (diff.inDays == 0 && bh.day == nowBh.day) {
       return 'Today';
-    } else if (diff.inDays == 1) {
+    } else if (diff.inDays <= 1 && bh.day == nowBh.subtract(const Duration(days: 1)).day) {
       return 'Yesterday';
     } else if (diff.inDays < 7) {
       return '${diff.inDays} days ago';
     } else {
-      return '${date.day}/${date.month}/${date.year}';
+      return '${bh.day}/${bh.month}/${bh.year}';
     }
   }
 }

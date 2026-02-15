@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/manager_chat_provider.dart';
 import '../models/models.dart';
 import '../theme/vivid_theme.dart';
+import '../utils/date_formatter.dart';
 
 /// Manager Chatbot Panel - styled like conversation detail
 class ManagerChatPanel extends StatefulWidget {
@@ -91,14 +92,11 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
       ),
       child: Row(
         children: [
-          // Avatar - Vivid AI logo
           ClipRRect(
             borderRadius: BorderRadius.circular(14),
             child: VividWidgets.icon(size: 56),
           ),
           const SizedBox(width: 10),
-          
-          // Info
           Expanded(
             child: Consumer<ManagerChatProvider>(
               builder: (context, provider, _) {
@@ -159,7 +157,25 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
 
         final messages = provider.messages;
         
-        // Auto-scroll when messages change
+        // Build display items: each message can have user + AI response
+        final displayItems = <_ChatDisplayItem>[];
+        for (final msg in messages) {
+          if (msg.userMessage != null && msg.userMessage!.isNotEmpty) {
+            displayItems.add(_ChatDisplayItem(
+              text: msg.userMessage!,
+              isUser: true,
+              createdAt: msg.createdAt,
+            ));
+          }
+          if (msg.aiResponse != null && msg.aiResponse!.isNotEmpty) {
+            displayItems.add(_ChatDisplayItem(
+              text: msg.aiResponse!,
+              isUser: false,
+              createdAt: msg.createdAt,
+            ));
+          }
+        }
+        
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _scrollToBottom();
         });
@@ -167,24 +183,65 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
         return ListView.builder(
           controller: _scrollController,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          itemCount: messages.isEmpty 
+          itemCount: displayItems.isEmpty 
               ? 1 
-              : messages.length + (provider.isWaitingForResponse ? 1 : 0),
+              : displayItems.length + (provider.isWaitingForResponse ? 1 : 0),
           itemBuilder: (context, index) {
-            // Welcome message if empty
-            if (messages.isEmpty && index == 0) {
+            if (displayItems.isEmpty && index == 0) {
               return _buildWelcomeMessage();
             }
 
-            // Typing indicator
-            if (provider.isWaitingForResponse && index == messages.length) {
+            if (provider.isWaitingForResponse && index == displayItems.length) {
               return _buildTypingIndicator();
             }
 
-            return _MessageBubble(message: messages[index]);
+            final item = displayItems[index];
+            final showDateDivider = index == 0 ||
+                DateFormatter.isDifferentDay(
+                  item.createdAt, displayItems[index - 1].createdAt);
+
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (showDateDivider)
+                  _buildDateDivider(DateFormatter.formatChatDate(item.createdAt)),
+                _MessageBubble(item: item),
+              ],
+            );
           },
         );
       },
+    );
+  }
+
+  Widget _buildDateDivider(String label) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        children: [
+          Expanded(child: Divider(color: VividColors.tealBlue.withOpacity(0.2), height: 1)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: VividColors.navy,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: VividColors.tealBlue.withOpacity(0.2)),
+              ),
+              child: Text(
+                label,
+                style: const TextStyle(
+                  color: VividColors.textMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+          Expanded(child: Divider(color: VividColors.tealBlue.withOpacity(0.2), height: 1)),
+        ],
+      ),
     );
   }
 
@@ -207,7 +264,6 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Label
                 Padding(
                   padding: const EdgeInsets.only(bottom: 4, left: 4),
                   child: Row(
@@ -230,7 +286,6 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
                     ],
                   ),
                 ),
-                // Bubble
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
@@ -415,10 +470,27 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
   }
 
   String _formatTime(DateTime time) {
-    final hour = time.hour.toString().padLeft(2, '0');
-    final minute = time.minute.toString().padLeft(2, '0');
+    final bh = time.toUtc().add(const Duration(hours: 3));
+    final hour = bh.hour.toString().padLeft(2, '0');
+    final minute = bh.minute.toString().padLeft(2, '0');
     return '$hour:$minute';
   }
+}
+
+// ============================================
+// DISPLAY ITEM - represents one bubble
+// ============================================
+
+class _ChatDisplayItem {
+  final String text;
+  final bool isUser;
+  final DateTime createdAt;
+
+  _ChatDisplayItem({
+    required this.text,
+    required this.isUser,
+    required this.createdAt,
+  });
 }
 
 // ============================================
@@ -426,13 +498,13 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
 // ============================================
 
 class _MessageBubble extends StatelessWidget {
-  final ManagerChatMessage message;
+  final _ChatDisplayItem item;
 
-  const _MessageBubble({required this.message});
+  const _MessageBubble({required this.item});
 
   @override
   Widget build(BuildContext context) {
-    final isUser = message.isUser;
+    final isUser = item.isUser;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -447,7 +519,6 @@ class _MessageBubble extends StatelessWidget {
             child: Column(
               crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
               children: [
-                // Label for messages
                 if (!isUser)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 4, left: 4),
@@ -472,7 +543,6 @@ class _MessageBubble extends StatelessWidget {
                     ),
                   ),
                 
-                // Manager label for outgoing messages
                 if (isUser)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 4, right: 4),
@@ -497,7 +567,6 @@ class _MessageBubble extends StatelessWidget {
                     ),
                   ),
 
-                // Bubble
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
@@ -525,7 +594,7 @@ class _MessageBubble extends StatelessWidget {
                     crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                     children: [
                       SelectableText(
-                        message.message,
+                        item.text,
                         style: const TextStyle(
                           color: VividColors.textPrimary,
                           fontSize: 15,
@@ -534,7 +603,7 @@ class _MessageBubble extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        _formatTime(message.createdAt),
+                        _formatTime(item.createdAt),
                         style: TextStyle(
                           color: VividColors.textPrimary.withOpacity(0.5),
                           fontSize: 10,
@@ -554,8 +623,9 @@ class _MessageBubble extends StatelessWidget {
   }
 
   String _formatTime(DateTime time) {
-    final hour = time.hour.toString().padLeft(2, '0');
-    final minute = time.minute.toString().padLeft(2, '0');
+    final bh = time.toUtc().add(const Duration(hours: 3));
+    final hour = bh.hour.toString().padLeft(2, '0');
+    final minute = bh.minute.toString().padLeft(2, '0');
     return '$hour:$minute';
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/broadcasts_provider.dart';
+import '../models/models.dart';
 import '../theme/vivid_theme.dart';
 
 /// Broadcasts panel - shows campaign list and recipient details
@@ -24,19 +25,14 @@ class _BroadcastsPanelState extends State<BroadcastsPanel> {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        // Broadcasts list
         SizedBox(
           width: 360,
           child: _BroadcastsList(),
         ),
-        
-        // Divider
         Container(
           width: 1,
           color: VividColors.tealBlue.withOpacity(0.2),
         ),
-        
-        // Recipient details
         Expanded(
           child: _RecipientDetails(),
         ),
@@ -44,10 +40,6 @@ class _BroadcastsPanelState extends State<BroadcastsPanel> {
     );
   }
 }
-
-// ============================================
-// BROADCASTS LIST
-// ============================================
 
 class _BroadcastsList extends StatelessWidget {
   @override
@@ -58,7 +50,6 @@ class _BroadcastsList extends StatelessWidget {
       color: VividColors.darkNavy,
       child: Column(
         children: [
-          // Header
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
@@ -96,15 +87,17 @@ class _BroadcastsList extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 12),
-                // Compose button
                 GestureDetector(
-                  onTap: () => _showComposeBroadcastDialog(context),
+                  onTap: provider.isAtLimit
+                      ? null
+                      : () => _showComposeBroadcastDialog(context),
                   child: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      gradient: VividColors.primaryGradient,
+                      gradient: provider.isAtLimit ? null : VividColors.primaryGradient,
+                      color: provider.isAtLimit ? VividColors.deepBlue : null,
                       borderRadius: BorderRadius.circular(10),
-                      boxShadow: [
+                      boxShadow: provider.isAtLimit ? null : [
                         BoxShadow(
                           color: VividColors.brightBlue.withOpacity(0.3),
                           blurRadius: 8,
@@ -112,9 +105,9 @@ class _BroadcastsList extends StatelessWidget {
                         ),
                       ],
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.add,
-                      color: Colors.white,
+                      color: provider.isAtLimit ? VividColors.textMuted : Colors.white,
                       size: 20,
                     ),
                   ),
@@ -122,8 +115,7 @@ class _BroadcastsList extends StatelessWidget {
               ],
             ),
           ),
-
-          // List
+          if (provider.hasLimit) _buildMonthlyCounter(provider),
           Expanded(
             child: provider.isLoading
                 ? const Center(
@@ -154,6 +146,89 @@ class _BroadcastsList extends StatelessWidget {
     showDialog(
       context: context,
       builder: (context) => const _ComposeBroadcastDialog(),
+    );
+  }
+
+  Widget _buildMonthlyCounter(BroadcastsProvider provider) {
+    final sent = provider.monthlySentCount;
+    final limit = provider.monthlyLimit;
+    final progress = limit > 0 ? (sent / limit).clamp(0.0, 1.0) : 0.0;
+    final isAtLimit = provider.isAtLimit;
+
+    final Color barColor;
+    if (isAtLimit) {
+      barColor = VividColors.statusUrgent;
+    } else if (progress > 0.8) {
+      barColor = const Color(0xFFF59E0B);
+    } else {
+      barColor = VividColors.cyan;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      decoration: BoxDecoration(
+        color: isAtLimit
+            ? VividColors.statusUrgent.withOpacity(0.05)
+            : Colors.transparent,
+        border: Border(
+          bottom: BorderSide(
+            color: VividColors.tealBlue.withOpacity(0.2),
+          ),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isAtLimit ? Icons.warning_amber_rounded : Icons.bar_chart,
+                size: 14,
+                color: barColor,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'Monthly Usage',
+                style: TextStyle(
+                  color: barColor,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '$sent / $limit',
+                style: TextStyle(
+                  color: barColor,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 6,
+              backgroundColor: VividColors.deepBlue,
+              valueColor: AlwaysStoppedAnimation<Color>(barColor),
+            ),
+          ),
+          if (isAtLimit) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Monthly limit reached',
+              style: TextStyle(
+                color: VividColors.statusUrgent,
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -189,10 +264,6 @@ class _BroadcastsList extends StatelessWidget {
   }
 }
 
-// ============================================
-// BROADCAST CARD
-// ============================================
-
 class _BroadcastCard extends StatelessWidget {
   final Broadcast broadcast;
   final bool isSelected;
@@ -227,7 +298,6 @@ class _BroadcastCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Campaign name
             Text(
               broadcast.campaignName ?? 'Unnamed Campaign',
               style: TextStyle(
@@ -239,8 +309,6 @@ class _BroadcastCard extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
             const SizedBox(height: 8),
-            
-            // Message preview
             if (broadcast.messageContent != null)
               Text(
                 broadcast.messageContent!,
@@ -251,10 +319,7 @@ class _BroadcastCard extends StatelessWidget {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
-            
             const SizedBox(height: 12),
-            
-            // Stats row
             Row(
               children: [
                 Icon(
@@ -287,24 +352,37 @@ class _BroadcastCard extends StatelessWidget {
   }
 
   String _formatDate(DateTime dt) {
-    final now = DateTime.now();
-    final diff = now.difference(dt);
+    final bh = dt.toUtc().add(const Duration(hours: 3));
+    final nowBh = DateTime.now().toUtc().add(const Duration(hours: 3));
+    final today = DateTime(nowBh.year, nowBh.month, nowBh.day);
+    final messageDay = DateTime(bh.year, bh.month, bh.day);
 
-    if (diff.inDays == 0) {
-      return 'Today';
-    } else if (diff.inDays == 1) {
+    final hour = bh.hour > 12 ? bh.hour - 12 : (bh.hour == 0 ? 12 : bh.hour);
+    final minute = bh.minute.toString().padLeft(2, '0');
+    final ampm = bh.hour >= 12 ? 'PM' : 'AM';
+    final time = '$hour:$minute $ampm';
+
+    if (messageDay == today) {
+      return time;
+    } else if (messageDay == today.subtract(const Duration(days: 1))) {
       return 'Yesterday';
-    } else if (diff.inDays < 7) {
-      return '${diff.inDays}d ago';
+    } else if (today.difference(messageDay).inDays < 7) {
+      return _dayName(bh.weekday);
     } else {
-      return '${dt.day}/${dt.month}/${dt.year}';
+      return '${_monthName(bh.month)} ${bh.day}';
     }
   }
-}
 
-// ============================================
-// RECIPIENT DETAILS
-// ============================================
+  static String _dayName(int weekday) {
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    return days[weekday - 1];
+  }
+
+  static String _monthName(int month) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return months[month - 1];
+  }
+}
 
 class _RecipientDetails extends StatelessWidget {
   @override
@@ -316,13 +394,10 @@ class _RecipientDetails extends StatelessWidget {
       return _buildEmptyState();
     }
 
-    final stats = provider.recipientStats;
-
     return Container(
       color: VividColors.navy,
       child: Column(
         children: [
-          // Header with stats
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
@@ -343,41 +418,17 @@ class _RecipientDetails extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 16),
-                
-                // Stats cards
-                Row(
-                  children: [
-                    _StatCard(
-                      label: 'Sent',
-                      value: stats['sent'] ?? 0,
-                      color: Colors.orange,
-                    ),
-                    const SizedBox(width: 12),
-                    _StatCard(
-                      label: 'Delivered',
-                      value: stats['delivered'] ?? 0,
-                      color: Colors.green,
-                    ),
-                    const SizedBox(width: 12),
-                    _StatCard(
-                      label: 'Read',
-                      value: stats['read'] ?? 0,
-                      color: Colors.blue,
-                    ),
-                    const SizedBox(width: 12),
-                    _StatCard(
-                      label: 'Failed',
-                      value: stats['failed'] ?? 0,
-                      color: Colors.red,
-                    ),
-                  ],
+                const SizedBox(height: 4),
+                Text(
+                  _formatFullDate(broadcast.sentAt),
+                  style: const TextStyle(
+                    color: VividColors.textMuted,
+                    fontSize: 13,
+                  ),
                 ),
               ],
             ),
           ),
-
-          // Message content
           if (broadcast.messageContent != null)
             Container(
               width: double.infinity,
@@ -412,44 +463,58 @@ class _RecipientDetails extends StatelessWidget {
                 ],
               ),
             ),
-
-          // Recipients list header
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Recipients',
-                  style: TextStyle(
-                    color: VividColors.textPrimary,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
+                Row(
+                  children: [
+                    const Text(
+                      'Recipients',
+                      style: TextStyle(
+                        color: VividColors.textPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '(${provider.recipients.length})',
+                      style: const TextStyle(
+                        color: VividColors.textMuted,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  '(${provider.recipients.length})',
-                  style: const TextStyle(
-                    color: VividColors.textMuted,
-                    fontSize: 14,
-                  ),
-                ),
+                if (provider.recipients.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  _DeliveryStats(recipients: provider.recipients),
+                ],
               ],
             ),
           ),
-
           const SizedBox(height: 12),
-
-          // Recipients list
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              itemCount: provider.recipients.length,
-              itemBuilder: (context, index) {
-                final recipient = provider.recipients[index];
-                return _RecipientTile(recipient: recipient);
-              },
-            ),
+            child: provider.recipients.isEmpty
+                ? Center(
+                    child: Text(
+                      'No recipients yet',
+                      style: TextStyle(
+                        color: VividColors.textMuted,
+                        fontSize: 14,
+                      ),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    itemCount: provider.recipients.length,
+                    itemBuilder: (context, index) {
+                      final recipient = provider.recipients[index];
+                      return _RecipientTile(recipient: recipient);
+                    },
+                  ),
           ),
         ],
       ),
@@ -490,63 +555,76 @@ class _RecipientDetails extends StatelessWidget {
       ),
     );
   }
-}
 
-// ============================================
-// STAT CARD
-// ============================================
-
-class _StatCard extends StatelessWidget {
-  final String label;
-  final int value;
-  final Color color;
-
-  const _StatCard({
-    required this.label,
-    required this.value,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: color.withOpacity(0.3),
-          ),
-        ),
-        child: Column(
-          children: [
-            Text(
-              value.toString(),
-              style: TextStyle(
-                color: color,
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                color: color.withOpacity(0.8),
-                fontSize: 12,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+  String _formatFullDate(DateTime dt) {
+    final bh = dt.toUtc().add(const Duration(hours: 3));
+    const months = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December',
+    ];
+    final hour = bh.hour > 12 ? bh.hour - 12 : (bh.hour == 0 ? 12 : bh.hour);
+    final minute = bh.minute.toString().padLeft(2, '0');
+    final ampm = bh.hour >= 12 ? 'PM' : 'AM';
+    return '${months[bh.month - 1]} ${bh.day}, ${bh.year} at $hour:$minute $ampm';
   }
 }
 
-// ============================================
-// RECIPIENT TILE
-// ============================================
+class _DeliveryStats extends StatelessWidget {
+  final List<BroadcastRecipient> recipients;
+
+  const _DeliveryStats({required this.recipients});
+
+  @override
+  Widget build(BuildContext context) {
+    final sent = recipients.where((r) => r.status == 'accepted' || r.status == 'sent').length;
+    final failed = recipients.length - sent;
+    final rate = recipients.isNotEmpty
+        ? (sent / recipients.length * 100)
+        : 0.0;
+
+    return Row(
+      children: [
+        _buildStat('Sent', sent.toString(), Colors.green),
+        const SizedBox(width: 16),
+        _buildStat('Failed', failed.toString(), Colors.red),
+        const SizedBox(width: 16),
+        _buildStat('Rate', '${rate.toStringAsFixed(1)}%', VividColors.cyan),
+      ],
+    );
+  }
+
+  Widget _buildStat(String label, String value, Color color) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 6,
+          height: 6,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          '$label: ',
+          style: const TextStyle(
+            color: VividColors.textMuted,
+            fontSize: 12,
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            color: color,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+}
 
 class _RecipientTile extends StatelessWidget {
   final BroadcastRecipient recipient;
@@ -555,6 +633,10 @@ class _RecipientTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool isSent = recipient.status == 'accepted' || recipient.status == 'sent';
+    final Color statusColor = isSent ? Colors.green : Colors.red;
+    final String statusLabel = isSent ? 'Sent' : 'Failed';
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
@@ -564,7 +646,6 @@ class _RecipientTile extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // Avatar
           CircleAvatar(
             radius: 18,
             backgroundColor: VividColors.brightBlue.withOpacity(0.2),
@@ -578,8 +659,6 @@ class _RecipientTile extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          
-          // Name & Phone
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -603,21 +682,30 @@ class _RecipientTile extends StatelessWidget {
               ],
             ),
           ),
-          
-          // Status badge
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: recipient.statusColor.withOpacity(0.2),
+              color: statusColor.withOpacity(0.15),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Text(
-              recipient.status.toUpperCase(),
-              style: TextStyle(
-                color: recipient.statusColor,
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  isSent ? Icons.check_circle : Icons.error_outline,
+                  size: 12,
+                  color: statusColor,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  statusLabel,
+                  style: TextStyle(
+                    color: statusColor,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -633,10 +721,6 @@ class _RecipientTile extends StatelessWidget {
     return name.substring(0, name.length.clamp(0, 2)).toUpperCase();
   }
 }
-
-// ============================================
-// COMPOSE BROADCAST DIALOG
-// ============================================
 
 class _ComposeBroadcastDialog extends StatefulWidget {
   const _ComposeBroadcastDialog();
@@ -669,7 +753,9 @@ class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
     final provider = context.read<BroadcastsProvider>();
     final success = await provider.sendBroadcast(text);
 
-    if (success && mounted) {
+    if (!mounted) return;
+
+    if (success) {
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -686,6 +772,7 @@ class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
         ),
       );
     }
+    // On failure, dialog stays open and provider.sendError is shown inline
   }
 
   @override
@@ -713,7 +800,6 @@ class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header
             Row(
               children: [
                 Container(
@@ -754,10 +840,7 @@ class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
                 ),
               ],
             ),
-            
             const SizedBox(height: 20),
-
-            // Instructions
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -771,7 +854,7 @@ class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'Example: "Send everyone with a laser appointment this week a 10% discount offer"',
+                      'Example: "Send {Name} an offer in english/arabic"',
                       style: TextStyle(
                         color: VividColors.textMuted,
                         fontSize: 12,
@@ -782,10 +865,7 @@ class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
                 ],
               ),
             ),
-
             const SizedBox(height: 16),
-
-            // Input field
             Container(
               decoration: BoxDecoration(
                 color: VividColors.darkNavy,
@@ -806,8 +886,6 @@ class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
                 ),
               ),
             ),
-
-            // Error message
             if (provider.sendError != null) ...[
               const SizedBox(height: 12),
               Container(
@@ -831,10 +909,7 @@ class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
                 ),
               ),
             ],
-
             const SizedBox(height: 20),
-
-            // Buttons
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [

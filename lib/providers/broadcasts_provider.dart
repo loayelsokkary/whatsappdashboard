@@ -9,29 +9,54 @@ import '../models/models.dart';
 /// Broadcast campaign model
 class Broadcast {
   final String id;
-  final String clientId;
+  final String? clientId;
   final String? campaignName;
   final String? messageContent;
   final DateTime sentAt;
   final int totalRecipients;
+  final String? status;
 
   const Broadcast({
     required this.id,
-    required this.clientId,
+    this.clientId,
     this.campaignName,
     this.messageContent,
     required this.sentAt,
     required this.totalRecipients,
+    this.status,
   });
 
   factory Broadcast.fromJson(Map<String, dynamic> json) {
     return Broadcast(
-      id: json['id'] as String,
-      clientId: json['client_id'] as String,
+      id: json['id']?.toString() ?? '',
+      clientId: json['client_id']?.toString(),
       campaignName: json['campaign_name'] as String?,
       messageContent: json['message_content'] as String?,
       sentAt: DateTime.parse(json['sent_at'] as String),
-      totalRecipients: json['total_recipients'] as int? ?? 0,
+      totalRecipients: json['total_recipients'] is int
+          ? json['total_recipients'] as int
+          : int.tryParse(json['total_recipients']?.toString() ?? '') ?? 0,
+      status: json['status'] as String?,
+    );
+  }
+
+  Broadcast copyWith({
+    String? id,
+    String? clientId,
+    String? campaignName,
+    String? messageContent,
+    DateTime? sentAt,
+    int? totalRecipients,
+    String? status,
+  }) {
+    return Broadcast(
+      id: id ?? this.id,
+      clientId: clientId ?? this.clientId,
+      campaignName: campaignName ?? this.campaignName,
+      messageContent: messageContent ?? this.messageContent,
+      sentAt: sentAt ?? this.sentAt,
+      totalRecipients: totalRecipients ?? this.totalRecipients,
+      status: status ?? this.status,
     );
   }
 }
@@ -39,46 +64,33 @@ class Broadcast {
 /// Broadcast recipient model
 class BroadcastRecipient {
   final String id;
-  final String broadcastId;
+  final String? broadcastId;
   final String? customerPhone;
   final String? customerName;
-  final String status;
-  final DateTime sentAt;
+  final String? messageSent;
+  final String? status;
 
   const BroadcastRecipient({
     required this.id,
-    required this.broadcastId,
+    this.broadcastId,
     this.customerPhone,
     this.customerName,
-    required this.status,
-    required this.sentAt,
+    this.messageSent,
+    this.status,
   });
 
   factory BroadcastRecipient.fromJson(Map<String, dynamic> json) {
     return BroadcastRecipient(
-      id: json['id'] as String,
-      broadcastId: json['broadcast_id'] as String,
-      customerPhone: json['customer_phone'] as String?,
+      id: json['id']?.toString() ?? '',
+      broadcastId: json['broadcast_id']?.toString(),
+      customerPhone: json['customer_phone']?.toString(),
       customerName: json['customer_name'] as String?,
-      status: json['status'] as String? ?? 'sent',
-      sentAt: DateTime.parse(json['sent_at'] as String),
+      messageSent: json['message_sent'] as String?,
+      status: json['status'] as String?,
     );
   }
 
   String get displayName => customerName ?? customerPhone ?? 'Unknown';
-
-  Color get statusColor {
-    switch (status) {
-      case 'delivered':
-        return const Color(0xFF4CAF50);
-      case 'read':
-        return const Color(0xFF2196F3);
-      case 'failed':
-        return const Color(0xFFF44336);
-      default:
-        return const Color(0xFFFF9800);
-    }
-  }
 }
 
 /// Provider for managing broadcast campaigns
@@ -90,12 +102,11 @@ class BroadcastsProvider extends ChangeNotifier {
   bool _isSending = false;
   String? _error;
   String? _sendError;
+  int _monthlySentCount = 0;
   
-  // Realtime subscriptions
   RealtimeChannel? _broadcastsChannel;
   RealtimeChannel? _recipientsChannel;
 
-  // Getters
   List<Broadcast> get broadcasts => _broadcasts;
   List<BroadcastRecipient> get recipients => _recipients;
   Broadcast? get selectedBroadcast => _selectedBroadcast;
@@ -103,29 +114,47 @@ class BroadcastsProvider extends ChangeNotifier {
   bool get isSending => _isSending;
   String? get error => _error;
   String? get sendError => _sendError;
+  int get monthlySentCount => _monthlySentCount;
+  int get monthlyLimit => ClientConfig.currentClient?.broadcastLimit ?? 0;
+  int get remainingBroadcasts => (monthlyLimit - _monthlySentCount).clamp(0, monthlyLimit);
+  bool get hasLimit => monthlyLimit > 0;
+  bool get isAtLimit => hasLimit && _monthlySentCount >= monthlyLimit;
 
-  /// Initialize realtime subscriptions
+  /// Get dynamic table names from ClientConfig
+  String get _broadcastsTable {
+    final table = ClientConfig.broadcastsTable;
+    if (table != null && table.isNotEmpty) {
+      return table;
+    }
+    final slug = ClientConfig.currentClient?.slug;
+    if (slug != null && slug.isNotEmpty) {
+      return '${slug}_broadcasts';
+    }
+    return 'broadcasts';
+  }
+
+  String get _recipientsTable {
+    final broadcastsTable = _broadcastsTable;
+    if (broadcastsTable != 'broadcasts') {
+      final prefix = broadcastsTable.replaceAll('_broadcasts', '');
+      return '${prefix}_broadcast_recipients';
+    }
+    return 'broadcast_recipients';
+  }
+
   void initialize() {
     _subscribeToBroadcasts();
   }
 
-  /// Subscribe to realtime broadcasts updates
   void _subscribeToBroadcasts() {
-    final clientId = ClientConfig.client.id;
-    
     _broadcastsChannel?.unsubscribe();
     
     _broadcastsChannel = SupabaseService.client
-        .channel('broadcasts_$clientId')
+        .channel('broadcasts_${_broadcastsTable}')
         .onPostgresChanges(
           event: PostgresChangeEvent.insert,
           schema: 'public',
-          table: 'broadcasts',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'client_id',
-            value: clientId,
-          ),
+          table: _broadcastsTable,
           callback: (payload) {
             print('📢 New broadcast received');
             _handleNewBroadcast(payload.newRecord);
@@ -134,12 +163,7 @@ class BroadcastsProvider extends ChangeNotifier {
         .onPostgresChanges(
           event: PostgresChangeEvent.update,
           schema: 'public',
-          table: 'broadcasts',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'client_id',
-            value: clientId,
-          ),
+          table: _broadcastsTable,
           callback: (payload) {
             print('📢 Broadcast updated');
             _handleBroadcastUpdate(payload.newRecord);
@@ -147,25 +171,22 @@ class BroadcastsProvider extends ChangeNotifier {
         )
         .subscribe();
 
-    print('📢 Subscribed to broadcasts realtime updates');
+    print('📢 Subscribed to $_broadcastsTable realtime updates');
   }
 
-  /// Handle new broadcast from realtime
   void _handleNewBroadcast(Map<String, dynamic> data) {
     try {
       final broadcast = Broadcast.fromJson(data);
       
-      // Add to beginning of list if not already present
-      if (!_broadcasts.any((b) => b.id == broadcast.id)) {
-        _broadcasts.insert(0, broadcast);
-        notifyListeners();
-      }
+      // Remove duplicate if exists, then add
+      _broadcasts.removeWhere((b) => b.id == broadcast.id);
+      _broadcasts.insert(0, broadcast);
+      notifyListeners();
     } catch (e) {
       print('Error handling new broadcast: $e');
     }
   }
 
-  /// Handle broadcast update from realtime
   void _handleBroadcastUpdate(Map<String, dynamic> data) {
     try {
       final broadcast = Broadcast.fromJson(data);
@@ -174,7 +195,6 @@ class BroadcastsProvider extends ChangeNotifier {
       if (index != -1) {
         _broadcasts[index] = broadcast;
         
-        // Update selected broadcast if it's the same one
         if (_selectedBroadcast?.id == broadcast.id) {
           _selectedBroadcast = broadcast;
         }
@@ -186,7 +206,6 @@ class BroadcastsProvider extends ChangeNotifier {
     }
   }
 
-  /// Subscribe to recipients for a specific broadcast
   void _subscribeToRecipients(String broadcastId) {
     _recipientsChannel?.unsubscribe();
     
@@ -195,7 +214,7 @@ class BroadcastsProvider extends ChangeNotifier {
         .onPostgresChanges(
           event: PostgresChangeEvent.insert,
           schema: 'public',
-          table: 'broadcast_recipients',
+          table: _recipientsTable,
           filter: PostgresChangeFilter(
             type: PostgresChangeFilterType.eq,
             column: 'broadcast_id',
@@ -206,32 +225,18 @@ class BroadcastsProvider extends ChangeNotifier {
             _handleNewRecipient(payload.newRecord);
           },
         )
-        .onPostgresChanges(
-          event: PostgresChangeEvent.update,
-          schema: 'public',
-          table: 'broadcast_recipients',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'broadcast_id',
-            value: broadcastId,
-          ),
-          callback: (payload) {
-            print('📢 Recipient status updated');
-            _handleRecipientUpdate(payload.newRecord);
-          },
-        )
         .subscribe();
 
-    print('📢 Subscribed to recipients realtime updates');
+    print('📢 Subscribed to $_recipientsTable realtime updates');
   }
 
-  /// Handle new recipient from realtime
   void _handleNewRecipient(Map<String, dynamic> data) {
     try {
       final recipient = BroadcastRecipient.fromJson(data);
       
       if (!_recipients.any((r) => r.id == recipient.id)) {
         _recipients.insert(0, recipient);
+        _syncBroadcastRecipientCount();
         notifyListeners();
       }
     } catch (e) {
@@ -239,45 +244,48 @@ class BroadcastsProvider extends ChangeNotifier {
     }
   }
 
-  /// Handle recipient update from realtime
-  void _handleRecipientUpdate(Map<String, dynamic> data) {
-    try {
-      final recipient = BroadcastRecipient.fromJson(data);
+  void _syncBroadcastRecipientCount() {
+    if (_selectedBroadcast == null) return;
+    
+    final actualCount = _recipients.length;
+    if (_selectedBroadcast!.totalRecipients != actualCount) {
+      final updatedBroadcast = _selectedBroadcast!.copyWith(
+        totalRecipients: actualCount,
+      );
       
-      final index = _recipients.indexWhere((r) => r.id == recipient.id);
+      _selectedBroadcast = updatedBroadcast;
+      
+      final index = _broadcasts.indexWhere((b) => b.id == updatedBroadcast.id);
       if (index != -1) {
-        _recipients[index] = recipient;
-        notifyListeners();
+        _broadcasts[index] = updatedBroadcast;
       }
-    } catch (e) {
-      print('Error handling recipient update: $e');
     }
   }
 
-  /// Fetch all broadcasts for current client
   Future<void> fetchBroadcasts() async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      final clientId = ClientConfig.client.id;
+      print('📢 Fetching from table: $_broadcastsTable');
+      
       final response = await SupabaseService.client
-          .from('broadcasts')
+          .from(_broadcastsTable)
           .select()
-          .eq('client_id', clientId)
           .order('sent_at', ascending: false);
 
-      _broadcasts = (response as List)
-          .map((json) => Broadcast.fromJson(json))
-          .toList();
+      _broadcasts = (response as List).map((json) {
+        return Broadcast.fromJson(json);
+      }).toList();
 
-      print('Fetched ${_broadcasts.length} broadcasts');
+      print('📢 Fetched ${_broadcasts.length} broadcasts from $_broadcastsTable');
+
+      await fetchMonthlySentCount();
 
       _isLoading = false;
       notifyListeners();
-      
-      // Initialize realtime subscription after first fetch
+
       _subscribeToBroadcasts();
     } catch (e) {
       print('Fetch broadcasts error: $e');
@@ -287,38 +295,55 @@ class BroadcastsProvider extends ChangeNotifier {
     }
   }
 
-  /// Select a broadcast and load its recipients
   Future<void> selectBroadcast(Broadcast broadcast) async {
     _selectedBroadcast = broadcast;
     notifyListeners();
 
     await fetchRecipients(broadcast.id);
+    _syncBroadcastRecipientCount();
+    notifyListeners();
     
-    // Subscribe to realtime updates for this broadcast's recipients
     _subscribeToRecipients(broadcast.id);
   }
 
-  /// Fetch recipients for a broadcast
   Future<void> fetchRecipients(String broadcastId) async {
     try {
+      print('📢 Fetching recipients from: $_recipientsTable');
+      
       final response = await SupabaseService.client
-          .from('broadcast_recipients')
+          .from(_recipientsTable)
           .select()
-          .eq('broadcast_id', broadcastId)
-          .order('sent_at', ascending: false);
+          .eq('broadcast_id', broadcastId);
 
       _recipients = (response as List)
           .map((json) => BroadcastRecipient.fromJson(json))
           .toList();
 
-      print('Fetched ${_recipients.length} recipients');
+      print('📢 Fetched ${_recipients.length} recipients from $_recipientsTable');
       notifyListeners();
     } catch (e) {
       print('Fetch recipients error: $e');
     }
   }
 
-  /// Clear selection
+  Future<void> fetchMonthlySentCount() async {
+    try {
+      final now = DateTime.now();
+      final startOfMonth = DateTime(now.year, now.month, 1).toIso8601String();
+
+      final response = await SupabaseService.client
+          .from(_broadcastsTable)
+          .select('total_recipients')
+          .gte('sent_at', startOfMonth);
+
+      _monthlySentCount = (response as List)
+          .fold<int>(0, (sum, b) => sum + ((b['total_recipients'] ?? 0) as int));
+      notifyListeners();
+    } catch (e) {
+      print('Error fetching monthly broadcast count: $e');
+    }
+  }
+
   void clearSelection() {
     _selectedBroadcast = null;
     _recipients = [];
@@ -326,44 +351,15 @@ class BroadcastsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Get stats for current broadcast
-  Map<String, int> get recipientStats {
-    int sent = 0;
-    int delivered = 0;
-    int read = 0;
-    int failed = 0;
-
-    for (final r in _recipients) {
-      switch (r.status) {
-        case 'sent':
-          sent++;
-          break;
-        case 'delivered':
-          delivered++;
-          break;
-        case 'read':
-          read++;
-          break;
-        case 'failed':
-          failed++;
-          break;
-      }
-    }
-
-    return {
-      'sent': sent,
-      'delivered': delivered,
-      'read': read,
-      'failed': failed,
-      'total': _recipients.length,
-    };
-  }
-
-  /// Send a broadcast via n8n webhook
-  /// The AI will parse the instruction and determine recipients
   Future<bool> sendBroadcast(String instruction) async {
     if (instruction.trim().isEmpty) {
       _sendError = 'Please enter a broadcast instruction';
+      notifyListeners();
+      return false;
+    }
+
+    if (isAtLimit) {
+      _sendError = 'Monthly broadcast limit reached ($monthlyLimit/$monthlyLimit)';
       notifyListeners();
       return false;
     }
@@ -373,22 +369,30 @@ class BroadcastsProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final webhookUrl = ClientConfig.webhookUrl;
-      if (webhookUrl.isEmpty) {
-        throw Exception('Webhook URL not configured');
+      final webhookUrl = ClientConfig.broadcastsWebhookUrl;
+      if (webhookUrl == null || webhookUrl.isEmpty) {
+        throw Exception('Broadcasts webhook URL not configured');
+      }
+
+      final broadcastPhone = ClientConfig.broadcastsPhone;
+      if (broadcastPhone == null || broadcastPhone.isEmpty) {
+        throw Exception('Broadcasts phone number not configured');
       }
 
       final payload = {
         'source': 'dashboard',
         'type': 'broadcast',
         'instruction': instruction.trim(),
-        'ai_phone': ClientConfig.businessPhone,
-        'client_id': ClientConfig.client.id,
-        'client_name': ClientConfig.client.name,
+        'ai_phone': broadcastPhone,
+        'phone': broadcastPhone,
+        'client_id': ClientConfig.currentClient?.id,
+        'client_name': ClientConfig.currentClient?.name,
+        'user_name': ClientConfig.currentUserName,
         'timestamp': DateTime.now().toIso8601String(),
       };
 
-      print('Sending broadcast: $payload');
+      print('📢 Sending broadcast to $webhookUrl');
+      print('📢 Payload: $payload');
 
       final response = await http.post(
         Uri.parse(webhookUrl),
@@ -396,12 +400,24 @@ class BroadcastsProvider extends ChangeNotifier {
         body: jsonEncode(payload),
       );
 
+      print('📢 Webhook response: ${response.statusCode} ${response.body}');
+
       if (response.statusCode >= 200 && response.statusCode < 300) {
-        print('Broadcast sent successfully');
+        print('📢 Broadcast sent successfully');
+
+        // Log the broadcast action
+        await SupabaseService.instance.log(
+          actionType: ActionType.broadcastSent,
+          description: 'Sent broadcast: ${instruction.length > 50 ? '${instruction.substring(0, 50)}...' : instruction}',
+          metadata: {
+            'instruction': instruction,
+            'client_name': ClientConfig.currentClient?.name,
+          },
+        );
         
-        // Realtime will handle the update, but also refresh after delay as backup
         Future.delayed(const Duration(seconds: 2), () {
           fetchBroadcasts();
+          fetchMonthlySentCount();
         });
 
         _isSending = false;
@@ -419,7 +435,6 @@ class BroadcastsProvider extends ChangeNotifier {
     }
   }
 
-  /// Clear send error
   void clearSendError() {
     _sendError = null;
     notifyListeners();

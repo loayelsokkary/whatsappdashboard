@@ -1,11 +1,16 @@
+import 'dart:js_interop';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
+import 'package:web/web.dart' as web;
 import '../providers/conversations_provider.dart';
 import '../providers/ai_settings_provider.dart';
 import '../models/models.dart';
 import '../theme/vivid_theme.dart';
 import '../utils/time_utils.dart';
+import '../utils/date_formatter.dart';
 
 class ConversationDetailPanel extends StatefulWidget {
   final Conversation conversation;
@@ -28,6 +33,7 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
   
   // AI Toggle loading state only
   bool _aiToggleLoading = false;
+  bool _isUploading = false;
 
   @override
   void initState() {
@@ -134,6 +140,204 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
     }
   }
 
+  Future<void> _pickAndUploadFile() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
+      );
+
+      if (result == null || !mounted) return;
+
+      final file = result.files.first;
+      final bytes = file.bytes;
+
+      if (bytes == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Could not read file'),
+              backgroundColor: VividColors.statusUrgent,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+          );
+        }
+        return;
+      }
+
+      // Show caption dialog
+      final caption = await _showCaptionDialog(file.name, file.extension?.toLowerCase());
+      if (caption == null || !mounted) return; // User cancelled
+
+      setState(() => _isUploading = true);
+
+      final provider = context.read<ConversationsProvider>();
+      final url = await provider.uploadMedia(bytes, file.name);
+
+      if (url == null) {
+        if (mounted) {
+          setState(() => _isUploading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Upload failed'),
+              backgroundColor: VividColors.statusUrgent,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+          );
+        }
+        return;
+      }
+
+      // Determine media type from extension
+      final ext = file.extension?.toLowerCase();
+      final mediaType = (ext == 'jpg' || ext == 'jpeg' || ext == 'png')
+          ? 'image'
+          : 'document';
+
+      _focusNode.requestFocus();
+
+      await provider.sendMessage(
+        widget.conversation.id,
+        caption,
+        mediaUrl: url,
+        mediaType: mediaType,
+        mediaFilename: file.name,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: VividColors.statusUrgent,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        );
+      }
+    }
+
+    if (mounted) {
+      setState(() => _isUploading = false);
+    }
+  }
+
+  Future<String?> _showCaptionDialog(String filename, String? ext) async {
+    final captionController = TextEditingController();
+    final isImage = ext == 'jpg' || ext == 'jpeg' || ext == 'png';
+
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: VividColors.navy,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(
+              isImage ? Icons.image : Icons.picture_as_pdf,
+              color: isImage ? VividColors.cyan : const Color(0xFFEF4444),
+              size: 22,
+            ),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Text(
+                'Send File',
+                style: TextStyle(
+                  color: VividColors.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Filename
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: VividColors.darkNavy,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: VividColors.tealBlue.withOpacity(0.2)),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.attach_file,
+                    size: 16,
+                    color: VividColors.textMuted,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      filename,
+                      style: const TextStyle(
+                        color: VividColors.textSecondary,
+                        fontSize: 13,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Caption input
+            TextField(
+              controller: captionController,
+              autofocus: true,
+              maxLines: 3,
+              style: const TextStyle(color: VividColors.textPrimary, fontSize: 14),
+              decoration: InputDecoration(
+                labelText: 'Caption (optional)',
+                labelStyle: const TextStyle(color: VividColors.textMuted),
+                hintText: 'Add a message...',
+                hintStyle: TextStyle(color: VividColors.textMuted.withOpacity(0.5)),
+                filled: true,
+                fillColor: VividColors.darkNavy,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: VividColors.tealBlue.withOpacity(0.3)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: VividColors.tealBlue.withOpacity(0.3)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: VividColors.cyan),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, null),
+            style: TextButton.styleFrom(foregroundColor: VividColors.textMuted),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.pop(context, captionController.text.trim()),
+            icon: const Icon(Icons.send, size: 16),
+            label: const Text('Send'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: VividColors.brightBlue,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<ConversationsProvider>();
@@ -215,8 +419,9 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
             ),
           ),
 
-          // AI Toggle
-          _buildAiToggle(),
+          // AI Toggle (only for AI-enabled clients)
+          if (ClientConfig.hasAiConversations)
+            _buildAiToggle(),
         ],
       ),
     );
@@ -304,9 +509,9 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
       );
     }
 
-    // Filter out empty messages
-    final visibleMessages = messages.where((m) => 
-        m.content.isNotEmpty && m.content.trim().isNotEmpty).toList();
+    // Filter out empty messages (keep media-only messages)
+    final visibleMessages = messages.where((m) =>
+        (m.content.isNotEmpty && m.content.trim().isNotEmpty) || m.hasMedia).toList();
 
     return ListView.builder(
       controller: _scrollController,
@@ -315,24 +520,69 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
       itemBuilder: (context, index) {
         final msg = visibleMessages[index];
         final isPending = msg.id.startsWith('pending_');
-        
+
         // Check if this is a new message we haven't seen
         final isNew = !_seenMessageIds.contains(msg.id);
         if (isNew) {
           _seenMessageIds.add(msg.id);
         }
-        
-        return _AnimatedMessageBubble(
-          key: ValueKey(msg.id),
-          message: msg,
-          isPending: isPending,
-          animate: isNew && isPending, // Only animate new pending messages
+
+        // Show date divider if first message or different day from previous
+        final showDateDivider = index == 0 ||
+            DateFormatter.isDifferentDay(
+              msg.createdAt, visibleMessages[index - 1].createdAt);
+
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (showDateDivider)
+              _buildDateDivider(DateFormatter.formatChatDate(msg.createdAt)),
+            _AnimatedMessageBubble(
+              key: ValueKey(msg.id),
+              message: msg,
+              isPending: isPending,
+              animate: isNew && isPending, // Only animate new pending messages
+            ),
+          ],
         );
       },
     );
   }
 
+  Widget _buildDateDivider(String label) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        children: [
+          Expanded(child: Divider(color: VividColors.tealBlue.withOpacity(0.2), height: 1)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: VividColors.navy,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: VividColors.tealBlue.withOpacity(0.2)),
+              ),
+              child: Text(
+                label,
+                style: const TextStyle(
+                  color: VividColors.textMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+          Expanded(child: Divider(color: VividColors.tealBlue.withOpacity(0.2), height: 1)),
+        ],
+      ),
+    );
+  }
+
   Widget _buildInput(bool isSending) {
+    final busy = isSending || _isUploading;
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -343,75 +593,129 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
       ),
       child: SafeArea(
         top: false,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // Text field
-            Expanded(
-              child: Container(
-                constraints: const BoxConstraints(maxHeight: 120),
-                decoration: BoxDecoration(
-                  color: VividColors.darkNavy,
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(
-                    color: VividColors.tealBlue.withOpacity(0.3),
-                  ),
-                ),
-                child: TextField(
-                  controller: _messageController,
-                  focusNode: _focusNode,
-                  enabled: !isSending,
-                  maxLines: null,
-                  textInputAction: TextInputAction.send,
-                  onSubmitted: (_) => _handleSend(),
-                  style: const TextStyle(color: VividColors.textPrimary, fontSize: 15),
-                  decoration: InputDecoration(
-                    hintText: isSending ? 'Sending...' : 'Type a message...',
-                    hintStyle: const TextStyle(color: VividColors.textMuted),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            
-            // Send button
-            GestureDetector(
-              onTap: isSending ? null : _handleSend,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                width: 46,
-                height: 46,
-                decoration: BoxDecoration(
-                  gradient: isSending ? null : VividColors.primaryGradient,
-                  color: isSending ? VividColors.deepBlue : null,
-                  borderRadius: BorderRadius.circular(23),
-                  boxShadow: isSending ? null : [
-                    BoxShadow(
-                      color: VividColors.brightBlue.withOpacity(0.3),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
+            // Upload progress indicator
+            if (_isUploading)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: VividColors.cyan,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Uploading...',
+                      style: TextStyle(color: VividColors.textMuted, fontSize: 13),
                     ),
                   ],
                 ),
-                child: Center(
-                  child: isSending
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: VividColors.cyan,
-                          ),
-                        )
-                      : const Icon(
-                          Icons.send_rounded,
-                          color: VividColors.darkNavy,
-                          size: 20,
-                        ),
-                ),
               ),
+
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                // Attach button
+                GestureDetector(
+                  onTap: busy ? null : _pickAndUploadFile,
+                  child: Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: VividColors.darkNavy,
+                      borderRadius: BorderRadius.circular(21),
+                      border: Border.all(
+                        color: VividColors.tealBlue.withOpacity(0.3),
+                      ),
+                    ),
+                    child: Icon(
+                      Icons.attach_file,
+                      color: busy ? VividColors.textMuted : VividColors.cyan,
+                      size: 20,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+
+                // Text field
+                Expanded(
+                  child: Container(
+                    constraints: const BoxConstraints(maxHeight: 120),
+                    decoration: BoxDecoration(
+                      color: VividColors.darkNavy,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: VividColors.tealBlue.withOpacity(0.3),
+                      ),
+                    ),
+                    child: TextField(
+                      controller: _messageController,
+                      focusNode: _focusNode,
+                      enabled: !busy,
+                      maxLines: null,
+                      textInputAction: TextInputAction.send,
+                      onSubmitted: (_) => _handleSend(),
+                      style: const TextStyle(color: VividColors.textPrimary, fontSize: 15),
+                      decoration: InputDecoration(
+                        hintText: _isUploading
+                            ? 'Uploading...'
+                            : isSending
+                                ? 'Sending...'
+                                : 'Type a message...',
+                        hintStyle: const TextStyle(color: VividColors.textMuted),
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+
+                // Send button
+                GestureDetector(
+                  onTap: busy ? null : _handleSend,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      gradient: busy ? null : VividColors.primaryGradient,
+                      color: busy ? VividColors.deepBlue : null,
+                      borderRadius: BorderRadius.circular(23),
+                      boxShadow: busy ? null : [
+                        BoxShadow(
+                          color: VividColors.brightBlue.withOpacity(0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Center(
+                      child: busy
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: VividColors.cyan,
+                              ),
+                            )
+                          : const Icon(
+                              Icons.send_rounded,
+                              color: VividColors.darkNavy,
+                              size: 20,
+                            ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -617,7 +921,7 @@ class _MessageBubbleState extends State<_MessageBubble>
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          isManager ? 'Manager' : 'Vivid AI',
+                          isManager ? ClientConfig.currentUserName : (ClientConfig.hasAiConversations ? 'Vivid AI' : 'System'),
                           style: TextStyle(
                             color: isManager ? VividColors.brightBlue : VividColors.cyan,
                             fontSize: 11,
@@ -671,16 +975,23 @@ class _MessageBubbleState extends State<_MessageBubble>
                           ),
                         ),
 
+                      // Media
+                      if (widget.message.hasMedia)
+                        _buildMediaContent(),
+                      if (widget.message.hasMedia && widget.message.content.trim().isNotEmpty)
+                        const SizedBox(height: 8),
+
                       // Text
-                      Text(
-                        widget.message.content,
-                        style: const TextStyle(
-                          color: VividColors.textPrimary,
-                          fontSize: 15,
-                          height: 1.4,
+                      if (widget.message.content.trim().isNotEmpty)
+                        Text(
+                          widget.message.content,
+                          style: const TextStyle(
+                            color: VividColors.textPrimary,
+                            fontSize: 15,
+                            height: 1.4,
+                          ),
+                          textDirection: _textDirection(),
                         ),
-                        textDirection: _textDirection(),
-                      ),
 
                       const SizedBox(height: 4),
 
@@ -779,9 +1090,280 @@ class _MessageBubbleState extends State<_MessageBubble>
     return arabicRegex.hasMatch(firstChar) ? TextDirection.rtl : TextDirection.ltr;
   }
 
+  Widget _buildMediaContent() {
+    final msg = widget.message;
+
+    if (msg.isImage) {
+      return GestureDetector(
+        onTap: () => _openFullscreenImage(context, msg.mediaUrl!),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 240, maxHeight: 300),
+            child: Image.network(
+              msg.mediaUrl!,
+              fit: BoxFit.cover,
+              loadingBuilder: (context, child, progress) {
+                if (progress == null) return child;
+                return Container(
+                  width: 200,
+                  height: 150,
+                  decoration: BoxDecoration(
+                    color: VividColors.deepBlue.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Center(
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: VividColors.cyan,
+                    ),
+                  ),
+                );
+              },
+              errorBuilder: (context, error, stack) {
+                return Container(
+                  width: 200,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: VividColors.deepBlue.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Center(
+                    child: Icon(Icons.broken_image, color: VividColors.textMuted, size: 32),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (msg.isDocument) {
+      return GestureDetector(
+        onTap: () => _downloadFile(msg.mediaUrl!),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: VividColors.darkNavy.withOpacity(0.5),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: VividColors.tealBlue.withOpacity(0.2)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.picture_as_pdf, color: Color(0xFFEF4444), size: 24),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  msg.mediaFilename ?? 'Document',
+                  style: const TextStyle(
+                    color: VividColors.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(Icons.download, size: 18, color: VividColors.cyan),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Generic media fallback
+    return GestureDetector(
+      onTap: () => _downloadFile(msg.mediaUrl!),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: VividColors.darkNavy.withOpacity(0.5),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: VividColors.tealBlue.withOpacity(0.2)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.attach_file, color: VividColors.cyan, size: 20),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                msg.mediaFilename ?? 'Attachment',
+                style: const TextStyle(
+                  color: VividColors.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(Icons.download, size: 18, color: VividColors.cyan),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openFullscreenImage(BuildContext context, String url) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(24),
+        child: Stack(
+          children: [
+            Center(
+              child: InteractiveViewer(
+                child: Image.network(
+                  url,
+                  fit: BoxFit.contain,
+                  loadingBuilder: (context, child, progress) {
+                    if (progress == null) return child;
+                    return const Center(
+                      child: CircularProgressIndicator(color: VividColors.cyan),
+                    );
+                  },
+                ),
+              ),
+            ),
+            Positioned(
+              top: 0,
+              right: 0,
+              child: Row(
+                children: [
+                  IconButton(
+                    onPressed: () => _downloadFile(url),
+                    icon: const Icon(Icons.download, color: Colors.white, size: 24),
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.black54,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close, color: Colors.white, size: 24),
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.black54,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _downloadFile(String fileUrl) async {
+    try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Row(
+            children: [
+              SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
+              SizedBox(width: 12),
+              Text('Downloading...'),
+            ],
+          ),
+          backgroundColor: VividColors.deepBlue,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+
+      // Fetch file bytes
+      final response = await http.get(Uri.parse(fileUrl));
+      if (response.statusCode != 200) {
+        throw Exception('Failed to download: ${response.statusCode}');
+      }
+
+      // Extract filename from URL path
+      final uri = Uri.parse(fileUrl);
+      final segments = uri.pathSegments;
+      String filename = segments.isNotEmpty ? segments.last : 'download';
+      filename = filename.split('?').first; // Remove query params
+
+      // Determine MIME type
+      final ext = filename.toLowerCase().split('.').last;
+      final mimeType = switch (ext) {
+        'jpg' || 'jpeg' => 'image/jpeg',
+        'png' => 'image/png',
+        'gif' => 'image/gif',
+        'webp' => 'image/webp',
+        'pdf' => 'application/pdf',
+        _ => 'application/octet-stream',
+      };
+
+      // Create blob and trigger download
+      final blob = web.Blob(
+        [response.bodyBytes.toJS].toJS,
+        web.BlobPropertyBag(type: mimeType),
+      );
+      final blobUrl = web.URL.createObjectURL(blob);
+      final anchor = web.HTMLAnchorElement()
+        ..href = blobUrl
+        ..download = filename
+        ..style.display = 'none';
+
+      web.document.body!.append(anchor);
+      anchor.click();
+
+      // Cleanup
+      Future.delayed(const Duration(milliseconds: 150), () {
+        anchor.remove();
+        web.URL.revokeObjectURL(blobUrl);
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white, size: 18),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Downloaded: $filename')),
+              ],
+            ),
+            backgroundColor: VividColors.statusSuccess,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Download error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.white, size: 18),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Download failed: $e')),
+              ],
+            ),
+            backgroundColor: VividColors.statusUrgent,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        );
+      }
+    }
+  }
+
   String _formatTime(DateTime dt) {
-    final hour = dt.hour;
-    final minute = dt.minute.toString().padLeft(2, '0');
+    final bh = dt.toUtc().add(const Duration(hours: 3));
+    final hour = bh.hour;
+    final minute = bh.minute.toString().padLeft(2, '0');
     final period = hour >= 12 ? 'PM' : 'AM';
     final hour12 = hour > 12 ? hour - 12 : (hour == 0 ? 12 : hour);
     return '$hour12:$minute $period';

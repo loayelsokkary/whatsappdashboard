@@ -74,31 +74,54 @@ class BroadcastAnalyticsProvider extends ChangeNotifier {
 
   SupabaseClient get _client => Supabase.instance.client;
 
+  /// Get dynamic table names from ClientConfig
+  String get _broadcastsTable {
+    final table = ClientConfig.broadcastsTable;
+    if (table != null && table.isNotEmpty) {
+      return table;
+    }
+    final slug = ClientConfig.currentClient?.slug;
+    if (slug != null && slug.isNotEmpty) {
+      return '${slug}_broadcasts';
+    }
+    return 'broadcasts';
+  }
+
+  String get _recipientsTable {
+    final broadcastsTable = _broadcastsTable;
+    if (broadcastsTable != 'broadcasts') {
+      final prefix = broadcastsTable.replaceAll('_broadcasts', '');
+      return '${prefix}_broadcast_recipients';
+    }
+    return 'broadcast_recipients';
+  }
+
   Future<void> fetchAnalytics() async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      final clientId = ClientConfig.client.id;
       final now = DateTime.now();
       final todayStart = DateTime(now.year, now.month, now.day);
 
-      // Fetch all broadcasts for this client
+      print('📊 Fetching analytics from: $_broadcastsTable');
+
+      // Fetch all broadcasts from client-specific table
       final broadcastsResponse = await _client
-          .from('broadcasts')
+          .from(_broadcastsTable)
           .select()
-          .eq('client_id', clientId)
           .order('sent_at', ascending: false);
 
       final broadcasts = broadcastsResponse as List;
       final totalCampaigns = broadcasts.length;
 
-      // Fetch all recipients
+      print('📊 Fetching recipients from: $_recipientsTable');
+
+      // Fetch all recipients from client-specific table
       final recipientsResponse = await _client
-          .from('broadcast_recipients')
-          .select('*, broadcasts!inner(client_id)')
-          .eq('broadcasts.client_id', clientId);
+          .from(_recipientsTable)
+          .select();
 
       final recipients = recipientsResponse as List;
 
@@ -110,35 +133,26 @@ class BroadcastAnalyticsProvider extends ChangeNotifier {
       int totalSent = 0;
 
       for (final r in recipients) {
-        switch (r['status']) {
-          case 'delivered':
-            totalDelivered++;
-            break;
-          case 'read':
-            totalRead++;
-            break;
-          case 'failed':
-            totalFailed++;
-            break;
-          case 'sent':
-            totalSent++;
-            break;
+        final status = r['status']?.toString();
+        if (status == 'accepted') {
+          totalDelivered++;
+        } else {
+          totalFailed++;
         }
       }
 
       // Calculate rates
       final deliveryRate = totalRecipients > 0
-          ? (totalDelivered + totalRead) / totalRecipients * 100
+          ? totalDelivered / totalRecipients * 100
           : 0.0;
-      final readRate = totalRecipients > 0
-          ? totalRead / totalRecipients * 100
-          : 0.0;
+      const readRate = 0.0;
 
       // Get campaign performance
       final recentCampaigns = <CampaignPerformance>[];
       for (final broadcast in broadcasts.take(5)) {
+        final broadcastId = broadcast['id']?.toString();
         final campaignRecipients = recipients
-            .where((r) => r['broadcast_id'] == broadcast['id'])
+            .where((r) => r['broadcast_id']?.toString() == broadcastId)
             .toList();
 
         int delivered = 0;
@@ -146,21 +160,16 @@ class BroadcastAnalyticsProvider extends ChangeNotifier {
         int failed = 0;
 
         for (final r in campaignRecipients) {
-          switch (r['status']) {
-            case 'delivered':
-              delivered++;
-              break;
-            case 'read':
-              read++;
-              break;
-            case 'failed':
-              failed++;
-              break;
+          final status = r['status']?.toString();
+          if (status == 'accepted') {
+            delivered++;
+          } else {
+            failed++;
           }
         }
 
         recentCampaigns.add(CampaignPerformance(
-          id: broadcast['id'],
+          id: broadcastId ?? '',
           name: broadcast['campaign_name'] ?? 'Unnamed',
           recipients: campaignRecipients.length,
           delivered: delivered,
@@ -206,6 +215,8 @@ class BroadcastAnalyticsProvider extends ChangeNotifier {
         recentCampaigns: recentCampaigns,
         last7Days: last7Days,
       );
+
+      print('📊 Analytics loaded successfully');
 
     } catch (e) {
       _error = 'Failed to load analytics: $e';

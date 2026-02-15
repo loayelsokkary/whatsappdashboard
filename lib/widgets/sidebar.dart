@@ -3,8 +3,10 @@ import 'package:provider/provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/agent_provider.dart';
 import '../providers/notification_provider.dart';
+import '../providers/user_management_provider.dart';
 import '../models/models.dart';
 import '../theme/vivid_theme.dart';
+import 'user_management_dialog.dart';
 
 /// Navigation destinations
 enum NavDestination {
@@ -12,6 +14,8 @@ enum NavDestination {
   broadcasts,
   analytics,
   managerChat,
+  bookingReminders,
+  activityLogs,
 }
 
 class Sidebar extends StatelessWidget {
@@ -64,7 +68,6 @@ class Sidebar extends StatelessWidget {
                   height: 14,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    // Show green if no conversations feature, or if connected
                     color: !ClientConfig.hasFeature('conversations') || conversationsProvider.isConnected
                         ? VividColors.statusSuccess
                         : VividColors.statusUrgent,
@@ -86,7 +89,9 @@ class Sidebar extends StatelessWidget {
               icon: Icons.forum,
               label: 'Chats',
               isSelected: currentDestination == NavDestination.conversations,
-              badge: conversationsProvider.totalCount,
+              badge: conversationsProvider.totalUnreadCount,
+              badgeColor: VividColors.statusUrgent,
+              pulse: conversationsProvider.totalUnreadCount > 0,
               onTap: () => onDestinationChanged(NavDestination.conversations),
             ),
           
@@ -96,6 +101,16 @@ class Sidebar extends StatelessWidget {
               label: 'Broadcasts',
               isSelected: currentDestination == NavDestination.broadcasts,
               onTap: () => onDestinationChanged(NavDestination.broadcasts),
+              // Show read-only indicator for viewers
+              isReadOnly: !ClientConfig.canPerformAction('send_broadcast'),
+            ),
+          
+          if (ClientConfig.hasFeature('booking_reminders'))
+            _NavItem(
+              icon: Icons.calendar_month,
+              label: 'Bookings',
+              isSelected: currentDestination == NavDestination.bookingReminders,
+              onTap: () => onDestinationChanged(NavDestination.bookingReminders),
             ),
           
           if (ClientConfig.hasFeature('analytics'))
@@ -112,8 +127,17 @@ class Sidebar extends StatelessWidget {
               label: 'Vivid AI',
               isSelected: currentDestination == NavDestination.managerChat,
               onTap: () => onDestinationChanged(NavDestination.managerChat),
+              isReadOnly: !ClientConfig.canPerformAction('use_manager_chat'),
             ),
 
+          if (ClientConfig.isClientAdmin)
+            _NavItem(
+              icon: Icons.history,
+              label: 'Logs',
+              isSelected: currentDestination == NavDestination.activityLogs,
+              onTap: () => onDestinationChanged(NavDestination.activityLogs),
+            ),
+          
           const SizedBox(height: 16),
           
           // Divider
@@ -138,20 +162,23 @@ class Sidebar extends StatelessWidget {
 
           const Spacer(),
 
-          // Sound toggle
+          // Sound toggle (controls both notification and conversation sounds)
           IconButton(
-            onPressed: () => notificationProvider.toggleSound(),
+            onPressed: () {
+              notificationProvider.toggleSound();
+              conversationsProvider.toggleSound();
+            },
             icon: Icon(
-              notificationProvider.soundEnabled 
-                  ? Icons.volume_up 
+              notificationProvider.soundEnabled
+                  ? Icons.volume_up
                   : Icons.volume_off,
-              color: notificationProvider.soundEnabled 
-                  ? VividColors.cyan 
+              color: notificationProvider.soundEnabled
+                  ? VividColors.cyan
                   : VividColors.textMuted,
               size: 20,
             ),
-            tooltip: notificationProvider.soundEnabled 
-                ? 'Sound On' 
+            tooltip: notificationProvider.soundEnabled
+                ? 'Sound On'
                 : 'Sound Off',
           ),
 
@@ -166,6 +193,32 @@ class Sidebar extends StatelessWidget {
     );
   }
 
+  Color _getRoleColor(UserRole role) {
+    switch (role) {
+      case UserRole.admin:
+        return VividColors.cyan;
+      case UserRole.manager:
+        return VividColors.brightBlue;
+      case UserRole.agent:
+        return Colors.green;
+      case UserRole.viewer:
+        return VividColors.textMuted;
+    }
+  }
+
+  IconData _getRoleIcon(UserRole role) {
+    switch (role) {
+      case UserRole.admin:
+        return Icons.admin_panel_settings;
+      case UserRole.manager:
+        return Icons.manage_accounts;
+      case UserRole.agent:
+        return Icons.support_agent;
+      case UserRole.viewer:
+        return Icons.visibility;
+    }
+  }
+
   void _showNotificationsPanel(BuildContext context, NotificationProvider provider) {
     showDialog(
       context: context,
@@ -178,6 +231,8 @@ class Sidebar extends StatelessWidget {
     Agent? agent,
     AgentProvider agentProvider,
   ) {
+    final currentUser = ClientConfig.currentUser;
+    
     return PopupMenuButton<String>(
       offset: const Offset(72, 0),
       color: VividColors.navy,
@@ -192,23 +247,56 @@ class Sidebar extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                agent?.name ?? 'Manager',
+                agent?.name ?? currentUser?.name ?? 'User',
                 style: const TextStyle(
                   color: VividColors.textPrimary,
                   fontWeight: FontWeight.w600,
                 ),
               ),
               Text(
-                agent?.email ?? '',
+                agent?.email ?? currentUser?.email ?? '',
                 style: const TextStyle(
                   color: VividColors.textMuted,
                   fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: _getRoleColor(currentUser?.role ?? UserRole.viewer).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  currentUser?.role.displayName ?? 'User',
+                  style: TextStyle(
+                    color: _getRoleColor(currentUser?.role ?? UserRole.viewer),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
             ],
           ),
         ),
         const PopupMenuDivider(),
+        // Manage Users - Only for client admins
+        if (ClientConfig.isClientAdmin)
+          const PopupMenuItem(
+            value: 'manage_users',
+            child: Row(
+              children: [
+                Icon(Icons.people, color: VividColors.cyan, size: 20),
+                SizedBox(width: 10),
+                Text(
+                  'Manage Users',
+                  style: TextStyle(color: VividColors.textPrimary),
+                ),
+              ],
+            ),
+          ),
+        if (ClientConfig.isClientAdmin)
+          const PopupMenuDivider(),
         const PopupMenuItem(
           value: 'logout',
           child: Row(
@@ -226,6 +314,8 @@ class Sidebar extends StatelessWidget {
       onSelected: (value) {
         if (value == 'logout') {
           agentProvider.logout();
+        } else if (value == 'manage_users') {
+          _showUserManagement(context);
         }
       },
       child: Container(
@@ -241,7 +331,7 @@ class Sidebar extends StatelessWidget {
         ),
         child: Center(
           child: Text(
-            agent?.initials ?? 'MG',
+            agent?.initials ?? _getInitials(currentUser?.name ?? 'U'),
             style: const TextStyle(
               color: VividColors.textPrimary,
               fontWeight: FontWeight.bold,
@@ -251,6 +341,22 @@ class Sidebar extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  void _showUserManagement(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) => const UserManagementDialog(),
+    );
+  }
+
+  String _getInitials(String name) {
+    final parts = name.split(' ');
+    if (parts.length >= 2) {
+      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+    }
+    return name.substring(0, name.length.clamp(0, 2)).toUpperCase();
   }
 }
 
@@ -264,7 +370,9 @@ class _NavItem extends StatefulWidget {
   final bool isSelected;
   final int badge;
   final Color? badgeColor;
+  final Color? highlightColor;
   final bool pulse;
+  final bool isReadOnly;
   final VoidCallback onTap;
 
   const _NavItem({
@@ -273,7 +381,9 @@ class _NavItem extends StatefulWidget {
     required this.isSelected,
     this.badge = 0,
     this.badgeColor,
+    this.highlightColor,
     this.pulse = false,
+    this.isReadOnly = false,
     required this.onTap,
   });
 
@@ -320,11 +430,12 @@ class _NavItemState extends State<_NavItem> with SingleTickerProviderStateMixin 
 
   @override
   Widget build(BuildContext context) {
-    final color = widget.isSelected ? VividColors.cyan : VividColors.textMuted;
+    final highlightColor = widget.highlightColor ?? VividColors.cyan;
+    final color = widget.isSelected ? highlightColor : VividColors.textMuted;
     final badgeColor = widget.badgeColor ?? VividColors.cyan;
 
     return Tooltip(
-      message: widget.label,
+      message: widget.isReadOnly ? '${widget.label} (View Only)' : widget.label,
       preferBelow: false,
       child: InkWell(
         onTap: widget.onTap,
@@ -334,19 +445,41 @@ class _NavItemState extends State<_NavItem> with SingleTickerProviderStateMixin 
           decoration: BoxDecoration(
             border: Border(
               left: BorderSide(
-                color: widget.isSelected ? VividColors.cyan : Colors.transparent,
+                color: widget.isSelected ? highlightColor : Colors.transparent,
                 width: 3,
               ),
             ),
             color: widget.isSelected
-                ? VividColors.brightBlue.withOpacity(0.1)
+                ? highlightColor.withOpacity(0.1)
                 : Colors.transparent,
           ),
           child: Stack(
             alignment: Alignment.center,
             clipBehavior: Clip.none,
             children: [
+              // Main icon
               Icon(widget.icon, color: color, size: 24),
+              
+              // Read-only indicator
+              if (widget.isReadOnly)
+                Positioned(
+                  right: 14,
+                  bottom: -2,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: VividColors.darkNavy,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.visibility,
+                      size: 10,
+                      color: VividColors.textMuted,
+                    ),
+                  ),
+                ),
+              
+              // Badge
               if (widget.badge > 0)
                 Positioned(
                   right: 14,
@@ -483,7 +616,6 @@ class _NotificationsDialog extends StatelessWidget {
                           onTap: () {
                             provider.markAsRead(notification.id);
                             Navigator.pop(context);
-                            // TODO: Navigate to conversation
                           },
                         );
                       },

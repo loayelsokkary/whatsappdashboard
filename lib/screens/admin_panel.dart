@@ -412,6 +412,30 @@ class _ClientCard extends StatelessWidget {
               )).toList(),
             ),
             
+            // AI status
+            if (client.enabledFeatures.contains('conversations'))
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Row(
+                  children: [
+                    Icon(
+                      client.hasAiConversations ? Icons.smart_toy : Icons.smart_toy_outlined,
+                      size: 14,
+                      color: client.hasAiConversations ? VividColors.cyan : VividColors.textMuted,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      client.hasAiConversations ? 'AI Enabled' : 'AI Disabled',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: client.hasAiConversations ? VividColors.cyan : VividColors.textMuted,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
             if (client.businessPhone != null) ...[
               const SizedBox(height: 8),
               Row(
@@ -420,6 +444,20 @@ class _ClientCard extends StatelessWidget {
                   const SizedBox(width: 4),
                   Text(
                     client.businessPhone!,
+                    style: const TextStyle(color: VividColors.textMuted, fontSize: 11),
+                  ),
+                ],
+              ),
+            ],
+            
+            if (client.bookingsTable != null) ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  const Icon(Icons.calendar_month, size: 12, color: VividColors.textMuted),
+                  const SizedBox(width: 4),
+                  Text(
+                    client.bookingsTable!,
                     style: const TextStyle(color: VividColors.textMuted, fontSize: 11),
                   ),
                 ],
@@ -556,7 +594,7 @@ class _ClientDetail extends StatelessWidget {
                       return _UserTile(
                         user: user,
                         onEdit: () => _showUserDialog(context, client.id, user: user),
-                        onDelete: () => _confirmDeleteUser(context, user),
+                        onToggleBlock: () => _confirmToggleBlock(context, user),
                       );
                     },
                   ),
@@ -573,14 +611,21 @@ class _ClientDetail extends StatelessWidget {
     );
   }
 
-  void _confirmDeleteUser(BuildContext context, AppUser user) {
+  void _confirmToggleBlock(BuildContext context, AppUser user) {
+    final isBlocking = !user.isBlocked;
+    final newStatus = isBlocking ? 'blocked' : 'active';
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: VividColors.navy,
-        title: const Text('Delete User', style: TextStyle(color: VividColors.textPrimary)),
+        title: Text(
+          isBlocking ? 'Block User' : 'Unblock User',
+          style: const TextStyle(color: VividColors.textPrimary),
+        ),
         content: Text(
-          'Are you sure you want to delete "${user.name}"?',
+          isBlocking
+              ? 'Block "${user.name}"? They will no longer be able to log in.'
+              : 'Unblock "${user.name}"? They will be able to log in again.',
           style: const TextStyle(color: VividColors.textMuted),
         ),
         actions: [
@@ -591,9 +636,9 @@ class _ClientDetail extends StatelessWidget {
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(dialogContext);
-              
-              final success = await context.read<AdminProvider>().deleteUser(user.id);
-              
+
+              final success = await context.read<AdminProvider>().toggleUserStatus(user.id, newStatus);
+
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
@@ -605,9 +650,9 @@ class _ClientDetail extends StatelessWidget {
                           size: 18,
                         ),
                         const SizedBox(width: 8),
-                        Text(success 
-                            ? 'User "${user.name}" deleted successfully' 
-                            : 'Failed to delete user. Check RLS policies in Supabase.'),
+                        Text(success
+                            ? 'User "${user.name}" ${isBlocking ? "blocked" : "unblocked"} successfully'
+                            : 'Failed to ${isBlocking ? "block" : "unblock"} user.'),
                       ],
                     ),
                     backgroundColor: success ? VividColors.statusSuccess : Colors.red,
@@ -617,8 +662,10 @@ class _ClientDetail extends StatelessWidget {
                 );
               }
             },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Delete'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: isBlocking ? Colors.red : VividColors.statusSuccess,
+            ),
+            child: Text(isBlocking ? 'Block' : 'Unblock'),
           ),
         ],
       ),
@@ -627,18 +674,18 @@ class _ClientDetail extends StatelessWidget {
 }
 
 // ============================================
-// USER TILE
+// USER TILE (with role badge)
 // ============================================
 
 class _UserTile extends StatelessWidget {
   final AppUser user;
   final VoidCallback onEdit;
-  final VoidCallback onDelete;
+  final VoidCallback onToggleBlock;
 
   const _UserTile({
     required this.user,
     required this.onEdit,
-    required this.onDelete,
+    required this.onToggleBlock,
   });
 
   @override
@@ -669,13 +716,23 @@ class _UserTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  user.name,
-                  style: const TextStyle(
-                    color: VividColors.textPrimary,
-                    fontWeight: FontWeight.w500,
-                  ),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        user.name,
+                        style: const TextStyle(
+                          color: VividColors.textPrimary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _RoleBadge(role: user.role.value),
+                  ],
                 ),
+                const SizedBox(height: 2),
                 Text(
                   user.email,
                   style: const TextStyle(color: VividColors.textMuted, fontSize: 12),
@@ -683,15 +740,29 @@ class _UserTile extends StatelessWidget {
               ],
             ),
           ),
+          if (user.isBlocked)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              margin: const EdgeInsets.only(right: 8),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: const Text(
+                'Blocked',
+                style: TextStyle(color: Colors.red, fontSize: 10, fontWeight: FontWeight.w600),
+              ),
+            ),
           IconButton(
             onPressed: onEdit,
             icon: const Icon(Icons.edit, size: 18),
             color: VividColors.textMuted,
           ),
           IconButton(
-            onPressed: onDelete,
-            icon: const Icon(Icons.delete, size: 18),
-            color: Colors.red.withOpacity(0.7),
+            onPressed: onToggleBlock,
+            icon: Icon(user.isBlocked ? Icons.lock_open : Icons.block, size: 18),
+            color: user.isBlocked ? VividColors.statusSuccess : Colors.red.withOpacity(0.7),
+            tooltip: user.isBlocked ? 'Unblock' : 'Block',
           ),
         ],
       ),
@@ -705,6 +776,92 @@ class _UserTile extends StatelessWidget {
     }
     return name.substring(0, name.length.clamp(0, 2)).toUpperCase();
   }
+}
+
+// ============================================
+// ROLE BADGE
+// ============================================
+
+class _RoleBadge extends StatelessWidget {
+  final String role;
+
+  const _RoleBadge({required this.role});
+
+  @override
+  Widget build(BuildContext context) {
+    final config = _getRoleConfig(role);
+    
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: config.color.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: config.color.withOpacity(0.5), width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(config.icon, size: 10, color: config.color),
+          const SizedBox(width: 4),
+          Text(
+            config.label,
+            style: TextStyle(
+              color: config.color,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  _RoleConfig _getRoleConfig(String role) {
+    switch (role.toLowerCase()) {
+      case 'admin':
+        return _RoleConfig(
+          label: 'Admin',
+          color: VividColors.cyan,
+          icon: Icons.admin_panel_settings,
+        );
+      case 'manager':
+        return _RoleConfig(
+          label: 'Manager',
+          color: Colors.purple,
+          icon: Icons.manage_accounts,
+        );
+      case 'agent':
+        return _RoleConfig(
+          label: 'Agent',
+          color: Colors.green,
+          icon: Icons.support_agent,
+        );
+      case 'viewer':
+        return _RoleConfig(
+          label: 'Viewer',
+          color: Colors.orange,
+          icon: Icons.visibility,
+        );
+      default:
+        return _RoleConfig(
+          label: role,
+          color: VividColors.textMuted,
+          icon: Icons.person,
+        );
+    }
+  }
+}
+
+class _RoleConfig {
+  final String label;
+  final Color color;
+  final IconData icon;
+
+  _RoleConfig({
+    required this.label,
+    required this.color,
+    required this.icon,
+  });
 }
 
 // ============================================
@@ -749,12 +906,13 @@ class _UsersTab extends StatelessWidget {
             children: [
               Expanded(flex: 2, child: Text('Name', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
               Expanded(flex: 3, child: Text('Email', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
+              Expanded(flex: 1, child: Text('Role', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
               Expanded(flex: 2, child: Text('Client', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
-              SizedBox(width: 50, child: Text('Actions', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
+              SizedBox(width: 90, child: Text('Actions', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
             ],
           ),
         ),
-        
+
         // Users list
         Expanded(
           child: provider.isLoading
@@ -765,8 +923,9 @@ class _UsersTab extends StatelessWidget {
                       itemCount: users.length,
                       itemBuilder: (context, index) {
                         final user = users[index];
-                        final clientName = user['clients']?['name'] ?? 'Unknown';
-                        
+                        final clientName = user['clients']?['name'] ?? 'No Client';
+                        final role = user['role'] ?? 'unknown';
+
                         return Container(
                           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                           decoration: BoxDecoration(
@@ -791,6 +950,10 @@ class _UsersTab extends StatelessWidget {
                                 ),
                               ),
                               Expanded(
+                                flex: 1,
+                                child: _RoleBadge(role: role),
+                              ),
+                              Expanded(
                                 flex: 2,
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -806,22 +969,42 @@ class _UsersTab extends StatelessWidget {
                                 ),
                               ),
                               SizedBox(
-                                width: 50,
+                                width: 90,
                                 child: Row(
                                   mainAxisAlignment: MainAxisAlignment.end,
                                   children: [
                                     IconButton(
+                                      onPressed: () => _showResetPasswordDialog(
+                                        context,
+                                        user['id'] as String,
+                                        user['name'] as String? ?? 'User',
+                                        provider,
+                                      ),
+                                      icon: const Icon(Icons.lock_reset, size: 18),
+                                      color: VividColors.cyan,
+                                      tooltip: 'Reset Password',
+                                      visualDensity: VisualDensity.compact,
+                                    ),
+                                    IconButton(
                                       onPressed: () async {
-                                        final userId = user['id'];
-                                        final userName = user['name'] ?? 'User';
-                                        
+                                        final userId = user['id'] as String;
+                                        final userName = user['name'] as String? ?? 'User';
+                                        final currentStatus = user['status'] as String? ?? 'active';
+                                        final isBlocking = currentStatus != 'blocked';
+                                        final newStatus = isBlocking ? 'blocked' : 'active';
+
                                         final confirmed = await showDialog<bool>(
                                           context: context,
                                           builder: (ctx) => AlertDialog(
                                             backgroundColor: VividColors.navy,
-                                            title: const Text('Delete User', style: TextStyle(color: VividColors.textPrimary)),
+                                            title: Text(
+                                              isBlocking ? 'Block User' : 'Unblock User',
+                                              style: const TextStyle(color: VividColors.textPrimary),
+                                            ),
                                             content: Text(
-                                              'Are you sure you want to delete "$userName"?',
+                                              isBlocking
+                                                  ? 'Block "$userName"? They will no longer be able to log in.'
+                                                  : 'Unblock "$userName"? They will be able to log in again.',
                                               style: const TextStyle(color: VividColors.textMuted),
                                             ),
                                             actions: [
@@ -831,16 +1014,18 @@ class _UsersTab extends StatelessWidget {
                                               ),
                                               ElevatedButton(
                                                 onPressed: () => Navigator.pop(ctx, true),
-                                                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                                                child: const Text('Delete'),
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor: isBlocking ? Colors.red : VividColors.statusSuccess,
+                                                ),
+                                                child: Text(isBlocking ? 'Block' : 'Unblock'),
                                               ),
                                             ],
                                           ),
                                         );
-                                        
+
                                         if (confirmed == true && context.mounted) {
-                                          final success = await provider.deleteUser(userId);
-                                          
+                                          final success = await provider.toggleUserStatus(userId, newStatus);
+
                                           if (context.mounted) {
                                             ScaffoldMessenger.of(context).showSnackBar(
                                               SnackBar(
@@ -852,9 +1037,9 @@ class _UsersTab extends StatelessWidget {
                                                       size: 18,
                                                     ),
                                                     const SizedBox(width: 8),
-                                                    Text(success 
-                                                        ? 'User "$userName" deleted' 
-                                                        : 'Failed to delete. Check Supabase RLS.'),
+                                                    Text(success
+                                                        ? 'User "$userName" ${isBlocking ? "blocked" : "unblocked"}'
+                                                        : 'Failed to ${isBlocking ? "block" : "unblock"} user.'),
                                                   ],
                                                 ),
                                                 backgroundColor: success ? VividColors.statusSuccess : Colors.red,
@@ -864,9 +1049,19 @@ class _UsersTab extends StatelessWidget {
                                           }
                                         }
                                       },
-                                      icon: const Icon(Icons.delete, size: 18),
-                                      color: Colors.red.withOpacity(0.7),
-                                      tooltip: 'Delete',
+                                      icon: Icon(
+                                        (user['status'] as String? ?? 'active') == 'blocked'
+                                            ? Icons.lock_open
+                                            : Icons.block,
+                                        size: 18,
+                                      ),
+                                      color: (user['status'] as String? ?? 'active') == 'blocked'
+                                          ? VividColors.statusSuccess
+                                          : Colors.red.withOpacity(0.7),
+                                      tooltip: (user['status'] as String? ?? 'active') == 'blocked'
+                                          ? 'Unblock'
+                                          : 'Block',
+                                      visualDensity: VisualDensity.compact,
                                     ),
                                   ],
                                 ),
@@ -878,6 +1073,175 @@ class _UsersTab extends StatelessWidget {
                     ),
         ),
       ],
+    );
+  }
+
+  void _showResetPasswordDialog(
+    BuildContext context,
+    String userId,
+    String userName,
+    AdminProvider provider,
+  ) {
+    final passwordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
+    bool showPassword = false;
+    bool isResetting = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          return AlertDialog(
+            backgroundColor: VividColors.navy,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            title: Row(
+              children: [
+                const Icon(Icons.lock_reset, color: VividColors.cyan, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Reset Password for $userName',
+                    style: const TextStyle(color: VividColors.textPrimary, fontSize: 16),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: 400,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    controller: passwordController,
+                    obscureText: !showPassword,
+                    style: const TextStyle(color: VividColors.textPrimary),
+                    decoration: InputDecoration(
+                      labelText: 'New Password',
+                      labelStyle: const TextStyle(color: VividColors.textMuted, fontSize: 12),
+                      hintStyle: TextStyle(color: VividColors.textMuted.withOpacity(0.5)),
+                      prefixIcon: const Icon(Icons.lock, color: VividColors.textMuted, size: 18),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          showPassword ? Icons.visibility_off : Icons.visibility,
+                          color: VividColors.textMuted,
+                          size: 18,
+                        ),
+                        onPressed: () => setDialogState(() => showPassword = !showPassword),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: VividColors.tealBlue.withOpacity(0.3)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: VividColors.cyan),
+                      ),
+                      filled: true,
+                      fillColor: VividColors.deepBlue,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: confirmPasswordController,
+                    obscureText: !showPassword,
+                    style: const TextStyle(color: VividColors.textPrimary),
+                    decoration: InputDecoration(
+                      labelText: 'Confirm Password',
+                      labelStyle: const TextStyle(color: VividColors.textMuted, fontSize: 12),
+                      hintStyle: TextStyle(color: VividColors.textMuted.withOpacity(0.5)),
+                      prefixIcon: const Icon(Icons.lock, color: VividColors.textMuted, size: 18),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: VividColors.tealBlue.withOpacity(0.3)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: VividColors.cyan),
+                      ),
+                      filled: true,
+                      fillColor: VividColors.deepBlue,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: isResetting
+                    ? null
+                    : () async {
+                        final password = passwordController.text;
+                        final confirm = confirmPasswordController.text;
+
+                        if (password.isEmpty || password.length < 8) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            const SnackBar(
+                              content: Text('Password must be at least 8 characters'),
+                              backgroundColor: VividColors.statusUrgent,
+                            ),
+                          );
+                          return;
+                        }
+
+                        if (password != confirm) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            const SnackBar(
+                              content: Text('Passwords do not match'),
+                              backgroundColor: VividColors.statusUrgent,
+                            ),
+                          );
+                          return;
+                        }
+
+                        setDialogState(() => isResetting = true);
+
+                        final success = await provider.resetUserPassword(
+                          userId: userId,
+                          newPassword: password,
+                        );
+
+                        if (ctx.mounted) Navigator.pop(ctx);
+
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Row(
+                                children: [
+                                  Icon(
+                                    success ? Icons.check_circle : Icons.error,
+                                    color: Colors.white,
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(success
+                                      ? 'Password reset for "$userName"'
+                                      : 'Failed to reset password'),
+                                ],
+                              ),
+                              backgroundColor: success ? VividColors.statusSuccess : Colors.red,
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        }
+                      },
+                style: ElevatedButton.styleFrom(backgroundColor: VividColors.brightBlue),
+                child: isResetting
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text('Reset Password'),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 }
@@ -897,11 +1261,23 @@ class _ClientDialog extends StatefulWidget {
 
 class _ClientDialogState extends State<_ClientDialog> {
   final _formKey = GlobalKey<FormState>();
+  
+  // Basic info controllers
   late TextEditingController _nameController;
   late TextEditingController _slugController;
-  late TextEditingController _webhookController;
-  late TextEditingController _phoneController;
+  late TextEditingController _bookingsTableController;
+  
+  // Per-feature controllers
+  late TextEditingController _conversationsPhoneController;
+  late TextEditingController _conversationsWebhookController;
+  late TextEditingController _broadcastsPhoneController;
+  late TextEditingController _broadcastsWebhookController;
+  late TextEditingController _remindersPhoneController;
+  late TextEditingController _remindersWebhookController;
+  late TextEditingController _managerChatWebhookController;
+  
   List<String> _selectedFeatures = [];
+  bool _hasAiConversations = true;
   bool _isLoading = false;
 
   @override
@@ -909,17 +1285,33 @@ class _ClientDialogState extends State<_ClientDialog> {
     super.initState();
     _nameController = TextEditingController(text: widget.client?.name ?? '');
     _slugController = TextEditingController(text: widget.client?.slug ?? '');
-    _webhookController = TextEditingController(text: widget.client?.webhookUrl ?? '');
-    _phoneController = TextEditingController(text: widget.client?.businessPhone ?? '');
+    _bookingsTableController = TextEditingController(text: widget.client?.bookingsTable ?? '');
+
+    // Per-feature initialization
+    _conversationsPhoneController = TextEditingController(text: widget.client?.conversationsPhone ?? '');
+    _conversationsWebhookController = TextEditingController(text: widget.client?.conversationsWebhookUrl ?? '');
+    _broadcastsPhoneController = TextEditingController(text: widget.client?.broadcastsPhone ?? '');
+    _broadcastsWebhookController = TextEditingController(text: widget.client?.broadcastsWebhookUrl ?? '');
+    _remindersPhoneController = TextEditingController(text: widget.client?.remindersPhone ?? '');
+    _remindersWebhookController = TextEditingController(text: widget.client?.remindersWebhookUrl ?? '');
+    _managerChatWebhookController = TextEditingController(text: widget.client?.managerChatWebhookUrl ?? '');
+
     _selectedFeatures = List.from(widget.client?.enabledFeatures ?? []);
+    _hasAiConversations = widget.client?.hasAiConversations ?? true;
   }
 
   @override
   void dispose() {
     _nameController.dispose();
     _slugController.dispose();
-    _webhookController.dispose();
-    _phoneController.dispose();
+    _bookingsTableController.dispose();
+    _conversationsPhoneController.dispose();
+    _conversationsWebhookController.dispose();
+    _broadcastsPhoneController.dispose();
+    _broadcastsWebhookController.dispose();
+    _remindersPhoneController.dispose();
+    _remindersWebhookController.dispose();
+    _managerChatWebhookController.dispose();
     super.dispose();
   }
 
@@ -934,7 +1326,7 @@ class _ClientDialogState extends State<_ClientDialog> {
         style: const TextStyle(color: VividColors.textPrimary),
       ),
       content: SizedBox(
-        width: 400,
+        width: 500,
         child: Form(
           key: _formKey,
           child: SingleChildScrollView(
@@ -942,15 +1334,17 @@ class _ClientDialogState extends State<_ClientDialog> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Basic Info Section
+                _buildSectionHeader(Icons.business, 'Basic Information'),
+                const SizedBox(height: 12),
                 _buildTextField(_nameController, 'Client Name', 'Enter client name'),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 _buildTextField(_slugController, 'Slug', 'e.g., 3bs, karisma'),
-                const SizedBox(height: 16),
-                _buildTextField(_webhookController, 'Webhook URL', 'n8n webhook URL', required: false),
-                const SizedBox(height: 16),
-                _buildTextField(_phoneController, 'Business Phone', 'WhatsApp number', required: false),
+                const SizedBox(height: 12),
+                _buildTextField(_bookingsTableController, 'Bookings Table', 'e.g., bookings_demo_karisma', required: false),
                 const SizedBox(height: 20),
                 
+                // Enabled Features
                 const Text(
                   'Enabled Features',
                   style: TextStyle(color: VividColors.textPrimary, fontWeight: FontWeight.w500),
@@ -958,7 +1352,7 @@ class _ClientDialogState extends State<_ClientDialog> {
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
-                  children: ['conversations', 'broadcasts', 'analytics', 'manager_chat'].map((feature) {
+                  children: ['conversations', 'broadcasts', 'analytics', 'manager_chat', 'booking_reminders'].map((feature) {
                     final isSelected = _selectedFeatures.contains(feature);
                     return FilterChip(
                       label: Text(_formatFeatureName(feature)),
@@ -981,6 +1375,86 @@ class _ClientDialogState extends State<_ClientDialog> {
                     );
                   }).toList(),
                 ),
+                const SizedBox(height: 16),
+
+                // AI Conversations toggle
+                if (_selectedFeatures.contains('conversations'))
+                  SwitchListTile(
+                    title: const Text(
+                      'AI-Powered Conversations',
+                      style: TextStyle(color: VividColors.textPrimary, fontSize: 14),
+                    ),
+                    subtitle: Text(
+                      _hasAiConversations
+                          ? 'AI handles customer messages automatically'
+                          : 'All messages go directly to managers',
+                      style: const TextStyle(color: VividColors.textMuted, fontSize: 12),
+                    ),
+                    value: _hasAiConversations,
+                    onChanged: (val) => setState(() => _hasAiConversations = val),
+                    activeTrackColor: VividColors.cyan.withOpacity(0.3),
+                    activeThumbColor: VividColors.cyan,
+                    contentPadding: EdgeInsets.zero,
+                    secondary: Icon(
+                      Icons.smart_toy,
+                      color: _hasAiConversations ? VividColors.cyan : VividColors.textMuted,
+                      size: 20,
+                    ),
+                  ),
+                const SizedBox(height: 24),
+
+                // Feature Configuration Sections
+                // Only show config for enabled features
+                if (_selectedFeatures.contains('conversations')) ...[
+                  _buildFeatureConfigSection(
+                    icon: Icons.chat_bubble,
+                    title: 'Conversations',
+                    color: Colors.blue,
+                    phoneController: _conversationsPhoneController,
+                    webhookController: _conversationsWebhookController,
+                    phoneHint: 'WhatsApp number for conversations',
+                    webhookHint: 'n8n webhook for customer messages',
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                
+                if (_selectedFeatures.contains('broadcasts')) ...[
+                  _buildFeatureConfigSection(
+                    icon: Icons.campaign,
+                    title: 'Broadcasts',
+                    color: Colors.orange,
+                    phoneController: _broadcastsPhoneController,
+                    webhookController: _broadcastsWebhookController,
+                    phoneHint: 'WhatsApp number for broadcasts',
+                    webhookHint: 'n8n webhook for broadcast messages',
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                
+                if (_selectedFeatures.contains('booking_reminders')) ...[
+                  _buildFeatureConfigSection(
+                    icon: Icons.notifications_active,
+                    title: 'Booking Reminders',
+                    color: Colors.green,
+                    phoneController: _remindersPhoneController,
+                    webhookController: _remindersWebhookController,
+                    phoneHint: 'Dedicated reminder WhatsApp number',
+                    webhookHint: 'n8n webhook for manual reminders',
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                
+                if (_selectedFeatures.contains('manager_chat')) ...[
+                  _buildFeatureConfigSection(
+                    icon: Icons.smart_toy,
+                    title: 'Manager Chat (AI)',
+                    color: Colors.purple,
+                    phoneController: null, // No phone needed
+                    webhookController: _managerChatWebhookController,
+                    webhookHint: 'n8n webhook for AI assistant',
+                  ),
+                  const SizedBox(height: 16),
+                ],
               ],
             ),
           ),
@@ -999,6 +1473,77 @@ class _ClientDialogState extends State<_ClientDialog> {
               : Text(isEdit ? 'Save' : 'Create'),
         ),
       ],
+    );
+  }
+
+  Widget _buildSectionHeader(IconData icon, String title) {
+    return Row(
+      children: [
+        Icon(icon, color: VividColors.cyan, size: 18),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: const TextStyle(
+            color: VividColors.textPrimary,
+            fontWeight: FontWeight.w600,
+            fontSize: 14,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFeatureConfigSection({
+    required IconData icon,
+    required String title,
+    required Color color,
+    TextEditingController? phoneController,
+    required TextEditingController webhookController,
+    String? phoneHint,
+    required String webhookHint,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: color, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (phoneController != null) ...[
+            _buildTextField(
+              phoneController,
+              'Phone',
+              phoneHint ?? 'WhatsApp number',
+              required: false,
+            ),
+            const SizedBox(height: 10),
+          ],
+          _buildTextField(
+            webhookController,
+            'Webhook URL',
+            webhookHint,
+            required: false,
+          ),
+        ],
+      ),
     );
   }
 
@@ -1044,17 +1589,31 @@ class _ClientDialogState extends State<_ClientDialog> {
         clientId: widget.client!.id,
         name: _nameController.text.trim(),
         slug: _slugController.text.trim(),
-        webhookUrl: _webhookController.text.trim().isEmpty ? null : _webhookController.text.trim(),
         enabledFeatures: _selectedFeatures,
-        businessPhone: _phoneController.text.trim().isEmpty ? null : _phoneController.text.trim(),
+        hasAiConversations: _hasAiConversations,
+        bookingsTable: _bookingsTableController.text.trim().isEmpty ? null : _bookingsTableController.text.trim(),
+        conversationsPhone: _conversationsPhoneController.text.trim().isEmpty ? null : _conversationsPhoneController.text.trim(),
+        conversationsWebhookUrl: _conversationsWebhookController.text.trim().isEmpty ? null : _conversationsWebhookController.text.trim(),
+        broadcastsPhone: _broadcastsPhoneController.text.trim().isEmpty ? null : _broadcastsPhoneController.text.trim(),
+        broadcastsWebhookUrl: _broadcastsWebhookController.text.trim().isEmpty ? null : _broadcastsWebhookController.text.trim(),
+        remindersPhone: _remindersPhoneController.text.trim().isEmpty ? null : _remindersPhoneController.text.trim(),
+        remindersWebhookUrl: _remindersWebhookController.text.trim().isEmpty ? null : _remindersWebhookController.text.trim(),
+        managerChatWebhookUrl: _managerChatWebhookController.text.trim().isEmpty ? null : _managerChatWebhookController.text.trim(),
       );
     } else {
       success = await provider.createClient(
         name: _nameController.text.trim(),
         slug: _slugController.text.trim(),
-        webhookUrl: _webhookController.text.trim().isEmpty ? null : _webhookController.text.trim(),
         enabledFeatures: _selectedFeatures,
-        businessPhone: _phoneController.text.trim().isEmpty ? null : _phoneController.text.trim(),
+        hasAiConversations: _hasAiConversations,
+        bookingsTable: _bookingsTableController.text.trim().isEmpty ? null : _bookingsTableController.text.trim(),
+        conversationsPhone: _conversationsPhoneController.text.trim().isEmpty ? null : _conversationsPhoneController.text.trim(),
+        conversationsWebhookUrl: _conversationsWebhookController.text.trim().isEmpty ? null : _conversationsWebhookController.text.trim(),
+        broadcastsPhone: _broadcastsPhoneController.text.trim().isEmpty ? null : _broadcastsPhoneController.text.trim(),
+        broadcastsWebhookUrl: _broadcastsWebhookController.text.trim().isEmpty ? null : _broadcastsWebhookController.text.trim(),
+        remindersPhone: _remindersPhoneController.text.trim().isEmpty ? null : _remindersPhoneController.text.trim(),
+        remindersWebhookUrl: _remindersWebhookController.text.trim().isEmpty ? null : _remindersWebhookController.text.trim(),
+        managerChatWebhookUrl: _managerChatWebhookController.text.trim().isEmpty ? null : _managerChatWebhookController.text.trim(),
       );
     }
 
@@ -1075,6 +1634,8 @@ class _ClientDialogState extends State<_ClientDialog> {
         return 'Analytics';
       case 'manager_chat':
         return 'AI Assistant';
+      case 'booking_reminders':
+        return 'Booking Reminders';
       default:
         return feature;
     }
@@ -1082,7 +1643,7 @@ class _ClientDialogState extends State<_ClientDialog> {
 }
 
 // ============================================
-// USER DIALOG
+// USER DIALOG (with role dropdown)
 // ============================================
 
 class _UserDialog extends StatefulWidget {
@@ -1100,7 +1661,22 @@ class _UserDialogState extends State<_UserDialog> {
   late TextEditingController _nameController;
   late TextEditingController _emailController;
   late TextEditingController _passwordController;
+  late TextEditingController _confirmPasswordController;
+  String _selectedRole = 'manager';
   bool _isLoading = false;
+  bool _showPassword = false;
+  bool _showCustomPermissions = false;
+  
+  // Custom permission overrides
+  Set<Permission> _customPermissions = {};
+  Set<Permission> _revokedPermissions = {};
+
+  final List<Map<String, dynamic>> _roles = [
+    {'value': 'admin', 'label': 'Admin', 'description': 'Full access + user management', 'icon': Icons.admin_panel_settings, 'color': VividColors.cyan},
+    {'value': 'manager', 'label': 'Manager', 'description': 'All features except user management', 'icon': Icons.manage_accounts, 'color': Colors.purple},
+    {'value': 'agent', 'label': 'Agent', 'description': 'Conversations only', 'icon': Icons.support_agent, 'color': Colors.green},
+    {'value': 'viewer', 'label': 'Viewer', 'description': 'Read-only access', 'icon': Icons.visibility, 'color': Colors.orange},
+  ];
 
   @override
   void initState() {
@@ -1108,6 +1684,15 @@ class _UserDialogState extends State<_UserDialog> {
     _nameController = TextEditingController(text: widget.user?.name ?? '');
     _emailController = TextEditingController(text: widget.user?.email ?? '');
     _passwordController = TextEditingController();
+    _confirmPasswordController = TextEditingController();
+    _selectedRole = widget.user?.role.value ?? 'manager';
+    
+    // Load existing custom permissions
+    if (widget.user != null) {
+      _customPermissions = Set.from(widget.user!.customPermissions ?? {});
+      _revokedPermissions = Set.from(widget.user!.revokedPermissions ?? {});
+      _showCustomPermissions = _customPermissions.isNotEmpty || _revokedPermissions.isNotEmpty;
+    }
   }
 
   @override
@@ -1115,7 +1700,61 @@ class _UserDialogState extends State<_UserDialog> {
     _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
+  }
+
+  /// Get role default permissions
+  Set<Permission> get _rolePermissions {
+    final role = UserRole.fromString(_selectedRole);
+    return Permissions.getPermissions(role);
+  }
+
+  /// Get effective permissions (role + custom - revoked)
+  Set<Permission> get _effectivePermissions {
+    Set<Permission> perms = Set.from(_rolePermissions);
+    perms.addAll(_customPermissions);
+    perms.removeAll(_revokedPermissions);
+    return perms;
+  }
+
+  /// Check if permission is from role default
+  bool _isRoleDefault(Permission permission) {
+    return _rolePermissions.contains(permission);
+  }
+
+  /// Check if permission is custom granted (not in role)
+  bool _isCustomGranted(Permission permission) {
+    return _customPermissions.contains(permission);
+  }
+
+  /// Check if permission is revoked
+  bool _isRevoked(Permission permission) {
+    return _revokedPermissions.contains(permission);
+  }
+
+  /// Toggle permission
+  void _togglePermission(Permission permission) {
+    setState(() {
+      if (_isRevoked(permission)) {
+        // Currently revoked -> enable it (remove from revoked)
+        _revokedPermissions.remove(permission);
+      } else if (_effectivePermissions.contains(permission)) {
+        // Currently enabled
+        if (_isRoleDefault(permission)) {
+          // It's a role default -> revoke it
+          _revokedPermissions.add(permission);
+          _customPermissions.remove(permission);
+        } else {
+          // It's custom granted -> remove the grant
+          _customPermissions.remove(permission);
+        }
+      } else {
+        // Currently disabled -> grant it
+        _customPermissions.add(permission);
+        _revokedPermissions.remove(permission);
+      }
+    });
   }
 
   @override
@@ -1129,24 +1768,228 @@ class _UserDialogState extends State<_UserDialog> {
         style: const TextStyle(color: VividColors.textPrimary),
       ),
       content: SizedBox(
-        width: 350,
+        width: 500,
         child: Form(
           key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildTextField(_nameController, 'Name', 'User\'s name'),
-              const SizedBox(height: 16),
-              _buildTextField(_emailController, 'Email', 'login@email.com'),
-              const SizedBox(height: 16),
-              _buildTextField(
-                _passwordController,
-                isEdit ? 'New Password (optional)' : 'Password',
-                'Enter password',
-                obscure: true,
-                required: !isEdit,
-              ),
-            ],
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildTextField(_nameController, 'Name', 'User\'s name'),
+                const SizedBox(height: 16),
+                _buildTextField(_emailController, 'Email', 'login@email.com'),
+                const SizedBox(height: 16),
+                _buildPasswordField(
+                  _passwordController,
+                  isEdit ? 'New Password (optional)' : 'Password',
+                  'Enter password',
+                  required: !isEdit,
+                ),
+                if (!isEdit) ...[
+                  const SizedBox(height: 16),
+                  _buildPasswordField(
+                    _confirmPasswordController,
+                    'Confirm Password',
+                    'Re-enter password',
+                    required: true,
+                  ),
+                ],
+                const SizedBox(height: 20),
+                
+                // Role selection
+                const Text(
+                  'Role',
+                  style: TextStyle(
+                    color: VividColors.textPrimary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  decoration: BoxDecoration(
+                    color: VividColors.deepBlue,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: VividColors.tealBlue.withOpacity(0.3)),
+                  ),
+                  child: Column(
+                    children: _roles.map((role) {
+                      final isSelected = _selectedRole == role['value'];
+                      return InkWell(
+                        onTap: () {
+                          setState(() {
+                            _selectedRole = role['value'];
+                            // Clear custom permissions when role changes
+                            if (!_showCustomPermissions) {
+                              _customPermissions.clear();
+                              _revokedPermissions.clear();
+                            }
+                          });
+                        },
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: isSelected ? (role['color'] as Color).withOpacity(0.15) : null,
+                            border: _roles.last != role 
+                                ? Border(bottom: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)))
+                                : null,
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 20,
+                                height: 20,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: isSelected ? role['color'] as Color : VividColors.textMuted,
+                                    width: 2,
+                                  ),
+                                  color: isSelected ? role['color'] as Color : Colors.transparent,
+                                ),
+                                child: isSelected 
+                                    ? const Icon(Icons.check, size: 12, color: Colors.white)
+                                    : null,
+                              ),
+                              const SizedBox(width: 12),
+                              Icon(
+                                role['icon'] as IconData,
+                                size: 18,
+                                color: isSelected ? role['color'] as Color : VividColors.textMuted,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      role['label'] as String,
+                                      style: TextStyle(
+                                        color: isSelected ? VividColors.textPrimary : VividColors.textMuted,
+                                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                                      ),
+                                    ),
+                                    Text(
+                                      role['description'] as String,
+                                      style: TextStyle(
+                                        color: VividColors.textMuted.withOpacity(0.7),
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                
+                // Info note for admin role
+                if (_selectedRole == 'admin') ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: VividColors.cyan.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: VividColors.cyan.withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.info_outline, size: 16, color: VividColors.cyan),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'This user will be a Client Admin (not Vivid Admin) since they belong to a client.',
+                            style: TextStyle(
+                              color: VividColors.cyan.withOpacity(0.9),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
+                const SizedBox(height: 20),
+
+                // Custom Permissions Toggle
+                InkWell(
+                  onTap: () => setState(() => _showCustomPermissions = !_showCustomPermissions),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: _showCustomPermissions 
+                          ? Colors.purple.withOpacity(0.1) 
+                          : VividColors.deepBlue,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: _showCustomPermissions 
+                            ? Colors.purple.withOpacity(0.3) 
+                            : VividColors.tealBlue.withOpacity(0.3),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          _showCustomPermissions 
+                              ? Icons.tune 
+                              : Icons.tune_outlined,
+                          size: 18,
+                          color: _showCustomPermissions 
+                              ? Colors.purple 
+                              : VividColors.textMuted,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Custom Permissions',
+                                style: TextStyle(
+                                  color: _showCustomPermissions 
+                                      ? VividColors.textPrimary 
+                                      : VividColors.textMuted,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              Text(
+                                _showCustomPermissions
+                                    ? 'Override role defaults'
+                                    : 'Use role defaults',
+                                style: TextStyle(
+                                  color: VividColors.textMuted.withOpacity(0.7),
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Icon(
+                          _showCustomPermissions 
+                              ? Icons.keyboard_arrow_up 
+                              : Icons.keyboard_arrow_down,
+                          color: VividColors.textMuted,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // Custom Permissions List
+                if (_showCustomPermissions) ...[
+                  const SizedBox(height: 12),
+                  _buildPermissionsSection(),
+                ],
+              ],
+            ),
           ),
         ),
       ),
@@ -1163,6 +2006,149 @@ class _UserDialogState extends State<_UserDialog> {
               : Text(isEdit ? 'Save' : 'Create'),
         ),
       ],
+    );
+  }
+
+  Widget _buildPermissionsSection() {
+    // Group permissions by category
+    final Map<String, List<Permission>> grouped = {};
+    for (final perm in Permission.values) {
+      final cat = perm.category;
+      grouped.putIfAbsent(cat, () => []).add(perm);
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: VividColors.deepBlue,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.purple.withOpacity(0.2)),
+      ),
+      child: Column(
+        children: grouped.entries.map((entry) {
+          return _buildPermissionCategory(entry.key, entry.value);
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildPermissionCategory(String category, List<Permission> permissions) {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: VividColors.tealBlue.withOpacity(0.1)),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+            child: Text(
+              category,
+              style: TextStyle(
+                color: VividColors.textMuted.withOpacity(0.7),
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+          ...permissions.map((perm) => _buildPermissionTile(perm)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPermissionTile(Permission permission) {
+    final isEnabled = _effectivePermissions.contains(permission);
+    final isRoleDefault = _isRoleDefault(permission);
+    final isCustom = _isCustomGranted(permission);
+    final isRevoked = _isRevoked(permission);
+
+    // Determine badge
+    String? badge;
+    Color? badgeColor;
+    if (isRevoked) {
+      badge = 'REVOKED';
+      badgeColor = Colors.red;
+    } else if (isCustom) {
+      badge = 'CUSTOM';
+      badgeColor = Colors.purple;
+    } else if (isRoleDefault && isEnabled) {
+      badge = 'DEFAULT';
+      badgeColor = VividColors.textMuted;
+    }
+
+    return InkWell(
+      onTap: () => _togglePermission(permission),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          children: [
+            // Checkbox
+            Container(
+              width: 20,
+              height: 20,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(
+                  color: isEnabled 
+                      ? VividColors.cyan 
+                      : isRevoked 
+                          ? Colors.red.withOpacity(0.5)
+                          : VividColors.textMuted.withOpacity(0.3),
+                  width: 2,
+                ),
+                color: isEnabled 
+                    ? VividColors.cyan 
+                    : isRevoked
+                        ? Colors.red.withOpacity(0.1)
+                        : Colors.transparent,
+              ),
+              child: isEnabled
+                  ? const Icon(Icons.check, size: 14, color: Colors.white)
+                  : isRevoked
+                      ? Icon(Icons.close, size: 14, color: Colors.red.withOpacity(0.7))
+                      : null,
+            ),
+            const SizedBox(width: 10),
+            
+            // Permission name
+            Expanded(
+              child: Text(
+                permission.displayName,
+                style: TextStyle(
+                  color: isRevoked 
+                      ? VividColors.textMuted.withOpacity(0.5)
+                      : isEnabled 
+                          ? VividColors.textPrimary 
+                          : VividColors.textMuted,
+                  fontSize: 13,
+                  decoration: isRevoked ? TextDecoration.lineThrough : null,
+                ),
+              ),
+            ),
+            
+            // Badge
+            if (badge != null)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: badgeColor!.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  badge,
+                  style: TextStyle(
+                    color: badgeColor,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1197,13 +2183,102 @@ class _UserDialogState extends State<_UserDialog> {
     );
   }
 
+  Widget _buildPasswordField(
+    TextEditingController controller,
+    String label,
+    String hint, {
+    bool required = true,
+  }) {
+    return TextFormField(
+      controller: controller,
+      obscureText: !_showPassword,
+      style: const TextStyle(color: VividColors.textPrimary),
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        labelStyle: const TextStyle(color: VividColors.textMuted),
+        hintStyle: TextStyle(color: VividColors.textMuted.withOpacity(0.5)),
+        prefixIcon: const Icon(Icons.lock, color: VividColors.textMuted, size: 18),
+        suffixIcon: IconButton(
+          icon: Icon(
+            _showPassword ? Icons.visibility_off : Icons.visibility,
+            color: VividColors.textMuted,
+            size: 18,
+          ),
+          onPressed: () => setState(() => _showPassword = !_showPassword),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: VividColors.tealBlue.withOpacity(0.3)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: VividColors.cyan),
+        ),
+        filled: true,
+        fillColor: VividColors.deepBlue,
+      ),
+      validator: required ? (v) => v?.isEmpty == true ? 'Required' : null : null,
+    );
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+
+    final password = _passwordController.text;
+    final isEdit = widget.user != null;
+
+    // Password validation for new users
+    if (!isEdit) {
+      if (password.length < 8) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Password must be at least 8 characters'),
+            backgroundColor: VividColors.statusUrgent,
+          ),
+        );
+        return;
+      }
+
+      if (password != _confirmPasswordController.text) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Passwords do not match'),
+            backgroundColor: VividColors.statusUrgent,
+          ),
+        );
+        return;
+      }
+    }
+
+    // Password length check for edit mode (only if provided)
+    if (isEdit && password.isNotEmpty && password.length < 8) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Password must be at least 8 characters'),
+          backgroundColor: VividColors.statusUrgent,
+        ),
+      );
+      return;
+    }
 
     setState(() => _isLoading = true);
 
     final provider = context.read<AdminProvider>();
     bool success;
+
+    // Prepare custom permissions (only if enabled and modified)
+    List<String>? customPerms;
+    List<String>? revokedPerms;
+    
+    if (_showCustomPermissions) {
+      if (_customPermissions.isNotEmpty) {
+        customPerms = Permission.toStringList(_customPermissions);
+      }
+      if (_revokedPermissions.isNotEmpty) {
+        revokedPerms = Permission.toStringList(_revokedPermissions);
+      }
+    }
 
     if (widget.user != null) {
       success = await provider.updateUser(
@@ -1211,6 +2286,9 @@ class _UserDialogState extends State<_UserDialog> {
         name: _nameController.text.trim(),
         email: _emailController.text.trim(),
         password: _passwordController.text.isEmpty ? null : _passwordController.text,
+        role: _selectedRole,
+        customPermissions: customPerms,
+        revokedPermissions: revokedPerms,
       );
     } else {
       success = await provider.createUser(
@@ -1218,6 +2296,9 @@ class _UserDialogState extends State<_UserDialog> {
         name: _nameController.text.trim(),
         email: _emailController.text.trim(),
         password: _passwordController.text,
+        role: _selectedRole,
+        customPermissions: customPerms,
+        revokedPermissions: revokedPerms,
       );
     }
 
@@ -1225,6 +2306,22 @@ class _UserDialogState extends State<_UserDialog> {
 
     if (success && mounted) {
       Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Text(widget.user != null 
+                  ? 'User updated successfully' 
+                  : 'User created successfully'),
+            ],
+          ),
+          backgroundColor: VividColors.statusSuccess,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      );
     }
   }
 }

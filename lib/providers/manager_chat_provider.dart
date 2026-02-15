@@ -1,270 +1,427 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/supabase_service.dart';
 import '../models/models.dart';
 
-/// Message model for manager chat
+/// Manager chat message model - matches new schema
 class ManagerChatMessage {
   final String id;
-  final String agentId;
-  final String managerPhoneNumber;
-  final String message;
-  final String role; // 'manager' or 'assistant'
-  final String status; // 'pending' or 'processed'
+  final String? clientId;
+  final String? userId;
+  final String? userName;
+  final String? userMessage;
+  final String? aiResponse;
   final DateTime createdAt;
 
-  ManagerChatMessage({
+  const ManagerChatMessage({
     required this.id,
-    required this.agentId,
-    required this.managerPhoneNumber,
-    required this.message,
-    required this.role,
-    required this.status,
+    this.clientId,
+    this.userId,
+    this.userName,
+    this.userMessage,
+    this.aiResponse,
     required this.createdAt,
   });
 
   factory ManagerChatMessage.fromJson(Map<String, dynamic> json) {
     return ManagerChatMessage(
       id: json['id'] as String,
-      agentId: json['agent_id'] as String,
-      managerPhoneNumber: json['manager_phone_number'] as String,
-      message: json['message'] as String,
-      role: json['role'] as String,
-      status: json['status'] as String? ?? 'pending',
-      createdAt: DateTime.parse(json['created_at'] as String),
+      clientId: json['client_id'] as String?,
+      userId: json['user_id'] as String?,
+      userName: json['user_name'] as String?,
+      userMessage: json['user_message'] as String?,
+      aiResponse: json['ai_response'] as String?,
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'] as String)
+          : DateTime.now(),
     );
   }
 
-  bool get isUser => role == 'manager';
-  bool get isAssistant => role == 'assistant';
-  bool get isPending => status == 'pending';
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'client_id': clientId,
+      'user_id': userId,
+      'user_name': userName,
+      'user_message': userMessage,
+      'ai_response': aiResponse,
+      'created_at': createdAt.toIso8601String(),
+    };
+  }
 }
 
-/// Provider for manager AI chat functionality
+/// Provider for manager chat with AI
 class ManagerChatProvider extends ChangeNotifier {
   List<ManagerChatMessage> _messages = [];
   bool _isLoading = false;
   bool _isWaitingForResponse = false;
   String? _error;
-  RealtimeChannel? _channel;
   
-  // Configuration
-  String? _agentId;
-  String? _managerPhoneNumber;
+  String _agentId = '';
+  String _managerPhoneNumber = '';
+  String? _currentUserId;
+
+  RealtimeChannel? _chatChannel;
+  Timer? _pollTimer;
 
   List<ManagerChatMessage> get messages => _messages;
   bool get isLoading => _isLoading;
   bool get isWaitingForResponse => _isWaitingForResponse;
   String? get error => _error;
 
-  /// Initialize the chat for a specific agent/manager
-  Future<void> initialize({
-    required String agentId,
-    required String managerPhoneNumber,
-  }) async {
-    _agentId = agentId;
-    _managerPhoneNumber = managerPhoneNumber;
-    
-    await _loadChatHistory();
-    _subscribeToResponses();
+  /// Get dynamic table name from ClientConfig
+  String get _managerChatsTable {
+    final slug = ClientConfig.currentClient?.slug;
+    if (slug != null && slug.isNotEmpty) {
+      return '${slug}_manager_chats';
+    }
+    return 'manager_chats';
   }
 
-  /// Load existing chat history from Supabase
-  Future<void> _loadChatHistory() async {
-    if (_agentId == null || _managerPhoneNumber == null) return;
+  /// Initialize the chat
+  void initialize({
+    required String agentId,
+    required String managerPhoneNumber,
+  }) {
+    _agentId = agentId;
+    _managerPhoneNumber = managerPhoneNumber;
+    _currentUserId = ClientConfig.currentUser?.id;
+    
+    print('💬 Initializing chat for user: $_currentUserId');
+    
+    _loadMessages();
+    _subscribeToMessages();
+  }
 
+  /// Subscribe to realtime messages for current user only
+  void _subscribeToMessages() {
+    _chatChannel?.unsubscribe();
+    
+    final userId = _currentUserId;
+    if (userId == null) {
+      print('💬 No user ID, skipping realtime subscription');
+      return;
+    }
+    
+    _chatChannel = SupabaseService.client
+        .channel('manager_chat_${_managerChatsTable}_$userId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: _managerChatsTable,
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'user_id',
+            value: userId,
+          ),
+          callback: (payload) {
+            print('💬 New manager chat message received for user');
+            _handleNewMessage(payload.newRecord);
+          },
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: _managerChatsTable,
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'user_id',
+            value: userId,
+          ),
+          callback: (payload) {
+            print('💬 Manager chat message updated');
+            _handleMessageUpdate(payload.newRecord);
+          },
+        )
+        .subscribe();
+
+    print('💬 Subscribed to $_managerChatsTable for user: $userId');
+  }
+
+  /// Handle new message from realtime
+  void _handleNewMessage(Map<String, dynamic> data) {
+    try {
+      final message = ManagerChatMessage.fromJson(data);
+
+      // Only add if it's for the current user
+      if (message.userId != _currentUserId) return;
+
+      // Check if message already exists (or is temp message)
+      final existingIndex = _messages.indexWhere((m) =>
+        m.id == message.id ||
+        (m.id.startsWith('temp_') && m.userMessage == message.userMessage)
+      );
+
+      if (existingIndex != -1) {
+        // Replace temp message with real one
+        _messages[existingIndex] = message;
+      } else {
+        _messages.add(message);
+      }
+
+      // Only clear waiting when AI has actually responded
+      if (message.aiResponse != null && message.aiResponse!.isNotEmpty) {
+        _isWaitingForResponse = false;
+        _stopPolling();
+      }
+      notifyListeners();
+    } catch (e) {
+      print('Error handling new message: $e');
+    }
+  }
+
+  /// Handle message update from realtime
+  void _handleMessageUpdate(Map<String, dynamic> data) {
+    try {
+      final message = ManagerChatMessage.fromJson(data);
+
+      // Only update if it's for the current user
+      if (message.userId != _currentUserId) return;
+
+      // Try to find by actual ID first
+      var index = _messages.indexWhere((m) => m.id == message.id);
+
+      // If not found, try matching temp message by content
+      if (index == -1) {
+        index = _messages.indexWhere((m) =>
+          m.id.startsWith('temp_') && m.userMessage == message.userMessage
+        );
+      }
+
+      if (index != -1) {
+        _messages[index] = message;
+      } else {
+        // INSERT was missed — add the message so it still appears
+        _messages.add(message);
+      }
+
+      // Clear waiting when AI has responded
+      if (message.aiResponse != null && message.aiResponse!.isNotEmpty) {
+        _isWaitingForResponse = false;
+        _stopPolling();
+      }
+      notifyListeners();
+    } catch (e) {
+      print('Error handling message update: $e');
+    }
+  }
+
+  /// Load existing messages for current user only
+  Future<void> _loadMessages() async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      final supabase = SupabaseService.client;
+      final userId = _currentUserId;
+      if (userId == null) {
+        print('💬 No user ID, cannot load messages');
+        _isLoading = false;
+        notifyListeners();
+        return;
+      }
       
-      final response = await supabase
-          .from('manager_chats')
+      print('💬 Loading messages from: $_managerChatsTable for user: $userId');
+      
+      final response = await SupabaseService.client
+          .from(_managerChatsTable)
           .select()
-          .eq('agent_id', _agentId!)
-          .eq('manager_phone_number', _managerPhoneNumber!)
-          .order('created_at', ascending: true);
+          .eq('user_id', userId)
+          .order('created_at', ascending: true)
+          .limit(100);
 
       _messages = (response as List)
           .map((json) => ManagerChatMessage.fromJson(json))
           .toList();
 
-      print('📱 Loaded ${_messages.length} chat messages');
+      print('💬 Loaded ${_messages.length} chat messages for user: $userId');
     } catch (e) {
-      _error = 'Failed to load chat history: $e';
-      print('Error loading chat history: $e');
+      print('Load messages error: $e');
+      _error = 'Failed to load messages';
     }
 
     _isLoading = false;
     notifyListeners();
   }
 
-  /// Subscribe to real-time updates for assistant responses
-  void _subscribeToResponses() {
-    if (_agentId == null || _managerPhoneNumber == null) return;
-
-    _channel?.unsubscribe();
-
-    final supabase = SupabaseService.client;
-
-    _channel = supabase
-        .channel('manager_chat_${_agentId}_$_managerPhoneNumber')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.insert,
-          schema: 'public',
-          table: 'manager_chats',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'manager_phone_number',
-            value: _managerPhoneNumber!,
-          ),
-          callback: (payload) {
-            print('📱 Real-time chat update received');
-            _handleNewMessage(payload.newRecord);
-          },
-        )
-        .subscribe();
-
-    print('📱 Subscribed to manager chat updates');
-  }
-
-  /// Handle incoming real-time message
-  void _handleNewMessage(Map<String, dynamic> data) {
-    try {
-      final message = ManagerChatMessage.fromJson(data);
-      
-      // Only add if not already in list (avoid duplicates)
-      if (!_messages.any((m) => m.id == message.id)) {
-        _messages.add(message);
-        
-        // If it's an assistant response, stop waiting and cancel timeout
-        if (message.isAssistant) {
-          _isWaitingForResponse = false;
-          _responseTimeoutTimer?.cancel();
-          _responseTimeoutTimer = null;
-        }
-        
-        notifyListeners();
-      }
-    } catch (e) {
-      print('Error handling new message: $e');
-    }
-  }
-
-  // Timeout timer for AI response
-  Timer? _responseTimeoutTimer;
-
-  /// Send a message from the manager
-  Future<bool> sendMessage(String text) async {
-    if (_agentId == null || _managerPhoneNumber == null) {
-      _error = 'Chat not initialized';
-      notifyListeners();
-      return false;
-    }
-
-    if (text.trim().isEmpty) return false;
+  /// Send a message
+  Future<void> sendMessage(String text) async {
+    if (text.trim().isEmpty) return;
 
     _isWaitingForResponse = true;
-    _error = null;
     notifyListeners();
 
     try {
-      final supabase = SupabaseService.client;
+      final webhookUrl = ClientConfig.managerChatWebhookUrl;
+      if (webhookUrl == null || webhookUrl.isEmpty) {
+        throw Exception('Manager chat webhook URL not configured');
+      }
 
-      // Insert the manager's message
-      final response = await supabase
-          .from('manager_chats')
-          .insert({
+      final userId = _currentUserId ?? ClientConfig.currentUser?.id;
+      final userName = ClientConfig.currentUser?.name ?? 'Unknown';
+
+      // Create optimistic message
+      final optimisticMessage = ManagerChatMessage(
+        id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
+        clientId: ClientConfig.currentClient?.id,
+        userId: userId,
+        userName: userName,
+        userMessage: text,
+        aiResponse: null,
+        createdAt: DateTime.now(),
+      );
+      _messages.add(optimisticMessage);
+      notifyListeners();
+
+      // Send to webhook with user info
+      final payload = {
+        'source': 'dashboard',
+        'type': 'query',
+        'body': {
+          'record': {
+            'id': optimisticMessage.id,
             'agent_id': _agentId,
             'manager_phone_number': _managerPhoneNumber,
-            'message': text.trim(),
+            'message': text,
             'role': 'manager',
             'status': 'pending',
-          })
-          .select()
-          .single();
+            'user_id': userId,
+            'user_name': userName,
+            'client_id': ClientConfig.currentClient?.id,
+          }
+        },
+        'timestamp': DateTime.now().toIso8601String(),
+        'webhookUrl': webhookUrl,
+        'executionMode': 'production',
+      };
 
-      // Add to local list immediately for instant UI feedback
-      final message = ManagerChatMessage.fromJson(response);
-      if (!_messages.any((m) => m.id == message.id)) {
-        _messages.add(message);
-        notifyListeners();
-      }
+      print('💬 Calling webhook: $webhookUrl');
+      print('💬 Payload: $payload');
 
-      // Call the webhook to trigger AI processing
-      final webhookUrl = ClientConfig.webhookUrl;
-      if (webhookUrl.isNotEmpty) {
-        final payload = {
-          'source': 'dashboard',
-          'type': 'query',
-          'body': {
-            'record': {
-              'id': message.id,
-              'agent_id': _agentId,
-              'manager_phone_number': _managerPhoneNumber,
-              'message': text.trim(),
-              'role': 'manager',
-              'status': 'pending',
-            }
+      final response = await http.post(
+        Uri.parse(webhookUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(payload),
+      );
+
+      print('💬 Webhook response: ${response.statusCode}');
+      
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        // Log the AI chat message
+        await SupabaseService.instance.log(
+          actionType: ActionType.messageSent,
+          description: 'AI Chat: ${text.length > 50 ? '${text.substring(0, 50)}...' : text}',
+          metadata: {
+            'message': text,
+            'type': 'ai_chat',
           },
-          'timestamp': DateTime.now().toIso8601String(),
-        };
-
-        print('📱 Calling webhook: $webhookUrl');
-        
-        // Fire and forget - don't wait for response
-        http.post(
-          Uri.parse(webhookUrl),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode(payload),
-        ).then((res) {
-          print('📱 Webhook response: ${res.statusCode}');
-        }).catchError((e) {
-          print('📱 Webhook error: $e');
-        });
+        );
+      } else {
+        throw Exception('Webhook failed: ${response.body}');
       }
 
-      // Start timeout timer - if no response in 30 seconds, show error
-      _responseTimeoutTimer?.cancel();
-      _responseTimeoutTimer = Timer(const Duration(seconds: 30), () {
-        if (_isWaitingForResponse) {
-          _isWaitingForResponse = false;
-          _error = 'Response timed out. Please try again.';
-          notifyListeners();
-        }
-      });
+      // Response will come via realtime subscription
+      // Start polling as fallback in case realtime misses the update
+      _startPolling();
 
-      print('📱 Sent message, waiting for AI response...');
-      return true;
     } catch (e) {
-      _error = 'Failed to send message: $e';
+      print('Send message error: $e');
+      _error = 'Failed to send message';
       _isWaitingForResponse = false;
-      print('Error sending message: $e');
       notifyListeners();
-      return false;
     }
   }
 
-  /// Clear chat history (local only, doesn't delete from DB)
-  void clearLocalHistory() {
-    _messages.clear();
+  // ============================================
+  // POLLING FALLBACK
+  // ============================================
+
+  /// Start polling as fallback for when realtime misses events
+  void _startPolling() {
+    _stopPolling();
+    int attempts = 0;
+    _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
+      attempts++;
+      if (!_isWaitingForResponse || attempts > 10) {
+        _stopPolling();
+        if (_isWaitingForResponse) {
+          // Timed out after ~30s
+          _isWaitingForResponse = false;
+          notifyListeners();
+        }
+        return;
+      }
+      await _pollForResponse();
+    });
+  }
+
+  void _stopPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = null;
+  }
+
+  /// Fetch latest messages and check if AI has responded
+  Future<void> _pollForResponse() async {
+    try {
+      final userId = _currentUserId;
+      if (userId == null) return;
+
+      final response = await SupabaseService.client
+          .from(_managerChatsTable)
+          .select()
+          .eq('user_id', userId)
+          .order('created_at', ascending: true)
+          .limit(100);
+
+      final freshMessages = (response as List)
+          .map((json) => ManagerChatMessage.fromJson(json))
+          .toList();
+
+      // Check if any new message has an AI response we don't have yet
+      bool hasNewResponse = false;
+      for (final fresh in freshMessages) {
+        if (fresh.aiResponse != null && fresh.aiResponse!.isNotEmpty) {
+          final existing = _messages.where((m) =>
+            m.id == fresh.id &&
+            m.aiResponse != null &&
+            m.aiResponse!.isNotEmpty
+          );
+          if (existing.isEmpty) {
+            hasNewResponse = true;
+            break;
+          }
+        }
+      }
+
+      if (hasNewResponse) {
+        _messages = freshMessages;
+        _isWaitingForResponse = false;
+        _stopPolling();
+        notifyListeners();
+      }
+    } catch (e) {
+      print('Poll for response error: $e');
+    }
+  }
+
+  /// Clear chat history (local only)
+  void clearChat() {
+    _messages = [];
     notifyListeners();
   }
 
-  /// Refresh chat history from database
+  /// Reload messages (useful when switching back to chat)
   Future<void> refresh() async {
-    await _loadChatHistory();
+    await _loadMessages();
   }
 
   @override
   void dispose() {
-    _channel?.unsubscribe();
-    _responseTimeoutTimer?.cancel();
+    _stopPolling();
+    _chatChannel?.unsubscribe();
     super.dispose();
   }
 }

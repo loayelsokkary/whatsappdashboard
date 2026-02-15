@@ -103,7 +103,130 @@ class ConversationListPanel extends StatelessWidget {
               ),
             ),
           ),
+
+          // Needs Reply filter chip
+          if (provider.needsReplyCount > 0) ...[
+            const SizedBox(height: 12),
+            _buildNeedsReplyChip(context, provider),
+          ],
+
+          // Label filter chips (only when labels feature is enabled)
+          if (ClientConfig.enabledFeatures.contains('labels') &&
+              provider.availableLabels.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 30,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  _buildLabelFilterChip(context, provider, null, 'All'),
+                  ...provider.availableLabels.map(
+                    (label) => _buildLabelFilterChip(context, provider, label, label),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildNeedsReplyChip(BuildContext context, ConversationsProvider provider) {
+    final isActive = provider.statusFilter == ConversationStatus.needsReply;
+    final count = provider.needsReplyCount;
+
+    return GestureDetector(
+      onTap: () => provider.setStatusFilter(
+        isActive ? null : ConversationStatus.needsReply,
+      ),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: isActive
+              ? VividColors.statusUrgent.withOpacity(0.15)
+              : VividColors.darkNavy,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isActive
+                ? VividColors.statusUrgent
+                : VividColors.tealBlue.withOpacity(0.3),
+            width: isActive ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.reply,
+              size: 12,
+              color: isActive ? VividColors.statusUrgent : VividColors.textMuted,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              'Needs Reply',
+              style: TextStyle(
+                color: isActive ? VividColors.statusUrgent : VividColors.textMuted,
+                fontSize: 11,
+                fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color: VividColors.statusUrgent.withOpacity(isActive ? 0.3 : 0.15),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                count.toString(),
+                style: TextStyle(
+                  color: VividColors.statusUrgent,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLabelFilterChip(
+    BuildContext context,
+    ConversationsProvider provider,
+    String? value,
+    String display,
+  ) {
+    final isActive = provider.labelFilter == value;
+    final color = value != null ? _ConversationCard._getLabelColor(value) : VividColors.cyan;
+
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: GestureDetector(
+        onTap: () => provider.setLabelFilter(value),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: isActive ? color.withOpacity(0.2) : VividColors.darkNavy,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: isActive ? color : VividColors.tealBlue.withOpacity(0.3),
+              width: isActive ? 1.5 : 1,
+            ),
+          ),
+          child: Text(
+            display,
+            style: TextStyle(
+              color: isActive ? color : VividColors.textMuted,
+              fontSize: 11,
+              fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -373,11 +496,17 @@ class _ConversationCard extends StatelessWidget {
         const SizedBox(height: 8),
 
         // Status badges row
-        Row(
+        Wrap(
+          spacing: 6,
+          runSpacing: 4,
           children: [
             _buildStatusBadge(),
-            const SizedBox(width: 8),
-            _buildAiBadge(aiEnabled),
+            if (ClientConfig.hasAiConversations)
+              _buildAiBadge(aiEnabled),
+            if (ClientConfig.enabledFeatures.contains('labels') &&
+                conversation.label != null &&
+                conversation.label!.isNotEmpty)
+              _buildLabelBadge(conversation.label!),
           ],
         ),
       ],
@@ -453,6 +582,75 @@ class _ConversationCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Widget _buildLabelBadge(String label) {
+    final color = _getLabelColor(label);
+    final icon = _getLabelIcon(label);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static Color _getLabelColor(String label) {
+    switch (label) {
+      case 'Booking':
+        return const Color(0xFF10B981);
+      case 'Pricing':
+        return const Color(0xFFF59E0B);
+      case 'Enquiry':
+        return const Color(0xFF8B5CF6);
+      case 'Location':
+        return const Color(0xFFEC4899);
+      case 'Working Hours':
+        return const Color(0xFF06B6D4);
+      case 'Reschedule':
+        return const Color(0xFFEF4444);
+      case 'Cancel':
+        return const Color(0xFFDC2626);
+      default:
+        return const Color(0xFF6B7280);
+    }
+  }
+
+  static IconData _getLabelIcon(String label) {
+    switch (label) {
+      case 'Booking':
+        return Icons.event;
+      case 'Pricing':
+        return Icons.attach_money;
+      case 'Enquiry':
+        return Icons.help_outline;
+      case 'Location':
+        return Icons.location_on;
+      case 'Working Hours':
+        return Icons.schedule;
+      case 'Reschedule':
+        return Icons.update;
+      case 'Cancel':
+        return Icons.cancel_outlined;
+      default:
+        return Icons.label;
+    }
   }
 
   Color _getAvatarColor() {

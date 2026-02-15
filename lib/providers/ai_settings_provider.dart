@@ -50,7 +50,9 @@ class AiSettingsProvider extends ChangeNotifier {
   SupabaseClient get _client => Supabase.instance.client;
 
   /// Get AI enabled status for a customer
+  /// For non-AI clients, always returns false (no AI)
   bool isAiEnabled(String customerPhone) {
+    if (!ClientConfig.hasAiConversations) return false;
     final setting = _settings[customerPhone];
     // Default to true if no setting exists
     return setting?.aiEnabled ?? true;
@@ -62,7 +64,13 @@ class AiSettingsProvider extends ChangeNotifier {
   }
 
   /// Fetch all AI settings for this business
+  /// Skips fetching for non-AI clients
   Future<void> fetchAllSettings() async {
+    if (!ClientConfig.hasAiConversations) {
+      _settings.clear();
+      return;
+    }
+
     _isLoading = true;
     notifyListeners();
 
@@ -112,7 +120,10 @@ class AiSettingsProvider extends ChangeNotifier {
   }
 
   /// Toggle AI for a customer
+  /// No-op for non-AI clients
   Future<bool> toggleAi(String customerPhone, bool enabled) async {
+    if (!ClientConfig.hasAiConversations) return false;
+
     // Immediately update local cache for instant UI response
     final oldSetting = _settings[customerPhone];
     _settings[customerPhone] = AiChatSetting(

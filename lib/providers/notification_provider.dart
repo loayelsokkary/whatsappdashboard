@@ -77,11 +77,10 @@ class NotificationProvider extends ChangeNotifier {
             if (aiPhone != ClientConfig.businessPhone) return;
             if (customerPhone == null) return;
 
-            // Check if AI is disabled for this customer
-            final isAiDisabled = await _checkAiDisabled(customerPhone);
+            // For non-AI clients, always notify; for AI clients, only notify when AI is disabled
+            final shouldNotify = !ClientConfig.hasAiConversations || await _checkAiDisabled(customerPhone);
 
-            if (isAiDisabled) {
-              // Create notification
+            if (shouldNotify) {
               final notification = ManagerNotification(
                 id: newMessage['id'] as String,
                 customerPhone: customerPhone,

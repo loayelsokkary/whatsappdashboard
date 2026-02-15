@@ -44,18 +44,32 @@ class AdminProvider extends ChangeNotifier {
   Future<bool> createClient({
     required String name,
     required String slug,
-    String? webhookUrl,
     List<String> enabledFeatures = const [],
-    String? businessPhone,
+    bool hasAiConversations = true,
+    String? bookingsTable,
+    String? conversationsPhone,
+    String? conversationsWebhookUrl,
+    String? broadcastsPhone,
+    String? broadcastsWebhookUrl,
+    String? remindersPhone,
+    String? remindersWebhookUrl,
+    String? managerChatWebhookUrl,
   }) async {
     _error = null;
 
     final client = await SupabaseService.instance.createClient(
       name: name,
       slug: slug,
-      webhookUrl: webhookUrl,
       enabledFeatures: enabledFeatures,
-      businessPhone: businessPhone,
+      hasAiConversations: hasAiConversations,
+      bookingsTable: bookingsTable,
+      conversationsPhone: conversationsPhone,
+      conversationsWebhookUrl: conversationsWebhookUrl,
+      broadcastsPhone: broadcastsPhone,
+      broadcastsWebhookUrl: broadcastsWebhookUrl,
+      remindersPhone: remindersPhone,
+      remindersWebhookUrl: remindersWebhookUrl,
+      managerChatWebhookUrl: managerChatWebhookUrl,
     );
 
     if (client != null) {
@@ -74,9 +88,16 @@ class AdminProvider extends ChangeNotifier {
     required String clientId,
     String? name,
     String? slug,
-    String? webhookUrl,
     List<String>? enabledFeatures,
-    String? businessPhone,
+    bool? hasAiConversations,
+    String? bookingsTable,
+    String? conversationsPhone,
+    String? conversationsWebhookUrl,
+    String? broadcastsPhone,
+    String? broadcastsWebhookUrl,
+    String? remindersPhone,
+    String? remindersWebhookUrl,
+    String? managerChatWebhookUrl,
   }) async {
     _error = null;
 
@@ -84,9 +105,16 @@ class AdminProvider extends ChangeNotifier {
       clientId: clientId,
       name: name,
       slug: slug,
-      webhookUrl: webhookUrl,
       enabledFeatures: enabledFeatures,
-      businessPhone: businessPhone,
+      hasAiConversations: hasAiConversations,
+      bookingsTable: bookingsTable,
+      conversationsPhone: conversationsPhone,
+      conversationsWebhookUrl: conversationsWebhookUrl,
+      broadcastsPhone: broadcastsPhone,
+      broadcastsWebhookUrl: broadcastsWebhookUrl,
+      remindersPhone: remindersPhone,
+      remindersWebhookUrl: remindersWebhookUrl,
+      managerChatWebhookUrl: managerChatWebhookUrl,
     );
 
     if (success) {
@@ -171,6 +199,9 @@ class AdminProvider extends ChangeNotifier {
     required String email,
     required String password,
     required String name,
+    required String role,
+    List<String>? customPermissions,
+    List<String>? revokedPermissions,
   }) async {
     _error = null;
 
@@ -178,8 +209,10 @@ class AdminProvider extends ChangeNotifier {
       email: email,
       password: password,
       name: name,
-      role: 'client',
+      role: role,
       clientId: clientId,
+      customPermissions: customPermissions,
+      revokedPermissions: revokedPermissions,
     );
 
     if (user != null) {
@@ -202,6 +235,9 @@ class AdminProvider extends ChangeNotifier {
     String? email,
     String? password,
     String? name,
+    String? role,
+    List<String>? customPermissions,
+    List<String>? revokedPermissions,
   }) async {
     _error = null;
 
@@ -210,6 +246,9 @@ class AdminProvider extends ChangeNotifier {
       email: email,
       password: password,
       name: name,
+      role: role,
+      customPermissions: customPermissions,
+      revokedPermissions: revokedPermissions,
     );
 
     if (success) {
@@ -225,20 +264,43 @@ class AdminProvider extends ChangeNotifier {
     return false;
   }
 
-  /// Delete a user
-  Future<bool> deleteUser(String userId) async {
+  /// Reset a user's password (admin only)
+  Future<bool> resetUserPassword({
+    required String userId,
+    required String newPassword,
+  }) async {
     _error = null;
 
-    final success = await SupabaseService.instance.deleteUser(userId);
+    final success = await SupabaseService.instance.updateUser(
+      userId: userId,
+      password: newPassword,
+    );
 
     if (success) {
-      _selectedClientUsers.removeWhere((u) => u.id == userId);
-      _allUsers.removeWhere((u) => u['id'] == userId);
-      notifyListeners();
       return true;
     }
 
-    _error = 'Failed to delete user';
+    _error = 'Failed to reset password';
+    notifyListeners();
+    return false;
+  }
+
+  /// Toggle user status between 'active' and 'blocked'
+  Future<bool> toggleUserStatus(String userId, String newStatus) async {
+    _error = null;
+
+    final success = await SupabaseService.instance.toggleUserStatus(userId, newStatus);
+
+    if (success) {
+      // Refresh user lists
+      if (_selectedClient != null) {
+        await fetchClientUsers(_selectedClient!.id);
+      }
+      await fetchAllUsers();
+      return true;
+    }
+
+    _error = 'Failed to ${newStatus == 'blocked' ? 'block' : 'unblock'} user';
     notifyListeners();
     return false;
   }
@@ -248,5 +310,15 @@ class AdminProvider extends ChangeNotifier {
     'conversations',
     'broadcasts', 
     'analytics',
+    'manager_chat',
+    'booking_reminders',
+  ];
+
+  /// Get available roles for client users
+  List<String> get availableRoles => [
+    'admin',
+    'manager',
+    'agent',
+    'viewer',
   ];
 }
