@@ -137,6 +137,50 @@ class AnalyticsProvider extends ChangeNotifier {
       );
     }).toList();
 
+    // Fetch per-manager message stats from activity_logs
+    List<ManagerStats> teamPerformance = [];
+    try {
+      final clientId = ClientConfig.currentClient?.id;
+      var logsQuery = SupabaseService.client
+          .from('activity_logs')
+          .select('user_name, created_at')
+          .eq('action_type', 'message_sent');
+      if (clientId != null) {
+        logsQuery = logsQuery.eq('client_id', clientId);
+      }
+      final logsResponse = await logsQuery;
+      final activityLogs = logsResponse as List;
+
+      // Group by user_name and compute per-period counts
+      final Map<String, List<DateTime>> userMessages = {};
+      for (final log in activityLogs) {
+        final userName = log['user_name'] as String? ?? 'Unknown';
+        final createdAt = DateTime.parse(log['created_at']);
+        userMessages.putIfAbsent(userName, () => []).add(createdAt);
+      }
+
+      for (final entry in userMessages.entries) {
+        int today = 0, week = 0, month = 0;
+        for (final dt in entry.value) {
+          if (dt.isAfter(todayStart)) today++;
+          if (dt.isAfter(weekStart)) week++;
+          if (dt.isAfter(monthStart)) month++;
+        }
+        teamPerformance.add(ManagerStats(
+          userName: entry.key,
+          todayMessages: today,
+          thisWeekMessages: week,
+          thisMonthMessages: month,
+          totalMessages: entry.value.length,
+        ));
+      }
+
+      // Sort by total messages descending
+      teamPerformance.sort((a, b) => b.totalMessages.compareTo(a.totalMessages));
+    } catch (e) {
+      debugPrint('Error fetching team performance: $e');
+    }
+
     _analytics = AnalyticsData(
       totalMessages: totalMessages,
       aiResponses: aiResponses,
@@ -147,6 +191,7 @@ class AnalyticsProvider extends ChangeNotifier {
       thisMonthMessages: thisMonthMessages,
       last7Days: last7Days,
       topCustomers: topCustomers,
+      teamPerformance: teamPerformance,
     );
   }
 
@@ -239,10 +284,12 @@ class AnalyticsProvider extends ChangeNotifier {
 
       final allRecipients = recipientsResponse as List;
       for (final r in allRecipients) {
-        if (r['status']?.toString() == 'accepted') {
-          totalSent++;
-        } else {
+        final status = (r['status']?.toString() ?? '').toLowerCase().trim();
+        if (status == 'failed') {
           totalFailed++;
+        } else {
+          // NULL, empty, 'accepted', 'sent', 'delivered', etc. → sent successfully
+          totalSent++;
         }
       }
     } catch (e) {
@@ -294,6 +341,8 @@ class AnalyticsData {
   final int totalSent;
   final int totalFailed;
   final double deliveryRate;
+  // Per-manager stats
+  final List<ManagerStats> teamPerformance;
 
   AnalyticsData({
     required this.totalMessages,
@@ -308,6 +357,7 @@ class AnalyticsData {
     this.totalSent = 0,
     this.totalFailed = 0,
     this.deliveryRate = 0.0,
+    this.teamPerformance = const [],
   });
 }
 
@@ -332,4 +382,21 @@ class TopCustomer {
   });
 
   String get displayName => name ?? phone;
+}
+
+/// Per-manager message stats
+class ManagerStats {
+  final String userName;
+  final int todayMessages;
+  final int thisWeekMessages;
+  final int thisMonthMessages;
+  final int totalMessages;
+
+  ManagerStats({
+    required this.userName,
+    required this.todayMessages,
+    required this.thisWeekMessages,
+    required this.thisMonthMessages,
+    required this.totalMessages,
+  });
 }

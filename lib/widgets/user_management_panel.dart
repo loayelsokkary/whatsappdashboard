@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/user_management_provider.dart';
 import '../models/models.dart';
 import '../theme/vivid_theme.dart';
+import '../utils/initials_helper.dart';
 
 /// User Management Panel - For client admins to manage their team
 class UserManagementPanel extends StatefulWidget {
@@ -37,8 +38,9 @@ class _UserManagementPanelState extends State<UserManagementPanel> {
   }
 
   Widget _buildHeader() {
+    final isMobile = MediaQuery.of(context).size.width < 600;
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.all(isMobile ? 12 : 24),
       decoration: BoxDecoration(
         color: VividColors.navy,
         border: Border(
@@ -48,49 +50,56 @@ class _UserManagementPanelState extends State<UserManagementPanel> {
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: EdgeInsets.all(isMobile ? 8 : 12),
             decoration: BoxDecoration(
               gradient: VividColors.primaryGradient,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Icons.people, color: Colors.white, size: 24),
+            child: Icon(Icons.people, color: Colors.white, size: isMobile ? 20 : 24),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'User Management',
                   style: TextStyle(
                     color: VividColors.textPrimary,
-                    fontSize: 20,
+                    fontSize: isMobile ? 16 : 20,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                Text(
-                  'Manage team members for ${ClientConfig.businessName}',
-                  style: const TextStyle(
-                    color: VividColors.textMuted,
-                    fontSize: 13,
+                if (!isMobile)
+                  Text(
+                    'Manage team members for ${ClientConfig.businessName}',
+                    style: const TextStyle(
+                      color: VividColors.textMuted,
+                      fontSize: 13,
+                    ),
                   ),
-                ),
               ],
             ),
           ),
-          ElevatedButton.icon(
-            onPressed: () => _showAddUserDialog(context),
-            icon: const Icon(Icons.person_add, size: 18),
-            label: const Text('Add User'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: VividColors.brightBlue,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-          ),
+          isMobile
+              ? IconButton(
+                  onPressed: () => _showAddUserDialog(context),
+                  icon: const Icon(Icons.person_add, color: VividColors.cyan),
+                  tooltip: 'Add User',
+                )
+              : ElevatedButton.icon(
+                  onPressed: () => _showAddUserDialog(context),
+                  icon: const Icon(Icons.person_add, size: 18),
+                  label: const Text('Add User'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: VividColors.brightBlue,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
         ],
       ),
     );
@@ -99,12 +108,6 @@ class _UserManagementPanelState extends State<UserManagementPanel> {
   Widget _buildContent() {
     return Consumer<UserManagementProvider>(
       builder: (context, provider, _) {
-        if (provider.isLoading) {
-          return const Center(
-            child: CircularProgressIndicator(color: VividColors.cyan),
-          );
-        }
-
         if (provider.error != null) {
           return Center(
             child: Column(
@@ -183,46 +186,37 @@ class _UserManagementPanelState extends State<UserManagementPanel> {
   }
 
   Widget _buildUsersList(UserManagementProvider provider) {
+    final isMobile = MediaQuery.of(context).size.width < 600;
+    final statCards = [
+      _buildStatCard('Total Users', provider.users.length.toString(), Icons.people, VividColors.brightBlue),
+      _buildStatCard('Admins', provider.users.where((u) => u.role == UserRole.admin).length.toString(), Icons.admin_panel_settings, VividColors.cyan),
+      _buildStatCard('Managers', provider.users.where((u) => u.role == UserRole.manager).length.toString(), Icons.manage_accounts, VividColors.tealBlue),
+      _buildStatCard('Agents', provider.users.where((u) => u.role == UserRole.agent).length.toString(), Icons.support_agent, Colors.green),
+    ];
+
     return Padding(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.all(isMobile ? 8 : 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Stats row
-          Row(
-            children: [
-              _buildStatCard(
-                'Total Users',
-                provider.users.length.toString(),
-                Icons.people,
-                VividColors.brightBlue,
-              ),
-              const SizedBox(width: 16),
-              _buildStatCard(
-                'Admins',
-                provider.users.where((u) => u.role == UserRole.admin).length.toString(),
-                Icons.admin_panel_settings,
-                VividColors.cyan,
-              ),
-              const SizedBox(width: 16),
-              _buildStatCard(
-                'Managers',
-                provider.users.where((u) => u.role == UserRole.manager).length.toString(),
-                Icons.manage_accounts,
-                VividColors.tealBlue,
-              ),
-              const SizedBox(width: 16),
-              _buildStatCard(
-                'Agents',
-                provider.users.where((u) => u.role == UserRole.agent).length.toString(),
-                Icons.support_agent,
-                Colors.green,
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
+          // Stats row — Wrap on mobile
+          isMobile
+              ? Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: statCards,
+                )
+              : Row(
+                  children: [
+                    statCards[0], const SizedBox(width: 16),
+                    statCards[1], const SizedBox(width: 16),
+                    statCards[2], const SizedBox(width: 16),
+                    statCards[3],
+                  ],
+                ),
+          const SizedBox(height: 16),
 
-          // Users table
+          // Users table / cards
           Expanded(
             child: Container(
               decoration: BoxDecoration(
@@ -232,25 +226,26 @@ class _UserManagementPanelState extends State<UserManagementPanel> {
               ),
               child: Column(
                 children: [
-                  // Table header
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                    decoration: BoxDecoration(
-                      color: VividColors.deepBlue,
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                  // Table header — hide on mobile
+                  if (!isMobile)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                      decoration: BoxDecoration(
+                        color: VividColors.deepBlue,
+                        borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Expanded(flex: 2, child: Text('User', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
+                          const Expanded(flex: 2, child: Text('Email', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
+                          if (ClientConfig.isClientAdmin)
+                            const Expanded(flex: 2, child: Text('Password', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
+                          const Expanded(flex: 1, child: Text('Role', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
+                          const Expanded(flex: 1, child: Text('Status', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
+                          const SizedBox(width: 100, child: Text('Actions', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
+                        ],
+                      ),
                     ),
-                    child: Row(
-                      children: [
-                        const Expanded(flex: 2, child: Text('User', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
-                        const Expanded(flex: 2, child: Text('Email', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
-                        if (ClientConfig.isClientAdmin)
-                          const Expanded(flex: 2, child: Text('Password', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
-                        const Expanded(flex: 1, child: Text('Role', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
-                        const Expanded(flex: 1, child: Text('Status', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
-                        const SizedBox(width: 100, child: Text('Actions', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
-                      ],
-                    ),
-                  ),
 
                   // Users list
                   Expanded(
@@ -267,6 +262,7 @@ class _UserManagementPanelState extends State<UserManagementPanel> {
                         return _UserRow(
                           user: user,
                           isCurrentUser: isCurrentUser,
+                          isMobile: isMobile,
                           onEdit: () => _showEditUserDialog(context, user),
                           onToggleBlock: isCurrentUser ? null : () => _confirmToggleBlock(context, user),
                         );
@@ -283,49 +279,52 @@ class _UserManagementPanelState extends State<UserManagementPanel> {
   }
 
   Widget _buildStatCard(String label, String value, IconData icon, Color color) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: VividColors.navy,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withOpacity(0.3)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(10),
+    final isMobile = MediaQuery.of(context).size.width < 600;
+    final card = Container(
+      padding: EdgeInsets.all(isMobile ? 10 : 16),
+      decoration: BoxDecoration(
+        color: VividColors.navy,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisSize: isMobile ? MainAxisSize.min : MainAxisSize.max,
+        children: [
+          Container(
+            padding: EdgeInsets.all(isMobile ? 6 : 10),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: isMobile ? 16 : 20),
+          ),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                value,
+                style: TextStyle(
+                  color: VividColors.textPrimary,
+                  fontSize: isMobile ? 16 : 20,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-              child: Icon(icon, color: color, size: 20),
-            ),
-            const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  value,
-                  style: const TextStyle(
-                    color: VividColors.textPrimary,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: VividColors.textMuted,
+                  fontSize: 11,
                 ),
-                Text(
-                  label,
-                  style: const TextStyle(
-                    color: VividColors.textMuted,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
+
+    if (isMobile) return card;
+    return Expanded(child: card);
   }
 
   void _showAddUserDialog(BuildContext context) {
@@ -441,12 +440,14 @@ class _UserManagementPanelState extends State<UserManagementPanel> {
 class _UserRow extends StatefulWidget {
   final AppUser user;
   final bool isCurrentUser;
+  final bool isMobile;
   final VoidCallback onEdit;
   final VoidCallback? onToggleBlock;
 
   const _UserRow({
     required this.user,
     required this.isCurrentUser,
+    this.isMobile = false,
     required this.onEdit,
     this.onToggleBlock,
   });
@@ -460,6 +461,99 @@ class _UserRowState extends State<_UserRow> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.isMobile) return _buildMobileCard();
+    return _buildDesktopRow();
+  }
+
+  Widget _buildMobileCard() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      color: widget.isCurrentUser ? VividColors.brightBlue.withOpacity(0.05) : null,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            radius: 18,
+            backgroundColor: _getRoleColor(widget.user.role).withOpacity(0.2),
+            child: Text(
+              _getInitials(widget.user.name),
+              style: TextStyle(color: _getRoleColor(widget.user.role), fontWeight: FontWeight.w600, fontSize: 12),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        widget.user.name,
+                        style: const TextStyle(color: VividColors.textPrimary, fontWeight: FontWeight.w500),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (widget.isCurrentUser)
+                      Container(
+                        margin: const EdgeInsets.only(left: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: VividColors.cyan.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text('You', style: TextStyle(color: VividColors.cyan, fontSize: 10, fontWeight: FontWeight.w600)),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(widget.user.email, style: const TextStyle(color: VividColors.textMuted, fontSize: 12), overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    _RoleBadge(role: widget.user.role),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: (widget.user.isBlocked ? Colors.red : VividColors.statusSuccess).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        widget.user.isBlocked ? 'Blocked' : 'Active',
+                        style: TextStyle(color: widget.user.isBlocked ? Colors.red : VividColors.statusSuccess, fontSize: 11),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 32, height: 32,
+                child: IconButton(onPressed: widget.onEdit, icon: const Icon(Icons.edit, size: 16), color: VividColors.textMuted, padding: EdgeInsets.zero),
+              ),
+              if (widget.onToggleBlock != null)
+                SizedBox(
+                  width: 32, height: 32,
+                  child: IconButton(
+                    onPressed: widget.onToggleBlock,
+                    icon: Icon(widget.user.isBlocked ? Icons.lock_open : Icons.block, size: 16),
+                    color: widget.user.isBlocked ? VividColors.statusSuccess : Colors.red.withOpacity(0.7),
+                    padding: EdgeInsets.zero,
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopRow() {
     final showPasswordColumn = ClientConfig.isClientAdmin;
 
     return Container(
@@ -644,13 +738,7 @@ class _UserRowState extends State<_UserRow> {
     );
   }
 
-  String _getInitials(String name) {
-    final parts = name.split(' ');
-    if (parts.length >= 2) {
-      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-    }
-    return name.substring(0, name.length.clamp(0, 2)).toUpperCase();
-  }
+  String _getInitials(String name) => getInitials(name);
 
   Color _getRoleColor(UserRole role) {
     switch (role) {
@@ -777,7 +865,9 @@ class _UserDialogState extends State<_UserDialog> {
       backgroundColor: VividColors.navy,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
-        width: 450,
+        width: MediaQuery.of(context).size.width < 500
+            ? MediaQuery.of(context).size.width * 0.9
+            : 450,
         padding: const EdgeInsets.all(24),
         child: Form(
           key: _formKey,

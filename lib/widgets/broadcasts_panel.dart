@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/broadcasts_provider.dart';
 import '../models/models.dart';
 import '../theme/vivid_theme.dart';
+import '../utils/initials_helper.dart';
 
 /// Broadcasts panel - shows campaign list and recipient details
 class BroadcastsPanel extends StatefulWidget {
@@ -23,21 +24,79 @@ class _BroadcastsPanelState extends State<BroadcastsPanel> {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 360,
-          child: _BroadcastsList(),
-        ),
-        Container(
-          width: 1,
-          color: VividColors.tealBlue.withOpacity(0.2),
-        ),
-        Expanded(
-          child: _RecipientDetails(),
-        ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 600;
+        final isTablet = constraints.maxWidth < 900;
+
+        if (isMobile) {
+          return _buildMobileLayout();
+        }
+
+        final listWidth = isTablet
+            ? constraints.maxWidth.clamp(240, 300).toDouble()
+            : 360.0;
+
+        return Row(
+          children: [
+            SizedBox(
+              width: listWidth,
+              child: _BroadcastsList(),
+            ),
+            Container(
+              width: 1,
+              color: VividColors.tealBlue.withOpacity(0.2),
+            ),
+            Expanded(
+              child: _RecipientDetails(),
+            ),
+          ],
+        );
+      },
     );
+  }
+
+  Widget _buildMobileLayout() {
+    final provider = context.watch<BroadcastsProvider>();
+
+    if (provider.selectedBroadcast != null) {
+      return Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            decoration: BoxDecoration(
+              color: VividColors.navy,
+              border: Border(
+                bottom: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+              ),
+            ),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.arrow_back, color: VividColors.textPrimary),
+                  onPressed: () => provider.clearSelection(),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    provider.selectedBroadcast!.campaignName ?? 'Broadcast',
+                    style: const TextStyle(
+                      color: VividColors.textPrimary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(child: _RecipientDetails()),
+        ],
+      );
+    }
+
+    return _BroadcastsList();
   }
 }
 
@@ -117,11 +176,7 @@ class _BroadcastsList extends StatelessWidget {
           ),
           if (provider.hasLimit) _buildMonthlyCounter(provider),
           Expanded(
-            child: provider.isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(color: VividColors.cyan),
-                  )
-                : provider.broadcasts.isEmpty
+            child: provider.broadcasts.isEmpty
                     ? _buildEmptyState()
                     : ListView.builder(
                         itemCount: provider.broadcasts.length,
@@ -384,7 +439,62 @@ class _BroadcastCard extends StatelessWidget {
   }
 }
 
-class _RecipientDetails extends StatelessWidget {
+class _RecipientDetails extends StatefulWidget {
+  @override
+  State<_RecipientDetails> createState() => _RecipientDetailsState();
+}
+
+class _RecipientDetailsState extends State<_RecipientDetails> {
+  bool _isEditing = false;
+  late TextEditingController _nameController;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  void _startEditing(String currentName) {
+    setState(() {
+      _isEditing = true;
+      _nameController.text = currentName;
+    });
+  }
+
+  void _cancelEditing() {
+    setState(() {
+      _isEditing = false;
+    });
+  }
+
+  Future<void> _saveNewName(BroadcastsProvider provider, String broadcastId) async {
+    final newName = _nameController.text.trim();
+    if (newName.isEmpty) return;
+
+    setState(() => _isSaving = true);
+    try {
+      await provider.renameBroadcast(broadcastId, newName);
+      setState(() {
+        _isEditing = false;
+        _isSaving = false;
+      });
+    } catch (e) {
+      setState(() => _isSaving = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to rename: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<BroadcastsProvider>();
@@ -393,6 +503,8 @@ class _RecipientDetails extends StatelessWidget {
     if (broadcast == null) {
       return _buildEmptyState();
     }
+
+    final campaignName = broadcast.campaignName ?? 'Campaign Details';
 
     return Container(
       color: VividColors.navy,
@@ -410,14 +522,80 @@ class _RecipientDetails extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  broadcast.campaignName ?? 'Campaign Details',
-                  style: const TextStyle(
-                    color: VividColors.textPrimary,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
+                if (_isEditing)
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _nameController,
+                          autofocus: true,
+                          style: const TextStyle(
+                            color: VividColors.textPrimary,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          decoration: InputDecoration(
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(color: VividColors.tealBlue.withValues(alpha: 0.3)),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(color: VividColors.tealBlue.withValues(alpha: 0.3)),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: const BorderSide(color: VividColors.cyan),
+                            ),
+                            filled: true,
+                            fillColor: VividColors.deepBlue,
+                          ),
+                          onSubmitted: (_) => _saveNewName(provider, broadcast.id),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: _isSaving
+                            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: VividColors.cyan))
+                            : const Icon(Icons.check, color: Colors.green, size: 20),
+                        onPressed: _isSaving ? null : () => _saveNewName(provider, broadcast.id),
+                        tooltip: 'Save',
+                        constraints: const BoxConstraints(),
+                        padding: const EdgeInsets.all(6),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: VividColors.textMuted, size: 20),
+                        onPressed: _cancelEditing,
+                        tooltip: 'Cancel',
+                        constraints: const BoxConstraints(),
+                        padding: const EdgeInsets.all(6),
+                      ),
+                    ],
+                  )
+                else
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          campaignName,
+                          style: const TextStyle(
+                            color: VividColors.textPrimary,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.edit, color: VividColors.textMuted, size: 18),
+                        onPressed: () => _startEditing(campaignName),
+                        tooltip: 'Rename campaign',
+                        constraints: const BoxConstraints(),
+                        padding: const EdgeInsets.all(6),
+                      ),
+                    ],
                   ),
-                ),
                 const SizedBox(height: 4),
                 Text(
                   _formatFullDate(broadcast.sentAt),
@@ -429,92 +607,225 @@ class _RecipientDetails extends StatelessWidget {
               ],
             ),
           ),
-          if (broadcast.messageContent != null)
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.all(20),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: VividColors.deepBlue,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: VividColors.tealBlue.withOpacity(0.2),
-                ),
-              ),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.only(bottom: 20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Message',
-                    style: TextStyle(
-                      color: VividColors.textMuted,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
+                  if (broadcast.messageContent != null || broadcast.photo != null)
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.all(20),
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: VividColors.deepBlue,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: VividColors.tealBlue.withOpacity(0.2),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Message',
+                            style: TextStyle(
+                              color: VividColors.textMuted,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              final hasImage = broadcast.photo != null;
+                              final hasText = broadcast.messageContent != null;
+                              final isNarrow = constraints.maxWidth < 600;
+
+                              final imageErrorWidget = Container(
+                                height: 120,
+                                decoration: BoxDecoration(
+                                  color: VividColors.navy,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Center(
+                                  child: Icon(Icons.broken_image_outlined, color: VividColors.textMuted, size: 32),
+                                ),
+                              );
+
+                              final textWidget = hasText
+                                  ? Text(
+                                      broadcast.messageContent!,
+                                      style: const TextStyle(
+                                        color: VividColors.textPrimary,
+                                        fontSize: 14,
+                                        height: 1.6,
+                                      ),
+                                    )
+                                  : const SizedBox.shrink();
+
+                              if (!hasImage) return textWidget;
+
+                              Widget buildTappableImage({
+                                required double width,
+                                required double height,
+                                bool fullWidth = false,
+                              }) {
+                                return GestureDetector(
+                                  onTap: () {
+                                    showDialog(
+                                      context: context,
+                                      builder: (context) => Dialog(
+                                        backgroundColor: Colors.transparent,
+                                        insetPadding: const EdgeInsets.all(24),
+                                        child: Stack(
+                                          children: [
+                                            Center(
+                                              child: InteractiveViewer(
+                                                child: Image.network(
+                                                  broadcast.photo!,
+                                                  fit: BoxFit.contain,
+                                                  loadingBuilder: (context, child, progress) {
+                                                    if (progress == null) return child;
+                                                    return const Center(
+                                                      child: CircularProgressIndicator(color: VividColors.cyan),
+                                                    );
+                                                  },
+                                                ),
+                                              ),
+                                            ),
+                                            Positioned(
+                                              top: 0,
+                                              right: 0,
+                                              child: IconButton(
+                                                onPressed: () => Navigator.of(context).pop(),
+                                                icon: const Icon(Icons.close, color: Colors.white, size: 24),
+                                                style: IconButton.styleFrom(
+                                                  backgroundColor: Colors.black54,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  child: MouseRegion(
+                                    cursor: SystemMouseCursors.click,
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: VividColors.tealBlue.withValues(alpha: 0.2),
+                                        ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black.withValues(alpha: 0.3),
+                                            blurRadius: 12,
+                                            offset: const Offset(0, 4),
+                                          ),
+                                        ],
+                                      ),
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: Image.network(
+                                          broadcast.photo!,
+                                          width: fullWidth ? double.infinity : width,
+                                          height: height,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) => imageErrorWidget,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }
+
+                              if (isNarrow) {
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    buildTappableImage(width: 0, height: 160, fullWidth: true),
+                                    if (hasText) const SizedBox(height: 12),
+                                    if (hasText) textWidget,
+                                  ],
+                                );
+                              }
+
+                              return Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  buildTappableImage(width: 220, height: 280),
+                                  const SizedBox(width: 20),
+                                  Expanded(child: textWidget),
+                                ],
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Text(
+                              'Recipients',
+                              style: TextStyle(
+                                color: VividColors.textPrimary,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              '(${provider.recipients.length})',
+                              style: const TextStyle(
+                                color: VividColors.textMuted,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (provider.recipients.isNotEmpty) ...[
+                          const SizedBox(height: 10),
+                          _DeliveryStats(recipients: provider.recipients),
+                        ],
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    broadcast.messageContent!,
-                    style: const TextStyle(
-                      color: VividColors.textPrimary,
-                      fontSize: 14,
+                  const SizedBox(height: 12),
+                  if (provider.recipients.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(40),
+                      child: Center(
+                        child: Text(
+                          'No recipients yet',
+                          style: TextStyle(
+                            color: VividColors.textMuted,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: provider.recipients.length,
+                      itemBuilder: (context, index) {
+                        final recipient = provider.recipients[index];
+                        return _RecipientTile(recipient: recipient);
+                      },
                     ),
-                  ),
                 ],
               ),
             ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Text(
-                      'Recipients',
-                      style: TextStyle(
-                        color: VividColors.textPrimary,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      '(${provider.recipients.length})',
-                      style: const TextStyle(
-                        color: VividColors.textMuted,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
-                ),
-                if (provider.recipients.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  _DeliveryStats(recipients: provider.recipients),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          Expanded(
-            child: provider.recipients.isEmpty
-                ? Center(
-                    child: Text(
-                      'No recipients yet',
-                      style: TextStyle(
-                        color: VividColors.textMuted,
-                        fontSize: 14,
-                      ),
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    itemCount: provider.recipients.length,
-                    itemBuilder: (context, index) {
-                      final recipient = provider.recipients[index];
-                      return _RecipientTile(recipient: recipient);
-                    },
-                  ),
           ),
         ],
       ),
@@ -576,7 +887,7 @@ class _DeliveryStats extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final sent = recipients.where((r) => r.status == 'accepted' || r.status == 'sent').length;
+    final sent = recipients.where((r) => r.status == 'accepted' || r.status == 'sent' || r.status == 'delivered').length;
     final failed = recipients.length - sent;
     final rate = recipients.isNotEmpty
         ? (sent / recipients.length * 100)
@@ -633,9 +944,9 @@ class _RecipientTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool isSent = recipient.status == 'accepted' || recipient.status == 'sent';
+    final bool isSent = recipient.status == 'accepted' || recipient.status == 'sent' || recipient.status == 'delivered';
     final Color statusColor = isSent ? Colors.green : Colors.red;
-    final String statusLabel = isSent ? 'Sent' : 'Failed';
+    final String statusLabel = isSent ? 'Delivered' : 'Failed';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -649,14 +960,18 @@ class _RecipientTile extends StatelessWidget {
           CircleAvatar(
             radius: 18,
             backgroundColor: VividColors.brightBlue.withOpacity(0.2),
-            child: Text(
-              _getInitials(recipient.displayName),
-              style: const TextStyle(
-                color: VividColors.cyan,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+            child: Builder(builder: (context) {
+              final initials = _getInitials(recipient.displayName);
+              return Text(
+                initials,
+                textDirection: isArabicText(initials) ? TextDirection.rtl : TextDirection.ltr,
+                style: const TextStyle(
+                  color: VividColors.cyan,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              );
+            }),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -713,13 +1028,7 @@ class _RecipientTile extends StatelessWidget {
     );
   }
 
-  String _getInitials(String name) {
-    final parts = name.split(' ');
-    if (parts.length >= 2) {
-      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-    }
-    return name.substring(0, name.length.clamp(0, 2)).toUpperCase();
-  }
+  String _getInitials(String name) => getInitials(name);
 }
 
 class _ComposeBroadcastDialog extends StatefulWidget {
@@ -782,7 +1091,9 @@ class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
     return Dialog(
       backgroundColor: Colors.transparent,
       child: Container(
-        width: 500,
+        width: MediaQuery.of(context).size.width < 550
+            ? MediaQuery.of(context).size.width * 0.9
+            : 500,
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
           color: VividColors.navy,

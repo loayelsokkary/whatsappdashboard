@@ -165,111 +165,117 @@ class _BroadcastAnalyticsScreenState extends State<BroadcastAnalyticsScreen> {
 
     return Container(
       color: VividColors.darkNavy,
-      child: provider.isLoading
-          ? const Center(
-              child: CircularProgressIndicator(color: VividColors.cyan),
-            )
-          : analytics == null
+      child: analytics == null
               ? _buildEmptyState()
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Header
-                      Row(
-                        children: [
-                          const Icon(Icons.analytics, color: VividColors.cyan, size: 28),
-                          const SizedBox(width: 12),
-                          const Expanded(
-                            child: Text(
-                              'Broadcast Analytics',
-                              style: TextStyle(
-                                color: VividColors.textPrimary,
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                          _buildExportButton(analytics),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
+              : LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isMobile = constraints.maxWidth < 600;
+                    final contentPadding = isMobile ? 12.0 : 24.0;
 
-                      // Key Metrics Row
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _MetricCard(
-                              icon: Icons.campaign,
-                              label: 'Total Campaigns',
-                              value: analytics.totalCampaigns.toString(),
-                              color: VividColors.brightBlue,
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: _MetricCard(
-                              icon: Icons.people,
-                              label: 'Total Recipients',
-                              value: _formatNumber(analytics.totalRecipients),
-                              color: VividColors.cyan,
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: _MetricCard(
-                              icon: Icons.check_circle,
-                              label: 'Total Sent',
-                              value: _formatNumber(analytics.totalDelivered),
-                              color: Colors.green,
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: _MetricCard(
-                              icon: Icons.error_outline,
-                              label: 'Total Failed',
-                              value: _formatNumber(analytics.totalFailed),
-                              color: Colors.red,
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: _MetricCard(
-                              icon: Icons.done_all,
-                              label: 'Delivery Rate',
-                              value: '${analytics.deliveryRate.toStringAsFixed(1)}%',
-                              color: Colors.blue,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
-
-                      // Status Breakdown & Activity Chart
-                      Row(
+                    return SingleChildScrollView(
+                      padding: EdgeInsets.all(contentPadding),
+                      child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Status Breakdown
-                          Expanded(
-                            flex: 1,
-                            child: _StatusBreakdown(analytics: analytics),
+                          // Header
+                          Row(
+                            children: [
+                              const Icon(Icons.analytics, color: VividColors.cyan, size: 28),
+                              const SizedBox(width: 12),
+                              const Expanded(
+                                child: Text(
+                                  'Broadcast Analytics',
+                                  style: TextStyle(
+                                    color: VividColors.textPrimary,
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              _buildExportButton(analytics),
+                            ],
                           ),
-                          const SizedBox(width: 24),
-                          // Activity Chart
-                          Expanded(
-                            flex: 2,
-                            child: _ActivityChart(data: analytics.last7Days),
-                          ),
+                          const SizedBox(height: 24),
+
+                          // Key Metrics Row
+                          if (isMobile)
+                            _buildMobileMetricCards(analytics, constraints.maxWidth, contentPadding)
+                          else
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _MetricCard(
+                                    icon: Icons.campaign,
+                                    label: 'Total Campaigns',
+                                    value: analytics.totalCampaigns.toString(),
+                                    color: VividColors.brightBlue,
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: _MetricCard(
+                                    icon: Icons.people,
+                                    label: 'Total Recipients',
+                                    value: _formatNumber(analytics.totalRecipients),
+                                    color: VividColors.cyan,
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: _MetricCard(
+                                    icon: Icons.check_circle,
+                                    label: 'Total Sent',
+                                    value: _formatNumber(analytics.totalDelivered),
+                                    color: Colors.green,
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: _MetricCard(
+                                    icon: Icons.error_outline,
+                                    label: 'Total Failed',
+                                    value: _formatNumber(analytics.totalFailed),
+                                    color: Colors.red,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          const SizedBox(height: 24),
+
+                          // Status Breakdown & Activity Chart
+                          if (isMobile)
+                            Column(
+                              children: [
+                                _StatusBreakdown(analytics: analytics),
+                                const SizedBox(height: 16),
+                                _ActivityChart(data: analytics.last7Days),
+                              ],
+                            )
+                          else
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Status Breakdown
+                                Expanded(
+                                  flex: 1,
+                                  child: _StatusBreakdown(analytics: analytics),
+                                ),
+                                const SizedBox(width: 24),
+                                // Activity Chart
+                                Expanded(
+                                  flex: 2,
+                                  child: _ActivityChart(data: analytics.last7Days),
+                                ),
+                              ],
+                            ),
+                          const SizedBox(height: 24),
+
+                          // Recent Campaigns Performance
+                          _CampaignPerformanceTable(campaigns: analytics.recentCampaigns, isMobile: isMobile),
                         ],
                       ),
-                      const SizedBox(height: 24),
-
-                      // Recent Campaigns Performance
-                      _CampaignPerformanceTable(campaigns: analytics.recentCampaigns),
-                    ],
-                  ),
+                    );
+                  },
                 ),
     );
   }
@@ -302,6 +308,41 @@ class _BroadcastAnalyticsScreenState extends State<BroadcastAnalyticsScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildMobileMetricCards(BroadcastAnalyticsData analytics, double maxWidth, double padding) {
+    final cardWidth = (maxWidth - padding * 2 - 12) / 2;
+    final cards = <Widget>[
+      _MetricCard(
+        icon: Icons.campaign,
+        label: 'Total Campaigns',
+        value: analytics.totalCampaigns.toString(),
+        color: VividColors.brightBlue,
+      ),
+      _MetricCard(
+        icon: Icons.people,
+        label: 'Total Recipients',
+        value: _formatNumber(analytics.totalRecipients),
+        color: VividColors.cyan,
+      ),
+      _MetricCard(
+        icon: Icons.check_circle,
+        label: 'Total Sent',
+        value: _formatNumber(analytics.totalDelivered),
+        color: Colors.green,
+      ),
+      _MetricCard(
+        icon: Icons.error_outline,
+        label: 'Total Failed',
+        value: _formatNumber(analytics.totalFailed),
+        color: Colors.red,
+      ),
+    ];
+    return Wrap(
+      spacing: 12,
+      runSpacing: 12,
+      children: cards.map((card) => SizedBox(width: cardWidth, child: card)).toList(),
     );
   }
 
@@ -644,8 +685,9 @@ class _ActivityChart extends StatelessWidget {
 
 class _CampaignPerformanceTable extends StatelessWidget {
   final List<CampaignPerformance> campaigns;
+  final bool isMobile;
 
-  const _CampaignPerformanceTable({required this.campaigns});
+  const _CampaignPerformanceTable({required this.campaigns, this.isMobile = false});
 
   @override
   Widget build(BuildContext context) {
@@ -671,27 +713,80 @@ class _CampaignPerformanceTable extends StatelessWidget {
           ),
           const SizedBox(height: 16),
 
-          // Table Header
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-            decoration: BoxDecoration(
-              color: VividColors.deepBlue,
-              borderRadius: BorderRadius.circular(8),
+          if (isMobile)
+            // Mobile: card-based list
+            ...campaigns.map((campaign) => _buildMobileCampaignCard(campaign)).toList()
+          else ...[
+            // Desktop: Table Header
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+              decoration: BoxDecoration(
+                color: VividColors.deepBlue,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: const [
+                  Expanded(flex: 3, child: Text('Campaign', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12))),
+                  Expanded(flex: 1, child: Text('Recipients', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12), textAlign: TextAlign.center)),
+                  Expanded(flex: 1, child: Text('Accepted', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12), textAlign: TextAlign.center)),
+                  Expanded(flex: 1, child: Text('Failed', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12), textAlign: TextAlign.center)),
+                ],
+              ),
             ),
-            child: Row(
-              children: const [
-                Expanded(flex: 3, child: Text('Campaign', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12))),
-                Expanded(flex: 1, child: Text('Recipients', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12), textAlign: TextAlign.center)),
-                Expanded(flex: 1, child: Text('Accepted', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12), textAlign: TextAlign.center)),
-                Expanded(flex: 1, child: Text('Failed', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12), textAlign: TextAlign.center)),
-                Expanded(flex: 1, child: Text('Delivery Rate', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12), textAlign: TextAlign.center)),
-              ],
+            const SizedBox(height: 8),
+
+            // Desktop: Table Rows
+            ...campaigns.map((campaign) => _buildCampaignRow(campaign)).toList(),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMobileCampaignCard(CampaignPerformance campaign) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: VividColors.deepBlue,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: VividColors.tealBlue.withOpacity(0.1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            campaign.name,
+            style: const TextStyle(
+              color: VividColors.textPrimary,
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _formatDate(campaign.sentAt),
+            style: const TextStyle(
+              color: VividColors.textMuted,
+              fontSize: 11,
             ),
           ),
-          const SizedBox(height: 8),
-
-          // Table Rows
-          ...campaigns.map((campaign) => _buildCampaignRow(campaign)).toList(),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _MobileMetricItem(label: 'Recipients', value: campaign.recipients.toString(), color: VividColors.textPrimary),
+              ),
+              Expanded(
+                child: _MobileMetricItem(label: 'Accepted', value: campaign.delivered.toString(), color: Colors.green),
+              ),
+              Expanded(
+                child: _MobileMetricItem(label: 'Failed', value: campaign.failed.toString(), color: campaign.failed > 0 ? Colors.red : VividColors.textMuted),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -759,35 +854,12 @@ class _CampaignPerformanceTable extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
           ),
-          Expanded(
-            flex: 1,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: _getRateColor(campaign.deliveryRate).withOpacity(0.2),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                '${campaign.deliveryRate.toStringAsFixed(1)}%',
-                style: TextStyle(
-                  color: _getRateColor(campaign.deliveryRate),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ),
         ],
       ),
     );
   }
 
-  Color _getRateColor(double rate) {
-    if (rate >= 70) return Colors.green;
-    if (rate >= 40) return Colors.orange;
-    return Colors.red;
-  }
+
 
   String _formatDate(DateTime date) {
     final bh = date.toUtc().add(const Duration(hours: 3));
@@ -803,5 +875,46 @@ class _CampaignPerformanceTable extends StatelessWidget {
     } else {
       return '${bh.day}/${bh.month}/${bh.year}';
     }
+  }
+}
+
+// ============================================
+// MOBILE METRIC ITEM (for campaign cards)
+// ============================================
+
+class _MobileMetricItem extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+
+  const _MobileMetricItem({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: VividColors.textMuted,
+            fontSize: 10,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: TextStyle(
+            color: color,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
   }
 }

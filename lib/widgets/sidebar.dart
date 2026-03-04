@@ -6,6 +6,7 @@ import '../providers/notification_provider.dart';
 import '../providers/user_management_provider.dart';
 import '../models/models.dart';
 import '../theme/vivid_theme.dart';
+import '../utils/initials_helper.dart';
 import 'user_management_dialog.dart';
 
 /// Navigation destinations
@@ -351,13 +352,7 @@ class Sidebar extends StatelessWidget {
     );
   }
 
-  String _getInitials(String name) {
-    final parts = name.split(' ');
-    if (parts.length >= 2) {
-      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-    }
-    return name.substring(0, name.length.clamp(0, 2)).toUpperCase();
-  }
+  String _getInitials(String name) => getInitials(name);
 }
 
 // ============================================
@@ -545,7 +540,9 @@ class _NotificationsDialog extends StatelessWidget {
       backgroundColor: VividColors.navy,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
-        width: 360,
+        width: MediaQuery.of(context).size.width < 400
+            ? MediaQuery.of(context).size.width * 0.9
+            : 360,
         constraints: const BoxConstraints(maxHeight: 500),
         child: Column(
           mainAxisSize: MainAxisSize.min,

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../providers/user_management_provider.dart';
 import '../../models/models.dart';
 import '../../theme/vivid_theme.dart';
+import '../utils/initials_helper.dart';
 
 /// User Management Dialog - Opens from avatar menu for client admins
 class UserManagementDialog extends StatefulWidget {
@@ -25,10 +26,14 @@ class _UserManagementDialogState extends State<UserManagementDialog> {
   Widget build(BuildContext context) {
     return Dialog(
       backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.all(40),
+      insetPadding: EdgeInsets.all(MediaQuery.of(context).size.width < 600 ? 8 : 40),
       child: Container(
-        width: ClientConfig.isClientAdmin ? 1050 : 900,
-        height: 650,
+        width: MediaQuery.of(context).size.width < 600
+            ? MediaQuery.of(context).size.width * 0.95
+            : (ClientConfig.isClientAdmin ? 1050 : 900),
+        height: MediaQuery.of(context).size.width < 600
+            ? MediaQuery.of(context).size.height * 0.85
+            : 650,
         decoration: BoxDecoration(
           color: VividColors.darkNavy,
           borderRadius: BorderRadius.circular(16),
@@ -123,12 +128,6 @@ class _UserManagementDialogState extends State<UserManagementDialog> {
   Widget _buildContent() {
     return Consumer<UserManagementProvider>(
       builder: (context, provider, _) {
-        if (provider.isLoading) {
-          return const Center(
-            child: CircularProgressIndicator(color: VividColors.cyan),
-          );
-        }
-
         if (provider.error != null) {
           return Center(
             child: Column(
@@ -235,25 +234,30 @@ class _UserManagementDialogState extends State<UserManagementDialog> {
               ),
               child: Column(
                 children: [
-                  // Table header
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: VividColors.deepBlue,
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+                  // Table header — hide on mobile
+                  if (MediaQuery.of(context).size.width >= 600)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: VividColors.deepBlue,
+                        borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Expanded(flex: 3, child: Text('User', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12))),
+                          const SizedBox(width: 12),
+                          const Expanded(flex: 3, child: Text('Email', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12))),
+                          if (ClientConfig.isClientAdmin) ...[
+                            const SizedBox(width: 12),
+                            const Expanded(flex: 2, child: Text('Password', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12))),
+                          ],
+                          const SizedBox(width: 12),
+                          const Expanded(flex: 2, child: Text('Permissions', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12), textAlign: TextAlign.center)),
+                          const SizedBox(width: 12),
+                          const Expanded(flex: 1, child: Text('Actions', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12), textAlign: TextAlign.right)),
+                        ],
+                      ),
                     ),
-                    child: Row(
-                      children: [
-                        const Expanded(flex: 2, child: Text('User', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12))),
-                        const Expanded(flex: 2, child: Text('Email', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12))),
-                        if (ClientConfig.isClientAdmin)
-                          const Expanded(flex: 2, child: Text('Password', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12))),
-                        const Expanded(flex: 1, child: Text('Role', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12))),
-                        const SizedBox(width: 100, child: Text('Permissions', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12))),
-                        const SizedBox(width: 80, child: Text('Actions', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12))),
-                      ],
-                    ),
-                  ),
 
                   // Users list
                   Expanded(
@@ -267,10 +271,11 @@ class _UserManagementDialogState extends State<UserManagementDialog> {
                       itemBuilder: (context, index) {
                         final user = provider.users[index];
                         final isCurrentUser = user.id == ClientConfig.currentUser?.id;
-                        
+
                         return _UserRow(
                           user: user,
                           isCurrentUser: isCurrentUser,
+                          isMobile: MediaQuery.of(context).size.width < 600,
                           onEdit: () => _showEditUserDialog(context, user),
                           onToggleBlock: isCurrentUser ? null : () => _confirmToggleBlock(context, user, provider),
                         );
@@ -387,12 +392,14 @@ class _UserManagementDialogState extends State<UserManagementDialog> {
 class _UserRow extends StatefulWidget {
   final AppUser user;
   final bool isCurrentUser;
+  final bool isMobile;
   final VoidCallback onEdit;
   final VoidCallback? onToggleBlock;
 
   const _UserRow({
     required this.user,
     required this.isCurrentUser,
+    this.isMobile = false,
     required this.onEdit,
     this.onToggleBlock,
   });
@@ -406,14 +413,73 @@ class _UserRowState extends State<_UserRow> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.isMobile) return _buildMobileCard();
+    return _buildDesktopRow();
+  }
+
+  Widget _buildMobileCard() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      color: widget.isCurrentUser ? VividColors.brightBlue.withOpacity(0.05) : null,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            radius: 16,
+            backgroundColor: _getRoleColor(widget.user.role).withOpacity(0.2),
+            child: Text(
+              _getInitials(widget.user.name),
+              style: TextStyle(color: _getRoleColor(widget.user.role), fontWeight: FontWeight.w600, fontSize: 11),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(widget.user.name, style: const TextStyle(color: VividColors.textPrimary, fontWeight: FontWeight.w500, fontSize: 13), overflow: TextOverflow.ellipsis),
+                    ),
+                    if (widget.isCurrentUser)
+                      Container(
+                        margin: const EdgeInsets.only(left: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(color: VividColors.cyan.withOpacity(0.2), borderRadius: BorderRadius.circular(3)),
+                        child: const Text('You', style: TextStyle(color: VividColors.cyan, fontSize: 9, fontWeight: FontWeight.w600)),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(widget.user.email, style: const TextStyle(color: VividColors.textMuted, fontSize: 11), overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 4),
+                Row(children: [_RoleBadge(role: widget.user.role)]),
+              ],
+            ),
+          ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(width: 28, height: 28, child: IconButton(onPressed: widget.onEdit, icon: const Icon(Icons.edit, size: 14), color: VividColors.textMuted, padding: EdgeInsets.zero)),
+              if (widget.onToggleBlock != null)
+                SizedBox(width: 28, height: 28, child: IconButton(onPressed: widget.onToggleBlock, icon: Icon(widget.user.isBlocked ? Icons.lock_open : Icons.block, size: 14), color: widget.user.isBlocked ? VividColors.statusSuccess : Colors.red.withOpacity(0.7), padding: EdgeInsets.zero)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopRow() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       color: widget.isCurrentUser ? VividColors.brightBlue.withOpacity(0.05) : null,
       child: Row(
         children: [
-          // User info
+          // User info (flex: 3)
           Expanded(
-            flex: 2,
+            flex: 3,
             child: Row(
               children: [
                 CircleAvatar(
@@ -463,10 +529,11 @@ class _UserRowState extends State<_UserRow> {
               ],
             ),
           ),
+          const SizedBox(width: 12),
 
-          // Email
+          // Email (flex: 3)
           Expanded(
-            flex: 2,
+            flex: 3,
             child: Text(
               widget.user.email,
               style: const TextStyle(color: VividColors.textMuted, fontSize: 12),
@@ -474,8 +541,9 @@ class _UserRowState extends State<_UserRow> {
             ),
           ),
 
-          // Password (only for client admins)
-          if (ClientConfig.isClientAdmin)
+          // Password (flex: 2, only for client admins)
+          if (ClientConfig.isClientAdmin) ...[
+            const SizedBox(width: 12),
             Expanded(
               flex: 2,
               child: Row(
@@ -490,7 +558,6 @@ class _UserRowState extends State<_UserRow> {
                             ? VividColors.textPrimary
                             : VividColors.textMuted,
                         fontSize: 12,
-                        fontFamily: _isPasswordRevealed ? null : null,
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -511,22 +578,26 @@ class _UserRowState extends State<_UserRow> {
                 ],
               ),
             ),
+          ],
+          const SizedBox(width: 12),
 
-          // Role
+          // Permissions — role badge + indicator (flex: 2)
+          Expanded(
+            flex: 2,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _RoleBadge(role: widget.user.role),
+                const SizedBox(width: 6),
+                Flexible(child: _PermissionIndicator(user: widget.user)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+
+          // Actions (flex: 1)
           Expanded(
             flex: 1,
-            child: _RoleBadge(role: widget.user.role),
-          ),
-
-          // Permissions indicator
-          SizedBox(
-            width: 100,
-            child: _PermissionIndicator(user: widget.user),
-          ),
-
-          // Actions
-          SizedBox(
-            width: 80,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
@@ -557,13 +628,7 @@ class _UserRowState extends State<_UserRow> {
     );
   }
 
-  String _getInitials(String name) {
-    final parts = name.split(' ');
-    if (parts.length >= 2) {
-      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-    }
-    return name.substring(0, name.length.clamp(0, 2)).toUpperCase();
-  }
+  String _getInitials(String name) => getInitials(name);
 
   Color _getRoleColor(UserRole role) {
     switch (role) {
@@ -710,6 +775,7 @@ class _UserFormDialogState extends State<_UserFormDialog> {
   late UserRole _selectedRole;
   bool _isLoading = false;
   bool _showPassword = false;
+  bool _showCurrentPassword = false;
   bool _showCustomPermissions = false;
   
   // Permission overrides
@@ -785,7 +851,9 @@ class _UserFormDialogState extends State<_UserFormDialog> {
       backgroundColor: VividColors.navy,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Container(
-        width: 500,
+        width: MediaQuery.of(context).size.width < 550
+            ? MediaQuery.of(context).size.width * 0.9
+            : 500,
         constraints: const BoxConstraints(maxHeight: 650),
         child: Form(
           key: _formKey,
@@ -838,6 +906,11 @@ class _UserFormDialogState extends State<_UserFormDialog> {
 
                       // Password (only visible to admins)
                       if (ClientConfig.isAdmin) ...[
+                        // Current password (read-only, edit mode only)
+                        if (isEdit) ...[
+                          _buildCurrentPasswordField(),
+                          const SizedBox(height: 12),
+                        ],
                         _buildPasswordField(
                           _passwordController,
                           isEdit ? 'New Password (optional)' : 'Password',
@@ -978,6 +1051,62 @@ class _UserFormDialogState extends State<_UserFormDialog> {
         fillColor: VividColors.deepBlue,
       ),
       validator: required ? (v) => v?.isEmpty == true ? 'Required' : null : null,
+    );
+  }
+
+  Widget _buildCurrentPasswordField() {
+    final currentPw = widget.user?.password;
+    final hasPassword = currentPw != null && currentPw.isNotEmpty;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: BoxDecoration(
+        color: VividColors.deepBlue.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: VividColors.tealBlue.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.lock_outline, color: VividColors.textMuted, size: 18),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Current Password',
+                  style: TextStyle(color: VividColors.textMuted, fontSize: 11),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  hasPassword
+                      ? (_showCurrentPassword ? currentPw : '\u2022' * currentPw.length.clamp(6, 16))
+                      : 'Not available',
+                  style: TextStyle(
+                    color: hasPassword
+                        ? VividColors.textPrimary
+                        : VividColors.textMuted.withValues(alpha: 0.5),
+                    fontSize: 13,
+                    fontStyle: hasPassword ? FontStyle.normal : FontStyle.italic,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (hasPassword)
+            IconButton(
+              icon: Icon(
+                _showCurrentPassword ? Icons.visibility_off : Icons.visibility,
+                color: VividColors.textMuted,
+                size: 18,
+              ),
+              onPressed: () => setState(() => _showCurrentPassword = !_showCurrentPassword),
+              tooltip: _showCurrentPassword ? 'Hide password' : 'Show password',
+              constraints: const BoxConstraints(),
+              padding: const EdgeInsets.all(4),
+            ),
+        ],
+      ),
     );
   }
 

@@ -46,22 +46,6 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
           Expanded(
             child: Consumer<AdminAnalyticsProvider>(
               builder: (context, provider, _) {
-                if (provider.isLoadingCompany) {
-                  return const Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        CircularProgressIndicator(color: VividColors.cyan),
-                        SizedBox(height: 16),
-                        Text(
-                          'Loading company analytics...',
-                          style: TextStyle(color: VividColors.textMuted),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-
                 final analytics = provider.companyAnalytics;
                 if (analytics == null) {
                   return Center(
@@ -178,37 +162,48 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
     );
   }
 
+  Widget _buildResponsiveCardRow(List<Widget> cards, {required bool isMobile}) {
+    if (isMobile) {
+      return Column(
+        children: cards.expand((card) => [card, const SizedBox(height: 12)]).toList()..removeLast(),
+      );
+    }
+    final children = <Widget>[];
+    for (var i = 0; i < cards.length; i++) {
+      children.add(Expanded(child: cards[i]));
+      if (i < cards.length - 1) children.add(const SizedBox(width: 20));
+    }
+    return Row(children: children);
+  }
+
   Widget _buildAnalyticsContent(VividCompanyAnalytics analytics) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(32, 0, 32, 32),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Top row - Key metrics
-          Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 600;
+        final horizontalPadding = isMobile ? 16.0 : 32.0;
+
+        return SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(horizontalPadding, 0, horizontalPadding, horizontalPadding),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: _MetricCard(
+              // Top row - Key metrics
+              _buildResponsiveCardRow([
+                _MetricCard(
                   icon: Icons.business,
                   label: 'Total Clients',
                   value: analytics.totalClients.toString(),
                   color: VividColors.brightBlue,
                   description: 'Active accounts',
                 ),
-              ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: _MetricCard(
+                _MetricCard(
                   icon: Icons.message,
                   label: 'Total Messages',
                   value: _formatNumber(analytics.totalMessages),
                   color: VividColors.cyan,
                   description: 'All-time conversations',
                 ),
-              ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: _MetricCard(
+                _MetricCard(
                   icon: Icons.auto_awesome,
                   label: 'Automation Rate',
                   value: '${analytics.overallAutomationRate.toStringAsFixed(1)}%',
@@ -216,185 +211,145 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                   description: analytics.overallAutomationRate >= 80 ? 'Excellent' : 'Good',
                   isHighlight: true,
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
+              ], isMobile: isMobile),
+              const SizedBox(height: 20),
 
-          // Second row
-          Row(
-            children: [
-              Expanded(
-                child: _MetricCard(
+              // Second row
+              _buildResponsiveCardRow([
+                _MetricCard(
                   icon: Icons.smart_toy,
                   label: 'AI Messages',
                   value: _formatNumber(analytics.totalAiMessages),
                   color: VividColors.cyan,
                   description: 'Handled by AI',
                 ),
-              ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: _MetricCard(
+                _MetricCard(
                   icon: Icons.support_agent,
                   label: 'Manager Messages',
                   value: _formatNumber(analytics.totalManagerMessages),
                   color: VividColors.brightBlue,
                   description: 'Human interventions',
                 ),
-              ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: _MetricCard(
+                _MetricCard(
                   icon: Icons.people,
                   label: 'Unique Customers',
                   value: _formatNumber(analytics.totalUniqueCustomers),
                   color: Colors.purple,
                   description: 'Total people reached',
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
+              ], isMobile: isMobile),
+              const SizedBox(height: 20),
 
-          // Third row - Broadcasts
-          Row(
-            children: [
-              Expanded(
-                child: _MetricCard(
+              // Third row - Broadcasts
+              _buildResponsiveCardRow([
+                _MetricCard(
                   icon: Icons.campaign,
                   label: 'Total Broadcasts',
                   value: analytics.totalBroadcasts.toString(),
                   color: Colors.orange,
                   description: 'Campaigns sent',
                 ),
-              ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: _MetricCard(
+                _MetricCard(
                   icon: Icons.group,
                   label: 'Recipients Reached',
                   value: _formatNumber(analytics.totalRecipientsReached),
                   color: Colors.teal,
                   description: 'Via broadcasts',
                 ),
-              ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: _MetricCard(
+                _MetricCard(
                   icon: Icons.access_time,
                   label: 'Last Activity',
                   value: _formatLastActivity(analytics.lastActivityAcrossAll),
                   color: VividColors.textMuted,
                   description: 'Most recent message',
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 32),
+              ], isMobile: isMobile),
+              const SizedBox(height: 32),
 
-          // Most active clients section
-          _buildMostActiveClients(analytics.mostActiveClients),
-          const SizedBox(height: 32),
+              // Most active clients section
+              _buildMostActiveClients(analytics.mostActiveClients),
+              const SizedBox(height: 32),
 
-          // Activity chart (last 7 days)
-          _buildActivityChart(analytics.messagesByDay),
-          const SizedBox(height: 32),
+              // Activity chart (last 7 days)
+              _buildActivityChart(analytics.messagesByDay),
+              const SizedBox(height: 32),
 
-          // Time period stats
-          _buildSectionHeader(Icons.date_range, 'Message Volume by Period'),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _MetricCard(
+              // Time period stats
+              _buildSectionHeader(Icons.date_range, 'Message Volume by Period'),
+              const SizedBox(height: 16),
+              _buildResponsiveCardRow([
+                _MetricCard(
                   icon: Icons.today,
                   label: 'Today',
                   value: _formatNumber(analytics.todayMessages),
                   color: VividColors.cyan,
                   description: 'Messages today',
                 ),
-              ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: _MetricCard(
+                _MetricCard(
                   icon: Icons.view_week,
                   label: 'This Week',
                   value: _formatNumber(analytics.thisWeekMessages),
                   color: VividColors.brightBlue,
                   description: 'Messages this week',
                 ),
-              ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: _MetricCard(
+                _MetricCard(
                   icon: Icons.calendar_month,
                   label: 'This Month',
                   value: _formatNumber(analytics.thisMonthMessages),
                   color: Colors.purple,
                   description: 'Messages this month',
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 32),
+              ], isMobile: isMobile),
+              const SizedBox(height: 32),
 
-          // Client breakdown table
-          _buildClientBreakdownTable(analytics.allClientActivities),
+              // Client breakdown table
+              _buildClientBreakdownTable(analytics.allClientActivities, isMobile: isMobile),
 
-          // Broadcast performance
-          if (analytics.broadcastTotalRecipients > 0) ...[
-            const SizedBox(height: 32),
-            _buildSectionHeader(Icons.campaign, 'Broadcast Performance'),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: _MetricCard(
+              // Broadcast performance
+              if (analytics.broadcastTotalRecipients > 0) ...[
+                const SizedBox(height: 32),
+                _buildSectionHeader(Icons.campaign, 'Broadcast Performance'),
+                const SizedBox(height: 16),
+                _buildResponsiveCardRow([
+                  _MetricCard(
                     icon: Icons.done_all,
                     label: 'Delivered',
                     value: _formatNumber(analytics.broadcastDeliveredCount),
                     color: Colors.green,
                     description: '${(analytics.broadcastDeliveredCount / analytics.broadcastTotalRecipients * 100).toStringAsFixed(1)}% rate',
                   ),
-                ),
-                const SizedBox(width: 20),
-                Expanded(
-                  child: _MetricCard(
+                  _MetricCard(
                     icon: Icons.visibility,
                     label: 'Read',
                     value: _formatNumber(analytics.broadcastReadCount),
                     color: Colors.blue,
                     description: '${(analytics.broadcastReadCount / analytics.broadcastTotalRecipients * 100).toStringAsFixed(1)}% rate',
                   ),
-                ),
-                const SizedBox(width: 20),
-                Expanded(
-                  child: _MetricCard(
+                  _MetricCard(
                     icon: Icons.error_outline,
                     label: 'Failed',
                     value: _formatNumber(analytics.broadcastFailedCount),
                     color: analytics.broadcastFailedCount > 0 ? Colors.red : Colors.orange,
                     description: '${(analytics.broadcastFailedCount / analytics.broadcastTotalRecipients * 100).toStringAsFixed(1)}% rate',
                   ),
-                ),
+                ], isMobile: isMobile),
               ],
-            ),
-          ],
-          const SizedBox(height: 32),
+              const SizedBox(height: 32),
 
-          // Busiest hours
-          _buildBusiestHoursChart(analytics.messagesByHour),
-          const SizedBox(height: 32),
+              // Busiest hours
+              _buildBusiestHoursChart(analytics.messagesByHour, isMobile: isMobile),
+              const SizedBox(height: 32),
 
-          // Top customers
-          _buildTopCustomers(analytics.topCustomers),
-          const SizedBox(height: 32),
+              // Top customers
+              _buildTopCustomers(analytics.topCustomers),
+              const SizedBox(height: 32),
 
-          // AI performance
-          _buildAiPerformanceSection(analytics),
-        ],
-      ),
+              // AI performance
+              _buildAiPerformanceSection(analytics, isMobile: isMobile),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -676,7 +631,7 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
     );
   }
 
-  Widget _buildClientBreakdownTable(List<ClientActivity> clients) {
+  Widget _buildClientBreakdownTable(List<ClientActivity> clients, {bool isMobile = false}) {
     if (clients.isEmpty) return const SizedBox.shrink();
 
     return Container(
@@ -711,52 +666,171 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
             ],
           ),
           const SizedBox(height: 20),
-          // Header row
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            decoration: BoxDecoration(
-              color: VividColors.deepBlue,
-              borderRadius: BorderRadius.circular(8),
+          if (isMobile)
+            // Mobile: card-based list
+            ...clients.map((client) => _buildMobileClientCard(client))
+          else ...[
+            // Desktop: Header row
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: VividColors.deepBlue,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Row(
+                children: [
+                  Expanded(flex: 3, child: Text('Client', style: TextStyle(color: VividColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600))),
+                  Expanded(flex: 2, child: Text('Messages', style: TextStyle(color: VividColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600), textAlign: TextAlign.center)),
+                  Expanded(flex: 2, child: Text('AI', style: TextStyle(color: VividColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600), textAlign: TextAlign.center)),
+                  Expanded(flex: 2, child: Text('Manager', style: TextStyle(color: VividColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600), textAlign: TextAlign.center)),
+                  Expanded(flex: 2, child: Text('Customers', style: TextStyle(color: VividColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600), textAlign: TextAlign.center)),
+                  Expanded(flex: 2, child: Text('Auto Rate', style: TextStyle(color: VividColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600), textAlign: TextAlign.center)),
+                ],
+              ),
             ),
-            child: const Row(
-              children: [
-                Expanded(flex: 3, child: Text('Client', style: TextStyle(color: VividColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600))),
-                Expanded(flex: 2, child: Text('Messages', style: TextStyle(color: VividColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600), textAlign: TextAlign.center)),
-                Expanded(flex: 2, child: Text('AI', style: TextStyle(color: VividColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600), textAlign: TextAlign.center)),
-                Expanded(flex: 2, child: Text('Manager', style: TextStyle(color: VividColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600), textAlign: TextAlign.center)),
-                Expanded(flex: 2, child: Text('Customers', style: TextStyle(color: VividColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600), textAlign: TextAlign.center)),
-                Expanded(flex: 2, child: Text('Auto Rate', style: TextStyle(color: VividColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600), textAlign: TextAlign.center)),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          ...clients.map((client) => Container(
-            margin: const EdgeInsets.only(bottom: 4),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: VividColors.deepBlue.withOpacity(0.5),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                Expanded(flex: 3, child: Text(client.clientName, style: const TextStyle(color: VividColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis)),
-                Expanded(flex: 2, child: Text(_formatNumber(client.messageCount), style: const TextStyle(color: VividColors.cyan, fontSize: 13, fontWeight: FontWeight.bold), textAlign: TextAlign.center)),
-                Expanded(flex: 2, child: Text(_formatNumber(client.aiMessages), style: const TextStyle(color: VividColors.cyan, fontSize: 13), textAlign: TextAlign.center)),
-                Expanded(flex: 2, child: Text(_formatNumber(client.managerMessages), style: const TextStyle(color: VividColors.brightBlue, fontSize: 13), textAlign: TextAlign.center)),
-                Expanded(flex: 2, child: Text(client.uniqueCustomers.toString(), style: const TextStyle(color: Colors.purple, fontSize: 13), textAlign: TextAlign.center)),
-                Expanded(flex: 2, child: Text('${client.automationRate.toStringAsFixed(0)}%', style: TextStyle(color: client.automationRate >= 80 ? Colors.green : Colors.orange, fontSize: 13, fontWeight: FontWeight.bold), textAlign: TextAlign.center)),
-              ],
-            ),
-          )),
+            const SizedBox(height: 8),
+            // Desktop: Table rows
+            ...clients.map((client) => Container(
+              margin: const EdgeInsets.only(bottom: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: VividColors.deepBlue.withOpacity(0.5),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Expanded(flex: 3, child: Text(client.clientName, style: const TextStyle(color: VividColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis)),
+                  Expanded(flex: 2, child: Text(_formatNumber(client.messageCount), style: const TextStyle(color: VividColors.cyan, fontSize: 13, fontWeight: FontWeight.bold), textAlign: TextAlign.center)),
+                  Expanded(flex: 2, child: Text(_formatNumber(client.aiMessages), style: const TextStyle(color: VividColors.cyan, fontSize: 13), textAlign: TextAlign.center)),
+                  Expanded(flex: 2, child: Text(_formatNumber(client.managerMessages), style: const TextStyle(color: VividColors.brightBlue, fontSize: 13), textAlign: TextAlign.center)),
+                  Expanded(flex: 2, child: Text(client.uniqueCustomers.toString(), style: const TextStyle(color: Colors.purple, fontSize: 13), textAlign: TextAlign.center)),
+                  Expanded(flex: 2, child: Text('${client.automationRate.toStringAsFixed(0)}%', style: TextStyle(color: client.automationRate >= 80 ? Colors.green : Colors.orange, fontSize: 13, fontWeight: FontWeight.bold), textAlign: TextAlign.center)),
+                ],
+              ),
+            )),
+          ],
         ],
       ),
     );
   }
 
-  Widget _buildBusiestHoursChart(Map<int, int> messagesByHour) {
+  Widget _buildMobileClientCard(ClientActivity client) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: VividColors.deepBlue.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: VividColors.tealBlue.withOpacity(0.1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  client.clientName,
+                  style: const TextStyle(color: VividColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w600),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: (client.automationRate >= 80 ? Colors.green : Colors.orange).withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${client.automationRate.toStringAsFixed(0)}%',
+                  style: TextStyle(
+                    color: client.automationRate >= 80 ? Colors.green : Colors.orange,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(child: _buildMobileStatItem('Messages', _formatNumber(client.messageCount), VividColors.cyan)),
+              Expanded(child: _buildMobileStatItem('AI', _formatNumber(client.aiMessages), VividColors.cyan)),
+              Expanded(child: _buildMobileStatItem('Manager', _formatNumber(client.managerMessages), VividColors.brightBlue)),
+              Expanded(child: _buildMobileStatItem('Customers', client.uniqueCustomers.toString(), Colors.purple)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMobileStatItem(String label, String value, Color color) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(color: VividColors.textMuted, fontSize: 10)),
+        const SizedBox(height: 2),
+        Text(value, style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.w600)),
+      ],
+    );
+  }
+
+  Widget _buildBusiestHoursChart(Map<int, int> messagesByHour, {bool isMobile = false}) {
     if (messagesByHour.isEmpty) return const SizedBox.shrink();
 
     final maxCount = messagesByHour.values.reduce((a, b) => a > b ? a : b);
+
+    final barsWidget = SizedBox(
+      height: 200,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: List.generate(24, (hour) {
+          final count = messagesByHour[hour] ?? 0;
+          final height = maxCount > 0 ? (count / maxCount) * 140 : 0.0;
+          return Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 1),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  if (count > 0)
+                    Text(
+                      count.toString(),
+                      style: const TextStyle(
+                        color: VividColors.cyan,
+                        fontSize: 8,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  const SizedBox(height: 2),
+                  Container(
+                    height: height.clamp(2.0, 140.0),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.bottomCenter,
+                        end: Alignment.topCenter,
+                        colors: [Colors.orange, Colors.amber],
+                      ),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    hour % 3 == 0 ? '${hour}h' : '',
+                    style: TextStyle(
+                      color: VividColors.textMuted.withOpacity(0.7),
+                      fontSize: 9,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }),
+      ),
+    );
 
     return Container(
       padding: const EdgeInsets.all(24),
@@ -790,55 +864,13 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
             ],
           ),
           const SizedBox(height: 24),
-          SizedBox(
-            height: 200,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: List.generate(24, (hour) {
-                final count = messagesByHour[hour] ?? 0;
-                final height = maxCount > 0 ? (count / maxCount) * 140 : 0.0;
-                return Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 1),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        if (count > 0)
-                          Text(
-                            count.toString(),
-                            style: const TextStyle(
-                              color: VividColors.cyan,
-                              fontSize: 8,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        const SizedBox(height: 2),
-                        Container(
-                          height: height.clamp(2.0, 140.0),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.bottomCenter,
-                              end: Alignment.topCenter,
-                              colors: [Colors.orange, Colors.amber],
-                            ),
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          hour % 3 == 0 ? '${hour}h' : '',
-                          style: TextStyle(
-                            color: VividColors.textMuted.withOpacity(0.7),
-                            fontSize: 9,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }),
-            ),
-          ),
+          if (isMobile)
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: SizedBox(width: 600, child: barsWidget),
+            )
+          else
+            barsWidget,
         ],
       ),
     );
@@ -946,7 +978,7 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
     );
   }
 
-  Widget _buildAiPerformanceSection(VividCompanyAnalytics analytics) {
+  Widget _buildAiPerformanceSection(VividCompanyAnalytics analytics, {bool isMobile = false}) {
     final total = analytics.totalAiMessages + analytics.totalManagerMessages;
     final aiPercent = total > 0 ? (analytics.totalAiMessages / total * 100) : 0.0;
     final managerPercent = total > 0 ? (analytics.totalManagerMessages / total * 100) : 0.0;
@@ -1019,39 +1051,29 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
             ),
           ),
           const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(
-                child: _MetricCard(
-                  icon: Icons.swap_horiz,
-                  label: 'Handoffs',
-                  value: analytics.handoffCount.toString(),
-                  color: Colors.orange,
-                  description: 'AI tried, manager stepped in',
-                ),
-              ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: _MetricCard(
-                  icon: Icons.check_circle,
-                  label: 'AI Enabled',
-                  value: analytics.aiEnabledCustomers.toString(),
-                  color: Colors.green,
-                  description: 'Customers with AI on',
-                ),
-              ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: _MetricCard(
-                  icon: Icons.cancel,
-                  label: 'AI Disabled',
-                  value: analytics.aiDisabledCustomers.toString(),
-                  color: Colors.red,
-                  description: 'Customers with AI off',
-                ),
-              ),
-            ],
-          ),
+          _buildResponsiveCardRow([
+            _MetricCard(
+              icon: Icons.swap_horiz,
+              label: 'Handoffs',
+              value: analytics.handoffCount.toString(),
+              color: Colors.orange,
+              description: 'AI tried, manager stepped in',
+            ),
+            _MetricCard(
+              icon: Icons.check_circle,
+              label: 'AI Enabled',
+              value: analytics.aiEnabledCustomers.toString(),
+              color: Colors.green,
+              description: 'Customers with AI on',
+            ),
+            _MetricCard(
+              icon: Icons.cancel,
+              label: 'AI Disabled',
+              value: analytics.aiDisabledCustomers.toString(),
+              color: Colors.red,
+              description: 'Customers with AI off',
+            ),
+          ], isMobile: isMobile),
         ],
       ),
     );

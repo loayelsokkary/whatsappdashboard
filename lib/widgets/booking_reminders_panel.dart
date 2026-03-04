@@ -28,37 +28,94 @@ class _BookingRemindersPanelState extends State<BookingRemindersPanel> {
   Widget build(BuildContext context) {
     return Consumer<BookingRemindersProvider>(
       builder: (context, provider, _) {
-        return Row(
-          children: [
-            // Left: Bookings list
-            Expanded(
-              flex: 2,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: VividColors.navy,
-                  border: Border(right: BorderSide(color: VividColors.tealBlue.withOpacity(0.2))),
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final isMobile = constraints.maxWidth < 600;
+
+            if (isMobile) {
+              return _buildMobileLayout(provider);
+            }
+
+            return Row(
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: VividColors.navy,
+                      border: Border(right: BorderSide(color: VividColors.tealBlue.withOpacity(0.2))),
+                    ),
+                    child: Column(
+                      children: [
+                        _buildHeader(provider),
+                        _buildStatsRow(provider.stats),
+                        _buildFilters(provider),
+                        _buildSearchBar(provider),
+                        Expanded(child: _buildBookingsList(provider)),
+                      ],
+                    ),
+                  ),
                 ),
-                child: Column(
-                  children: [
-                    _buildHeader(provider),
-                    _buildStatsRow(provider.stats),
-                    _buildFilters(provider),
-                    _buildSearchBar(provider),
-                    Expanded(child: _buildBookingsList(provider)),
-                  ],
+                Expanded(
+                  flex: 3,
+                  child: _selectedBooking == null
+                      ? _buildEmptyDetail()
+                      : _buildBookingDetails(_selectedBooking!, provider),
                 ),
-              ),
-            ),
-            // Right: Details
-            Expanded(
-              flex: 3,
-              child: _selectedBooking == null 
-                  ? _buildEmptyDetail() 
-                  : _buildBookingDetails(_selectedBooking!, provider),
-            ),
-          ],
+              ],
+            );
+          },
         );
       },
+    );
+  }
+
+  Widget _buildMobileLayout(BookingRemindersProvider provider) {
+    if (_selectedBooking != null) {
+      return Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            decoration: BoxDecoration(
+              color: VividColors.navy,
+              border: Border(
+                bottom: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+              ),
+            ),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.arrow_back, color: VividColors.textPrimary),
+                  onPressed: () => setState(() => _selectedBooking = null),
+                ),
+                const SizedBox(width: 4),
+                const Text(
+                  'Booking Details',
+                  style: TextStyle(
+                    color: VividColors.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(child: _buildBookingDetails(_selectedBooking!, provider)),
+        ],
+      );
+    }
+
+    return Container(
+      color: VividColors.navy,
+      child: Column(
+        children: [
+          _buildHeader(provider),
+          _buildStatsRow(provider.stats),
+          _buildFilters(provider),
+          _buildSearchBar(provider),
+          Expanded(child: _buildBookingsList(provider)),
+        ],
+      ),
     );
   }
 
@@ -93,16 +150,26 @@ class _BookingRemindersPanelState extends State<BookingRemindersPanel> {
   }
 
   Widget _buildStatsRow(BookingReminderStats stats) {
+    final badges = [
+      _StatBadge(label: 'Total', value: stats.totalBookings, color: VividColors.textMuted),
+      _StatBadge(label: 'Upcoming', value: stats.upcomingBookings, color: VividColors.brightBlue),
+      _StatBadge(label: 'Sent', value: stats.remindersSent, color: Colors.orange),
+      _StatBadge(label: 'Confirmed', value: stats.confirmed, color: VividColors.statusSuccess),
+      _StatBadge(label: 'Cancelled', value: stats.cancelled, color: VividColors.statusUrgent),
+    ];
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        children: [
-          _StatBadge(label: 'Total', value: stats.totalBookings, color: VividColors.textMuted),
-          _StatBadge(label: 'Upcoming', value: stats.upcomingBookings, color: VividColors.brightBlue),
-          _StatBadge(label: 'Sent', value: stats.remindersSent, color: Colors.orange),
-          _StatBadge(label: 'Confirmed', value: stats.confirmed, color: VividColors.statusSuccess),
-          _StatBadge(label: 'Cancelled', value: stats.cancelled, color: VividColors.statusUrgent),
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth < 500) {
+            return Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: badges,
+            );
+          }
+          return Row(children: badges);
+        },
       ),
     );
   }
@@ -179,10 +246,6 @@ class _BookingRemindersPanelState extends State<BookingRemindersPanel> {
   }
 
   Widget _buildBookingsList(BookingRemindersProvider provider) {
-    if (provider.isLoading) {
-      return const Center(child: CircularProgressIndicator(color: VividColors.cyan));
-    }
-
     final bookings = provider.filteredBookings;
 
     if (bookings.isEmpty) {

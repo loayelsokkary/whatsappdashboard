@@ -147,22 +147,6 @@ class _ClientAnalyticsViewState extends State<ClientAnalyticsView> {
           Expanded(
             child: Consumer<AdminAnalyticsProvider>(
               builder: (context, provider, _) {
-                if (provider.isLoading) {
-                  return const Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        CircularProgressIndicator(color: VividColors.cyan),
-                        SizedBox(height: 16),
-                        Text(
-                          'Loading analytics...',
-                          style: TextStyle(color: VividColors.textMuted),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-
                 if (provider.error != null) {
                   return Center(
                     child: Column(
@@ -206,9 +190,23 @@ class _ClientAnalyticsViewState extends State<ClientAnalyticsView> {
     );
   }
 
+  Widget _buildResponsiveCardRow(List<Widget> cards, {required bool isMobile}) {
+    if (isMobile) {
+      return Column(
+        children: cards.expand((card) => [card, const SizedBox(height: 12)]).toList()..removeLast(),
+      );
+    }
+    final children = <Widget>[];
+    for (var i = 0; i < cards.length; i++) {
+      children.add(Expanded(child: cards[i]));
+      if (i < cards.length - 1) children.add(const SizedBox(width: 20));
+    }
+    return Row(children: children);
+  }
+
   Widget _buildConversationAnalytics(AdminAnalyticsProvider provider) {
     final analytics = provider.getConversationAnalytics(widget.client.id);
-    
+
     if (analytics == null) {
       return const Center(
         child: Text(
@@ -218,35 +216,32 @@ class _ClientAnalyticsViewState extends State<ClientAnalyticsView> {
       );
     }
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(32, 0, 32, 32),
-      child: Column(
-        children: [
-          // Main metrics row
-          Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 600;
+        final horizontalPadding = isMobile ? 16.0 : 32.0;
+
+        return SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(horizontalPadding, 0, horizontalPadding, horizontalPadding),
+          child: Column(
             children: [
-              Expanded(
-                child: _LargeMetricCard(
+              // Main metrics row
+              _buildResponsiveCardRow([
+                _LargeMetricCard(
                   icon: Icons.smart_toy,
                   label: 'AI Messages',
                   value: analytics.totalAiMessages.toString(),
                   color: VividColors.cyan,
                   description: 'Total responses by AI',
                 ),
-              ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: _LargeMetricCard(
+                _LargeMetricCard(
                   icon: Icons.support_agent,
                   label: 'Manager Messages',
                   value: analytics.totalManagerMessages.toString(),
                   color: VividColors.brightBlue,
                   description: 'Human interventions',
                 ),
-              ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: _LargeMetricCard(
+                _LargeMetricCard(
                   icon: Icons.auto_awesome,
                   label: 'Automation Rate',
                   value: '${analytics.automationRate.toStringAsFixed(1)}%',
@@ -254,95 +249,75 @@ class _ClientAnalyticsViewState extends State<ClientAnalyticsView> {
                   description: _getAutomationRateLabel(analytics.automationRate),
                   isHighlight: true,
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          // Secondary metrics row
-          Row(
-            children: [
-              Expanded(
-                child: _LargeMetricCard(
+              ], isMobile: isMobile),
+              const SizedBox(height: 20),
+              // Secondary metrics row
+              _buildResponsiveCardRow([
+                _LargeMetricCard(
                   icon: Icons.timer,
                   label: 'Avg Response Time',
                   value: _formatDuration(analytics.avgResponseTime),
                   color: Colors.orange,
-                  description: analytics.avgResponseTime == Duration.zero 
+                  description: analytics.avgResponseTime == Duration.zero
                       ? 'Enable timestamp tracking in n8n'
                       : 'Average AI response speed',
                 ),
-              ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: _LargeMetricCard(
+                _LargeMetricCard(
                   icon: Icons.calendar_today,
                   label: 'Successful Bookings',
                   value: analytics.successfulBookings.toString(),
                   color: Colors.green,
                   description: 'Detected booking confirmations',
                 ),
-              ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: _LargeMetricCard(
+                _LargeMetricCard(
                   icon: Icons.access_time,
                   label: 'Last Activity',
                   value: _formatLastActivity(analytics.lastActivity),
                   color: VividColors.textMuted,
                   description: 'Most recent conversation',
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          // Universal metrics row
-          Row(
-            children: [
-              Expanded(
-                child: _LargeMetricCard(
+              ], isMobile: isMobile),
+              const SizedBox(height: 20),
+              // Universal metrics row
+              _buildResponsiveCardRow([
+                _LargeMetricCard(
                   icon: Icons.people,
                   label: 'Unique Customers',
                   value: analytics.uniqueCustomers.toString(),
                   color: Colors.purple,
                   description: 'Total people reached',
                 ),
-              ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: _LargeMetricCard(
+                _LargeMetricCard(
                   icon: Icons.chat_bubble_outline,
                   label: 'Total Conversations',
                   value: analytics.totalConversations.toString(),
                   color: VividColors.cyan,
                   description: 'All-time conversations',
                 ),
-              ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: _LargeMetricCard(
+                _LargeMetricCard(
                   icon: Icons.event,
                   label: 'Client Since',
                   value: '${analytics.daysSinceOnboarding}d',
                   color: Colors.teal,
                   description: 'Days since onboarding',
                 ),
+              ], isMobile: isMobile),
+              const SizedBox(height: 32),
+              // Automation breakdown
+              _AutomationBreakdown(
+                aiMessages: analytics.totalAiMessages,
+                managerMessages: analytics.totalManagerMessages,
               ),
             ],
           ),
-          const SizedBox(height: 32),
-          // Automation breakdown
-          _AutomationBreakdown(
-            aiMessages: analytics.totalAiMessages,
-            managerMessages: analytics.totalManagerMessages,
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
   Widget _buildBroadcastAnalytics(AdminAnalyticsProvider provider) {
     final analytics = provider.getBroadcastAnalytics(widget.client.id);
-    
+
     if (analytics == null) {
       return const Center(
         child: Text(
@@ -352,116 +327,112 @@ class _ClientAnalyticsViewState extends State<ClientAnalyticsView> {
       );
     }
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(32, 0, 32, 32),
-      child: Column(
-        children: [
-          // Main metrics row
-          Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 600;
+        final horizontalPadding = isMobile ? 16.0 : 32.0;
+
+        return SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(horizontalPadding, 0, horizontalPadding, horizontalPadding),
+          child: Column(
             children: [
-              Expanded(
-                child: _LargeMetricCard(
+              // Main metrics row
+              _buildResponsiveCardRow([
+                _LargeMetricCard(
                   icon: Icons.campaign,
                   label: 'Broadcasts Sent',
                   value: analytics.totalBroadcastsSent.toString(),
                   color: VividColors.brightBlue,
                   description: 'Total campaigns',
                 ),
-              ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: _LargeMetricCard(
+                _LargeMetricCard(
                   icon: Icons.people,
                   label: 'Recipients Reached',
                   value: _formatNumber(analytics.totalRecipientsReached),
                   color: VividColors.cyan,
                   description: 'Total people messaged',
                 ),
-              ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: _LargeMetricCard(
+                _LargeMetricCard(
                   icon: Icons.access_time,
                   label: 'Last Activity',
                   value: _formatLastActivity(analytics.lastActivity),
                   color: VividColors.textMuted,
                   description: 'Most recent broadcast',
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          // Rates row
-          Row(
-            children: [
-              Expanded(
-                child: _LargeMetricCard(
-                  icon: Icons.done_all,
-                  label: 'Delivery Rate',
-                  value: '${analytics.deliveryRate.toStringAsFixed(1)}%',
-                  color: Colors.green,
-                  description: 'Successfully delivered',
-                  isHighlight: analytics.deliveryRate >= 90,
-                ),
-              ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: _LargeMetricCard(
+              ], isMobile: isMobile),
+              const SizedBox(height: 20),
+              // Rates row
+              _buildResponsiveCardRow([
+                _LargeMetricCard(
                   icon: Icons.visibility,
                   label: 'Read Rate',
                   value: '${analytics.readRate.toStringAsFixed(1)}%',
                   color: Colors.blue,
                   description: 'Opened by recipients',
                 ),
-              ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: _LargeMetricCard(
+                _LargeMetricCard(
                   icon: Icons.error_outline,
                   label: 'Failed Rate',
                   value: '${analytics.failedRate.toStringAsFixed(1)}%',
                   color: analytics.failedRate > 5 ? Colors.red : Colors.orange,
                   description: 'Failed to deliver',
                 ),
+              ], isMobile: isMobile),
+              const SizedBox(height: 20),
+              // Universal metrics row
+              if (isMobile)
+                _buildResponsiveCardRow([
+                  _LargeMetricCard(
+                    icon: Icons.group,
+                    label: 'Avg Campaign Size',
+                    value: analytics.avgCampaignSize.toStringAsFixed(0),
+                    color: Colors.purple,
+                    description: 'Recipients per campaign',
+                  ),
+                  _LargeMetricCard(
+                    icon: Icons.event,
+                    label: 'Client Since',
+                    value: '${analytics.daysSinceOnboarding}d',
+                    color: Colors.teal,
+                    description: 'Days since onboarding',
+                  ),
+                ], isMobile: isMobile)
+              else
+                Row(
+                  children: [
+                    Expanded(
+                      child: _LargeMetricCard(
+                        icon: Icons.group,
+                        label: 'Avg Campaign Size',
+                        value: analytics.avgCampaignSize.toStringAsFixed(0),
+                        color: Colors.purple,
+                        description: 'Recipients per campaign',
+                      ),
+                    ),
+                    const SizedBox(width: 20),
+                    Expanded(
+                      child: _LargeMetricCard(
+                        icon: Icons.event,
+                        label: 'Client Since',
+                        value: '${analytics.daysSinceOnboarding}d',
+                        color: Colors.teal,
+                        description: 'Days since onboarding',
+                      ),
+                    ),
+                    const SizedBox(width: 20),
+                    const Expanded(child: SizedBox()), // Empty space for alignment
+                  ],
+                ),
+              const SizedBox(height: 32),
+              // Delivery breakdown
+              _DeliveryBreakdown(
+                readRate: analytics.readRate,
+                failedRate: analytics.failedRate,
               ),
             ],
           ),
-          const SizedBox(height: 20),
-          // Universal metrics row
-          Row(
-            children: [
-              Expanded(
-                child: _LargeMetricCard(
-                  icon: Icons.group,
-                  label: 'Avg Campaign Size',
-                  value: analytics.avgCampaignSize.toStringAsFixed(0),
-                  color: Colors.purple,
-                  description: 'Recipients per campaign',
-                ),
-              ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: _LargeMetricCard(
-                  icon: Icons.event,
-                  label: 'Client Since',
-                  value: '${analytics.daysSinceOnboarding}d',
-                  color: Colors.teal,
-                  description: 'Days since onboarding',
-                ),
-              ),
-              const SizedBox(width: 20),
-              const Expanded(child: SizedBox()), // Empty space for alignment
-            ],
-          ),
-          const SizedBox(height: 32),
-          // Delivery breakdown
-          _DeliveryBreakdown(
-            deliveryRate: analytics.deliveryRate,
-            readRate: analytics.readRate,
-            failedRate: analytics.failedRate,
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -724,12 +695,10 @@ class _AutomationBreakdown extends StatelessWidget {
 // ============================================
 
 class _DeliveryBreakdown extends StatelessWidget {
-  final double deliveryRate;
   final double readRate;
   final double failedRate;
 
   const _DeliveryBreakdown({
-    required this.deliveryRate,
     required this.readRate,
     required this.failedRate,
   });
@@ -768,8 +737,6 @@ class _DeliveryBreakdown extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 28),
-          _RateBar(label: 'Delivered', rate: deliveryRate, color: Colors.green),
-          const SizedBox(height: 16),
           _RateBar(label: 'Read', rate: readRate, color: Colors.blue),
           const SizedBox(height: 16),
           _RateBar(label: 'Failed', rate: failedRate, color: Colors.red),

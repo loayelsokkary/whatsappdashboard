@@ -45,6 +45,9 @@ dependencies:
   # Web APIs (for file downloads)
   web: ^1.0.0
 
+  # Emoji Picker
+  emoji_picker_flutter: ^2.1.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -56,3 +59,4 @@ flutter:
   # Assets
   assets:
     - assets/images/
+    - assets/fonts/

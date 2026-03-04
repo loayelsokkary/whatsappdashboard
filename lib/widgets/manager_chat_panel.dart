@@ -149,12 +149,6 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
   Widget _buildMessages() {
     return Consumer<ManagerChatProvider>(
       builder: (context, provider, _) {
-        if (provider.isLoading) {
-          return const Center(
-            child: CircularProgressIndicator(color: VividColors.cyan),
-          );
-        }
-
         final messages = provider.messages;
         
         // Build display items: each message can have user + AI response

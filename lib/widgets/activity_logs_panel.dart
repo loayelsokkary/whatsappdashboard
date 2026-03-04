@@ -446,40 +446,55 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
     final weekCount = provider.thisWeekLogs.length;
     final typeBreakdown = provider.logCountsByType;
 
-    return Row(
-      children: [
-        _buildStatCard('Today', todayCount.toString(), Icons.today, VividColors.cyan),
-        const SizedBox(width: 12),
-        _buildStatCard('This Week', weekCount.toString(), Icons.date_range, VividColors.brightBlue),
-        const SizedBox(width: 12),
-        _buildStatCard('Messages', (typeBreakdown[ActionType.messageSent] ?? 0).toString(), Icons.send, VividColors.statusSuccess),
-        const SizedBox(width: 12),
-        _buildStatCard('Broadcasts', (typeBreakdown[ActionType.broadcastSent] ?? 0).toString(), Icons.campaign, VividColors.statusWarning),
-      ],
+    final cards = [
+      _buildStatCard('Actions Today', todayCount.toString(), Icons.today, VividColors.cyan, 'All user actions logged today'),
+      _buildStatCard('Actions This Week', weekCount.toString(), Icons.date_range, VividColors.brightBlue, 'Total actions in the past 7 days'),
+      _buildStatCard('Messages Sent', (typeBreakdown[ActionType.messageSent] ?? 0).toString(), Icons.send, VividColors.statusSuccess, 'Manual messages sent by agents'),
+      _buildStatCard('Broadcasts Sent', (typeBreakdown[ActionType.broadcastSent] ?? 0).toString(), Icons.campaign, VividColors.statusWarning, 'Bulk broadcasts dispatched'),
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 500) {
+          return Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: cards,
+          );
+        }
+        return Row(
+          children: [
+            for (int i = 0; i < cards.length; i++) ...[
+              if (i > 0) const SizedBox(width: 12),
+              Expanded(child: cards[i]),
+            ],
+          ],
+        );
+      },
     );
   }
 
-  Widget _buildStatCard(String label, String value, IconData icon, Color color) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: VividColors.navy,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withOpacity(0.3)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(icon, color: color, size: 20),
+  Widget _buildStatCard(String label, String value, IconData icon, Color color, String subtitle) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: VividColors.navy,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(8),
             ),
-            const SizedBox(width: 12),
-            Column(
+            child: Icon(icon, color: color, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
@@ -497,21 +512,23 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
                     color: VividColors.textMuted,
                   ),
                 ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 9,
+                    color: VividColors.textMuted.withValues(alpha: 0.6),
+                  ),
+                ),
               ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildLogsList(ActivityLogsProvider provider) {
-    if (provider.isLoading && provider.logs.isEmpty) {
-      return const Center(
-        child: CircularProgressIndicator(color: VividColors.cyan),
-      );
-    }
-
     if (provider.error != null) {
       return Center(
         child: Column(

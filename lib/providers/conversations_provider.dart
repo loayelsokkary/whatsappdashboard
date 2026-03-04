@@ -48,9 +48,19 @@ class ConversationsProvider extends ChangeNotifier {
 
     if (_searchQuery.isNotEmpty) {
       final query = _searchQuery.toLowerCase();
+      // Build set of phones that have matching message content
+      final phonesWithMessageMatch = <String>{};
+      for (final ex in _allExchanges) {
+        if (ex.customerMessage.toLowerCase().contains(query) ||
+            ex.aiResponse.toLowerCase().contains(query) ||
+            (ex.managerResponse?.toLowerCase().contains(query) ?? false)) {
+          phonesWithMessageMatch.add(ex.customerPhone);
+        }
+      }
       filtered = filtered.where((c) =>
           c.displayName.toLowerCase().contains(query) ||
-          c.customerPhone.contains(query)).toList();
+          c.customerPhone.contains(query) ||
+          phonesWithMessageMatch.contains(c.customerPhone)).toList();
     }
 
     return filtered;
@@ -103,12 +113,13 @@ class ConversationsProvider extends ChangeNotifier {
         // Voice message (transcribed) - media always from customer
         result.add(Message(
           id: '${ex.id}_customer',
-          content: ex.voiceResponse!,
+          content: ex.voiceResponse ?? ex.customerMessage,
           senderType: SenderType.customer,
           isOutbound: false,
           senderName: ex.customerName,
           createdAt: ex.createdAt,
           isVoiceMessage: true,
+          voiceNoteUrl: ex.voiceNoteUrl,
           label: ex.label,
           mediaUrl: ex.mediaUrl,
           mediaType: ex.mediaType,
@@ -150,7 +161,7 @@ class ConversationsProvider extends ChangeNotifier {
           content: ex.managerResponse?.trim().isNotEmpty == true ? ex.managerResponse! : '',
           senderType: SenderType.manager,
           isOutbound: true,
-          senderName: null,
+          senderName: ex.sentBy,
           createdAt: ex.createdAt.add(const Duration(seconds: 2)),
           mediaUrl: mediaIsFromManager ? ex.mediaUrl : null,
           mediaType: mediaIsFromManager ? ex.mediaType : null,
@@ -297,26 +308,37 @@ class ConversationsProvider extends ChangeNotifier {
         }
       }
 
-      // Determine status based on last exchange
+      // Find last non-broadcast exchange for status determination
+      // Broadcasts should not count as "replied"
+      RawExchange? lastNonBroadcastEx;
+      for (int i = exchanges.length - 1; i >= 0; i--) {
+        if ((exchanges[i].sentBy ?? '').toLowerCase().trim() != 'broadcast') {
+          lastNonBroadcastEx = exchanges[i];
+          break;
+        }
+      }
+      final statusEx = lastNonBroadcastEx ?? lastEx;
+
+      // Determine status based on last non-broadcast exchange
       // "Needs Reply" if customer sent message but no AI or manager response
-      final hasCustomerMessage = lastEx.customerMessage.trim().isNotEmpty || lastEx.isVoiceMessage;
-      final hasAiResponse = lastEx.aiResponse.trim().isNotEmpty;
-      final hasManagerResponse = lastEx.managerResponse != null && 
-                                  lastEx.managerResponse!.trim().isNotEmpty;
-      
+      final hasCustomerMessage = statusEx.customerMessage.trim().isNotEmpty || statusEx.isVoiceMessage;
+      final hasAiResponse = statusEx.aiResponse.trim().isNotEmpty;
+      final hasManagerResponse = statusEx.managerResponse != null &&
+                                  statusEx.managerResponse!.trim().isNotEmpty;
+
       // Check if AI response is just a handoff message (doesn't count as real reply)
-      final isHandoffMessage = hasAiResponse && _isHandoffMessage(lastEx.aiResponse);
+      final isHandoffMessage = hasAiResponse && _isHandoffMessage(statusEx.aiResponse);
       final hasRealAiResponse = hasAiResponse && !isHandoffMessage;
-      
+
       final status = (hasCustomerMessage && !hasRealAiResponse && !hasManagerResponse)
           ? ConversationStatus.needsReply
           : ConversationStatus.replied;
 
       // Determine last message to show (use customerInput to handle voice messages)
       String lastMessage = lastEx.customerInput;
-      if (hasManagerResponse) {
+      if (lastEx.managerResponse != null && lastEx.managerResponse!.trim().isNotEmpty) {
         lastMessage = lastEx.managerResponse!;
-      } else if (hasAiResponse) {
+      } else if (lastEx.aiResponse.trim().isNotEmpty) {
         lastMessage = lastEx.aiResponse;
       }
 
@@ -329,11 +351,12 @@ class ConversationsProvider extends ChangeNotifier {
         }
       }
 
-      // Count consecutive unread exchanges from the end
+      // Count consecutive unread exchanges from the end (skip broadcast rows)
       int unread = 0;
       if (status == ConversationStatus.needsReply) {
         for (int i = exchanges.length - 1; i >= 0; i--) {
           final ex = exchanges[i];
+          if ((ex.sentBy ?? '').toLowerCase().trim() == 'broadcast') continue;
           final hasCust = ex.customerMessage.trim().isNotEmpty || ex.isVoiceMessage;
           final hasAi = ex.aiResponse.trim().isNotEmpty && !_isHandoffMessage(ex.aiResponse);
           final hasMgr = ex.managerResponse != null && ex.managerResponse!.trim().isNotEmpty;
@@ -434,9 +457,116 @@ class ConversationsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Search messages via Supabase ilike query. Returns individual message matches.
+  /// Name/phone matches are deduplicated to one result per conversation.
+  /// Message content matches get one result per matching message.
+  Future<List<MessageSearchResult>> searchMessages(String query) async {
+    if (query.trim().isEmpty) return [];
+    final q = query.toLowerCase();
+
+    final service = SupabaseService.instance;
+    final rows = await service.searchMessages(query);
+
+    final results = <MessageSearchResult>[];
+    // Track phones we've already added a name/phone match for
+    final namePhoneMatchedPhones = <String>{};
+
+    for (final row in rows) {
+      final phone = row['customer_phone']?.toString() ?? '';
+      final name = row['customer_name'] as String?;
+      final custMsg = row['customer_message'] as String? ?? '';
+      final mgrResp = row['manager_response'] as String? ?? '';
+      final id = row['id'] as String? ?? '';
+      final date = DateTime.tryParse(row['created_at']?.toString() ?? '') ?? DateTime.now();
+
+      final custMsgMatches = custMsg.toLowerCase().contains(q);
+      final mgrRespMatches = mgrResp.toLowerCase().contains(q);
+
+      // Message content matches: one result per matching message
+      if (custMsgMatches) {
+        results.add(MessageSearchResult(
+          customerPhone: phone,
+          customerName: name,
+          matchedText: custMsg,
+          matchedField: 'customer_message',
+          date: date,
+          exchangeId: id,
+        ));
+      }
+      if (mgrRespMatches) {
+        results.add(MessageSearchResult(
+          customerPhone: phone,
+          customerName: name,
+          matchedText: mgrResp,
+          matchedField: 'manager_response',
+          date: date,
+          exchangeId: id,
+        ));
+      }
+
+      // Name/phone-only match: one result per conversation (not per row)
+      if (!custMsgMatches && !mgrRespMatches && !namePhoneMatchedPhones.contains(phone)) {
+        namePhoneMatchedPhones.add(phone);
+        // Find the last message preview for this conversation
+        final conv = _conversations.where((c) => c.customerPhone == phone).firstOrNull;
+        final preview = conv?.lastMessage ?? custMsg;
+        final nameMatches = (name ?? '').toLowerCase().contains(q);
+        results.add(MessageSearchResult(
+          customerPhone: phone,
+          customerName: name,
+          matchedText: preview,
+          matchedField: nameMatches ? 'name' : 'phone',
+          date: date,
+          exchangeId: id,
+        ));
+      }
+    }
+
+    return results;
+  }
+
+  /// Highlight a specific exchange in the currently selected conversation
+  String? _highlightedExchangeId;
+  String? get highlightedExchangeId => _highlightedExchangeId;
+
+  void setHighlightedExchange(String? id) {
+    _highlightedExchangeId = id;
+    notifyListeners();
+    if (id != null) {
+      Future.delayed(const Duration(seconds: 2), () {
+        if (_highlightedExchangeId == id) {
+          _highlightedExchangeId = null;
+          notifyListeners();
+        }
+      });
+    }
+  }
+
   void setLabelFilter(String? label) {
     _labelFilter = label;
     notifyListeners();
+  }
+
+  /// Set label on the most recent exchange for a conversation
+  Future<bool> setConversationLabel(String customerPhone, String label) async {
+    try {
+      final success = await SupabaseService.instance.updateConversationLabel(
+        customerPhone: customerPhone,
+        label: label,
+      );
+      if (success) {
+        // Update local state
+        final idx = _conversations.indexWhere((c) => c.customerPhone == customerPhone);
+        if (idx != -1) {
+          _conversations[idx] = _conversations[idx].copyWith(label: label);
+          notifyListeners();
+        }
+      }
+      return success;
+    } catch (e) {
+      debugPrint('Error setting label: $e');
+      return false;
+    }
   }
 
   // ============================================
@@ -447,7 +577,12 @@ class ConversationsProvider extends ChangeNotifier {
     try {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final slug = ClientConfig.currentClient?.slug ?? 'uploads';
-      final path = '$slug/${timestamp}_$filename';
+
+      // Sanitize filename - replace spaces and special chars with underscores
+      final sanitized = filename
+          .replaceAll(' ', '_')
+          .replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+      final path = '$slug/${timestamp}_$sanitized';
 
       // Determine content type from extension to avoid dart:io Platform detection on web
       final ext = filename.split('.').last.toLowerCase();
@@ -472,8 +607,12 @@ class ConversationsProvider extends ChangeNotifier {
 
       debugPrint('Uploaded media: $url');
       return url;
-    } catch (e) {
-      debugPrint('Upload error: $e');
+    } catch (e, stackTrace) {
+      debugPrint('=== UPLOAD ERROR ===');
+      debugPrint('Error type: ${e.runtimeType}');
+      debugPrint('Error: $e');
+      debugPrint('Stack: $stackTrace');
+      debugPrint('=== END ===');
       return null;
     }
   }
@@ -488,6 +627,7 @@ class ConversationsProvider extends ChangeNotifier {
     String? mediaUrl,
     String? mediaType,
     String? mediaFilename,
+    Message? replyToMessage,
   }) async {
     if (_isSending) return false;
     if (text.trim().isEmpty && mediaUrl == null) return false;
@@ -505,8 +645,10 @@ class ConversationsProvider extends ChangeNotifier {
       content: pendingContent,
       senderType: SenderType.manager,
       isOutbound: true,
-      senderName: null,
+      senderName: ClientConfig.currentUserName,
       createdAt: DateTime.now(),
+      replyToId: replyToMessage?.id,
+      replyToMessage: replyToMessage,
     );
 
     _pendingMessages.add(pendingMessage);
@@ -534,6 +676,15 @@ class ConversationsProvider extends ChangeNotifier {
         // Only remove on failure
         _pendingMessages.removeWhere((m) => m.id == pendingId);
         _error = 'Failed to send message';
+      } else {
+        // Auto-detect trigger words and label silently
+        final detectedLabel = _detectTriggerLabel(trimmedText);
+        if (detectedLabel != null) {
+          // Wait for webhook to create the row, then update label
+          Future.delayed(const Duration(seconds: 2), () {
+            setConversationLabel(customerPhone, detectedLabel);
+          });
+        }
       }
 
       _isSending = false;
@@ -547,6 +698,43 @@ class ConversationsProvider extends ChangeNotifier {
       notifyListeners();
       return false;
     }
+  }
+
+  // ============================================
+  // TRIGGER WORD DETECTION
+  // ============================================
+
+  static const _appointmentTriggers = [
+    // English
+    'appointment booked', 'booking confirmed', 'booked you in',
+    'appointment confirmed', 'see you on', 'scheduled for',
+    'your appointment is', 'booked for', 'confirmed your booking',
+    // Arabic (Bahraini dialect + standard)
+    'تم الحجز', 'الحجز مأكد', 'حجزنالك', 'تم تأكيد الحجز',
+    'موعدك', 'حجزناك', 'تم حجز موعد', 'موعد محجوز',
+    'بنشوفك', 'نشوفك يوم', 'حجزك تأكد',
+  ];
+
+  static const _paymentTriggers = [
+    // English
+    'payment received', 'payment confirmed', 'payment done',
+    'payment successful', 'paid successfully', 'payment complete',
+    'received your payment', 'payment has been',
+    // Arabic (Bahraini dialect + standard)
+    'تم الدفع', 'الدفع تم', 'وصلنا المبلغ', 'تم استلام المبلغ',
+    'دفعت', 'المبلغ وصل', 'تم السداد', 'الدفعة وصلت',
+    'استلمنا الفلوس', 'وصلت الفلوس', 'تم التحويل',
+  ];
+
+  String? _detectTriggerLabel(String text) {
+    final lower = text.toLowerCase().trim();
+    for (final trigger in _appointmentTriggers) {
+      if (lower.contains(trigger)) return 'Appointment Booked';
+    }
+    for (final trigger in _paymentTriggers) {
+      if (lower.contains(trigger)) return 'Payment Done';
+    }
+    return null;
   }
 
   // ============================================

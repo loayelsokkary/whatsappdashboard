@@ -756,19 +756,33 @@ class SupabaseService {
       // Use dynamic table name from ClientConfig
       final tableName = ClientConfig.messagesTableName;
       final businessPhone = ClientConfig.conversationsPhone;
-      
+
       if (businessPhone == null || businessPhone.isEmpty) {
         print('No conversations phone configured');
         return [];
       }
-      
-      final response = await client
-          .from(tableName)  // Dynamic table name!
-          .select()
-          .eq('ai_phone', businessPhone)
-          .order('created_at', ascending: true);
 
-      _cachedExchanges = (response as List)
+      // Paginate to fetch ALL rows (Supabase default limit is 1000)
+      const pageSize = 1000;
+      List<Map<String, dynamic>> allRows = [];
+      int from = 0;
+
+      while (true) {
+        final response = await client
+            .from(tableName)
+            .select()
+            .eq('ai_phone', businessPhone)
+            .order('created_at', ascending: true)
+            .range(from, from + pageSize - 1);
+
+        final rows = List<Map<String, dynamic>>.from(response as List);
+        allRows.addAll(rows);
+
+        if (rows.length < pageSize) break; // Last page
+        from += pageSize;
+      }
+
+      _cachedExchanges = allRows
           .map((json) => RawExchange.fromJson(json))
           .toList();
 
@@ -777,6 +791,34 @@ class SupabaseService {
     } catch (e) {
       print('Fetch error: $e');
       rethrow;
+    }
+  }
+
+  // ============================================
+  // MESSAGE SEARCH (SUPABASE ilike)
+  // ============================================
+
+  /// Search messages table for query matches in customer_message, manager_response,
+  /// customer_name, or customer_phone. Returns raw rows sorted by created_at desc.
+  Future<List<Map<String, dynamic>>> searchMessages(String query) async {
+    try {
+      final tableName = ClientConfig.messagesTableName;
+      final businessPhone = ClientConfig.conversationsPhone;
+      if (businessPhone == null || businessPhone.isEmpty) return [];
+
+      final pattern = '%$query%';
+      final response = await client
+          .from(tableName)
+          .select()
+          .eq('ai_phone', businessPhone)
+          .or('customer_message.ilike.$pattern,manager_response.ilike.$pattern,customer_name.ilike.$pattern,customer_phone.ilike.$pattern')
+          .order('created_at', ascending: false)
+          .limit(100);
+
+      return List<Map<String, dynamic>>.from(response as List);
+    } catch (e) {
+      print('Search error: $e');
+      return [];
     }
   }
 
@@ -873,6 +915,7 @@ class SupabaseService {
         'customer_phone': customerPhone,
         'customer_name': customerName ?? 'Customer',
         'manager_response': message,
+        'sent_by': ClientConfig.currentUserName,
         'messages_table': ClientConfig.messagesTable,
         if (mediaUrl != null) 'media_url': mediaUrl,
         if (mediaType != null) 'media_type': mediaType,
@@ -906,6 +949,68 @@ class SupabaseService {
       }
     } catch (e) {
       print('Webhook error: $e');
+      return false;
+    }
+  }
+
+  // ============================================
+  // UPDATE CONVERSATION LABEL
+  // ============================================
+
+  /// Updates the label on the most recent exchange for a customer phone.
+  Future<bool> updateConversationLabel({
+    required String customerPhone,
+    required String label,
+  }) async {
+    try {
+      final tableName = ClientConfig.messagesTable;
+      if (tableName == null) return false;
+
+      if (label.isEmpty) {
+        // CLEAR: remove label from ALL rows for this customer
+        try {
+          await client
+              .from(tableName)
+              .update({'label': '', 'label_set_at': null})
+              .eq('customer_phone', customerPhone)
+              .neq('label', '');
+        } catch (_) {
+          await client
+              .from(tableName)
+              .update({'label': ''})
+              .eq('customer_phone', customerPhone)
+              .neq('label', '');
+        }
+      } else {
+        // SET: update the most recent row for this customer
+        final rows = await client
+            .from(tableName)
+            .select('id')
+            .eq('customer_phone', customerPhone)
+            .order('created_at', ascending: false)
+            .limit(1);
+
+        if (rows.isEmpty) return false;
+
+        final rowId = rows[0]['id'].toString();
+        final labelSetAt = DateTime.now().toUtc().toIso8601String();
+
+        try {
+          await client
+              .from(tableName)
+              .update({'label': label, 'label_set_at': labelSetAt})
+              .eq('id', rowId);
+        } catch (_) {
+          await client
+              .from(tableName)
+              .update({'label': label})
+              .eq('id', rowId);
+        }
+      }
+
+      return true;
+    } catch (e) {
+      print('Error updating label: $e');
       return false;
     }
   }

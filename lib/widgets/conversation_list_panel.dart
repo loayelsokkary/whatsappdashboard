@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/conversations_provider.dart';
@@ -5,16 +6,85 @@ import '../providers/ai_settings_provider.dart';
 import '../models/models.dart';
 import '../theme/vivid_theme.dart';
 import '../utils/time_utils.dart';
+import '../utils/initials_helper.dart';
 
-class ConversationListPanel extends StatelessWidget {
+class ConversationListPanel extends StatefulWidget {
   final VoidCallback? onConversationTap;
 
   const ConversationListPanel({super.key, this.onConversationTap});
 
   @override
+  State<ConversationListPanel> createState() => _ConversationListPanelState();
+}
+
+class _ConversationListPanelState extends State<ConversationListPanel> {
+  final _searchController = TextEditingController();
+  Timer? _debounce;
+  List<MessageSearchResult> _searchResults = [];
+  bool _isSearching = false;
+  bool _isSearchActive = false;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String query) {
+    _debounce?.cancel();
+    if (query.trim().isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _isSearching = false;
+        _isSearchActive = false;
+      });
+      return;
+    }
+    setState(() {
+      _isSearchActive = true;
+      _isSearching = true;
+    });
+    _debounce = Timer(const Duration(milliseconds: 500), () async {
+      if (!mounted) return;
+      final provider = context.read<ConversationsProvider>();
+      final results = await provider.searchMessages(query.trim());
+      if (!mounted) return;
+      setState(() {
+        _searchResults = results;
+        _isSearching = false;
+      });
+    });
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    _debounce?.cancel();
+    setState(() {
+      _searchResults = [];
+      _isSearching = false;
+      _isSearchActive = false;
+    });
+  }
+
+  void _selectSearchResult(MessageSearchResult result) {
+    final provider = context.read<ConversationsProvider>();
+    // Find or create the conversation for this phone
+    final conv = provider.conversations.where(
+      (c) => c.customerPhone == result.customerPhone,
+    ).firstOrNull;
+    if (conv != null) {
+      provider.selectConversation(conv);
+      provider.setHighlightedExchange(result.exchangeId);
+    }
+    _clearSearch();
+    widget.onConversationTap?.call();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: const BoxConstraints(minWidth: 280),
+      constraints: BoxConstraints(minWidth: MediaQuery.of(context).size.width < 600 ? 0 : 280),
       decoration: BoxDecoration(
         color: VividColors.navy,
         border: Border(
@@ -27,7 +97,11 @@ class ConversationListPanel extends StatelessWidget {
       child: Column(
         children: [
           _buildHeader(context),
-          Expanded(child: _buildConversationList(context)),
+          Expanded(
+            child: _isSearchActive
+                ? _buildSearchResults()
+                : _buildConversationList(context),
+          ),
         ],
       ),
     );
@@ -75,43 +149,48 @@ class ConversationListPanel extends StatelessWidget {
           ),
           const SizedBox(height: 16),
 
-          // Search Field
+          // Inline search field
           TextField(
-            onChanged: (value) => provider.setSearchQuery(value),
+            controller: _searchController,
+            onChanged: _onSearchChanged,
             style: const TextStyle(color: VividColors.textPrimary, fontSize: 14),
             decoration: InputDecoration(
-              hintText: 'Search by phone or name...',
-              prefixIcon: const Icon(
-                Icons.search,
-                color: VividColors.textMuted,
-                size: 20,
-              ),
+              hintText: 'Search messages, names, phones...',
+              hintStyle: TextStyle(color: VividColors.textMuted.withOpacity(0.6)),
+              prefixIcon: const Icon(Icons.search, color: VividColors.textMuted, size: 20),
+              suffixIcon: _searchController.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.close, color: VividColors.textMuted, size: 18),
+                      onPressed: _clearSearch,
+                    )
+                  : null,
               contentPadding: const EdgeInsets.symmetric(vertical: 12),
               filled: true,
               fillColor: VividColors.darkNavy,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
-                borderSide: BorderSide(
-                  color: VividColors.tealBlue.withOpacity(0.3),
-                ),
+                borderSide: BorderSide(color: VividColors.tealBlue.withOpacity(0.3)),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
-                borderSide: BorderSide(
-                  color: VividColors.tealBlue.withOpacity(0.3),
-                ),
+                borderSide: BorderSide(color: VividColors.tealBlue.withOpacity(0.3)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: VividColors.cyan),
               ),
             ),
           ),
 
-          // Needs Reply filter chip
-          if (provider.needsReplyCount > 0) ...[
+          // Needs Reply filter chip (only when not searching)
+          if (!_isSearchActive && provider.needsReplyCount > 0) ...[
             const SizedBox(height: 12),
             _buildNeedsReplyChip(context, provider),
           ],
 
-          // Label filter chips (only when labels feature is enabled)
-          if (ClientConfig.enabledFeatures.contains('labels') &&
+          // Label filter chips (only when not searching)
+          if (!_isSearchActive &&
+              ClientConfig.enabledFeatures.contains('labels') &&
               provider.availableLabels.isNotEmpty) ...[
             const SizedBox(height: 8),
             SizedBox(
@@ -129,6 +208,59 @@ class ConversationListPanel extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+
+  Widget _buildSearchResults() {
+    if (_isSearching) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(strokeWidth: 2, color: VividColors.cyan),
+          ),
+        ),
+      );
+    }
+
+    if (_searchResults.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Text(
+            'No results',
+            style: TextStyle(color: VividColors.textMuted.withOpacity(0.6), fontSize: 14),
+          ),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      itemCount: _searchResults.length + 1, // +1 for header
+      itemBuilder: (context, index) {
+        if (index == 0) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+            child: Text(
+              'Messages',
+              style: TextStyle(
+                color: VividColors.textMuted.withOpacity(0.7),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.5,
+              ),
+            ),
+          );
+        }
+        final result = _searchResults[index - 1];
+        return _SearchResultRow(
+          result: result,
+          query: _searchController.text.trim().toLowerCase(),
+          onTap: () => _selectSearchResult(result),
+        );
+      },
     );
   }
 
@@ -234,22 +366,6 @@ class ConversationListPanel extends StatelessWidget {
   Widget _buildConversationList(BuildContext context) {
     final provider = context.watch<ConversationsProvider>();
 
-    if (provider.isLoading && provider.conversations.isEmpty) {
-      return const Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(color: VividColors.cyan),
-            SizedBox(height: 16),
-            Text(
-              'Connecting to Supabase...',
-              style: TextStyle(color: VividColors.textMuted),
-            ),
-          ],
-        ),
-      );
-    }
-
     if (provider.conversations.isEmpty) {
       return Center(
         child: Column(
@@ -299,7 +415,7 @@ class ConversationListPanel extends StatelessWidget {
           isSelected: isSelected,
           onTap: () {
             provider.selectConversation(conversation);
-            onConversationTap?.call();
+            widget.onConversationTap?.call();
           },
         );
       },
@@ -370,14 +486,18 @@ class _ConversationCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(14),
           ),
           child: Center(
-            child: Text(
-              _getInitials(),
-              style: const TextStyle(
-                color: VividColors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-              ),
-            ),
+            child: Builder(builder: (context) {
+              final initials = _getInitials();
+              return Text(
+                initials,
+                textDirection: isArabicText(initials) ? TextDirection.rtl : TextDirection.ltr,
+                style: const TextStyle(
+                  color: VividColors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              );
+            }),
           ),
         ),
         Positioned(
@@ -627,6 +747,10 @@ class _ConversationCard extends StatelessWidget {
         return const Color(0xFFEF4444);
       case 'Cancel':
         return const Color(0xFFDC2626);
+      case 'Appointment Booked':
+        return const Color(0xFF10B981);
+      case 'Payment Done':
+        return const Color(0xFF06B6D4);
       default:
         return const Color(0xFF6B7280);
     }
@@ -648,6 +772,10 @@ class _ConversationCard extends StatelessWidget {
         return Icons.update;
       case 'Cancel':
         return Icons.cancel_outlined;
+      case 'Appointment Booked':
+        return Icons.event_available;
+      case 'Payment Done':
+        return Icons.payments;
       default:
         return Icons.label;
     }
@@ -684,11 +812,176 @@ class _ConversationCard extends StatelessWidget {
   }
 
   String _getInitials() {
-    final name = conversation.customerName ?? conversation.customerPhone;
-    final parts = name.split(' ');
-    if (parts.length >= 2) {
-      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+    return getInitials(conversation.customerName ?? conversation.customerPhone);
+  }
+}
+
+// ============================================
+// SEARCH RESULT ROW
+// ============================================
+
+class _SearchResultRow extends StatelessWidget {
+  final MessageSearchResult result;
+  final String query;
+  final VoidCallback onTap;
+
+  const _SearchResultRow({
+    required this.result,
+    required this.query,
+    required this.onTap,
+  });
+
+  bool get _isNameMatch => result.matchedField == 'name' || result.matchedField == 'phone';
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Name (highlighted if name match) + date on right
+            Row(
+              children: [
+                Expanded(
+                  child: _isNameMatch
+                      ? _buildHighlightedText(
+                          result.displayName,
+                          query,
+                          const TextStyle(
+                            color: VividColors.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        )
+                      : Text(
+                          result.displayName,
+                          style: const TextStyle(
+                            color: VividColors.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  _formatSearchDate(result.date),
+                  style: const TextStyle(color: VividColors.textMuted, fontSize: 11),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            // Message preview
+            _buildSnippet(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSnippet() {
+    if (_isNameMatch) {
+      // Name/phone match: show last message as plain preview (no highlight)
+      final preview = result.matchedText;
+      return Text(
+        preview.length > 80 ? '${preview.substring(0, 80)}...' : preview,
+        style: const TextStyle(color: Colors.white70, fontSize: 13),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      );
     }
-    return name.substring(0, name.length.clamp(0, 2)).toUpperCase();
+
+    // Message content match: show the actual message text with highlight
+    final isOutbound = result.matchedField == 'manager_response';
+    final text = result.matchedText;
+    final snippet = _truncateSnippet(text, query);
+
+    if (isOutbound) {
+      // Prefix "You: " for outbound messages
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'You: ',
+            style: TextStyle(color: VividColors.textMuted, fontSize: 13, fontWeight: FontWeight.w500),
+          ),
+          Expanded(
+            child: _buildHighlightedText(
+              snippet,
+              query,
+              const TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return _buildHighlightedText(
+      snippet,
+      query,
+      const TextStyle(color: Colors.white70, fontSize: 13),
+    );
+  }
+
+  String _truncateSnippet(String text, String q) {
+    final lower = text.toLowerCase();
+    final idx = lower.indexOf(q);
+    if (idx < 0) return text.length > 80 ? '${text.substring(0, 80)}...' : text;
+
+    const window = 30;
+    int start = (idx - window).clamp(0, text.length);
+    int end = (idx + q.length + window).clamp(0, text.length);
+    String snippet = text.substring(start, end);
+    if (start > 0) snippet = '...$snippet';
+    if (end < text.length) snippet = '$snippet...';
+    return snippet;
+  }
+
+  Widget _buildHighlightedText(String text, String q, TextStyle baseStyle) {
+    if (q.isEmpty) {
+      return Text(text, style: baseStyle, maxLines: 2, overflow: TextOverflow.ellipsis);
+    }
+
+    final lower = text.toLowerCase();
+    final spans = <TextSpan>[];
+    int start = 0;
+
+    while (true) {
+      final idx = lower.indexOf(q, start);
+      if (idx < 0) {
+        spans.add(TextSpan(text: text.substring(start)));
+        break;
+      }
+      if (idx > start) {
+        spans.add(TextSpan(text: text.substring(start, idx)));
+      }
+      spans.add(TextSpan(
+        text: text.substring(idx, idx + q.length),
+        style: const TextStyle(fontWeight: FontWeight.w700),
+      ));
+      start = idx + q.length;
+    }
+
+    return RichText(
+      text: TextSpan(style: baseStyle, children: spans),
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+    );
+  }
+
+  String _formatSearchDate(DateTime date) {
+    final now = DateTime.now();
+    final diff = now.difference(date);
+    if (diff.inDays == 0) return 'Today';
+    if (diff.inDays == 1) return 'Yesterday';
+    if (diff.inDays < 7) {
+      const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+      return days[date.weekday - 1];
+    }
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
   }
 }

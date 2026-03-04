@@ -12,6 +12,7 @@ class Broadcast {
   final String? clientId;
   final String? campaignName;
   final String? messageContent;
+  final String? photo;
   final DateTime sentAt;
   final int totalRecipients;
   final String? status;
@@ -21,6 +22,7 @@ class Broadcast {
     this.clientId,
     this.campaignName,
     this.messageContent,
+    this.photo,
     required this.sentAt,
     required this.totalRecipients,
     this.status,
@@ -32,6 +34,7 @@ class Broadcast {
       clientId: json['client_id']?.toString(),
       campaignName: json['campaign_name'] as String?,
       messageContent: json['message_content'] as String?,
+      photo: json['photo'] as String?,
       sentAt: DateTime.parse(json['sent_at'] as String),
       totalRecipients: json['total_recipients'] is int
           ? json['total_recipients'] as int
@@ -45,6 +48,7 @@ class Broadcast {
     String? clientId,
     String? campaignName,
     String? messageContent,
+    String? photo,
     DateTime? sentAt,
     int? totalRecipients,
     String? status,
@@ -54,6 +58,7 @@ class Broadcast {
       clientId: clientId ?? this.clientId,
       campaignName: campaignName ?? this.campaignName,
       messageContent: messageContent ?? this.messageContent,
+      photo: photo ?? this.photo,
       sentAt: sentAt ?? this.sentAt,
       totalRecipients: totalRecipients ?? this.totalRecipients,
       status: status ?? this.status,
@@ -309,13 +314,24 @@ class BroadcastsProvider extends ChangeNotifier {
   Future<void> fetchRecipients(String broadcastId) async {
     try {
       print('📢 Fetching recipients from: $_recipientsTable');
-      
-      final response = await SupabaseService.client
-          .from(_recipientsTable)
-          .select()
-          .eq('broadcast_id', broadcastId);
 
-      _recipients = (response as List)
+      // Paginate to fetch all recipients (Supabase default limit is 1000)
+      const pageSize = 1000;
+      List<Map<String, dynamic>> allRows = [];
+      int from = 0;
+      while (true) {
+        final response = await SupabaseService.client
+            .from(_recipientsTable)
+            .select()
+            .eq('broadcast_id', broadcastId)
+            .range(from, from + pageSize - 1);
+        final rows = List<Map<String, dynamic>>.from(response as List);
+        allRows.addAll(rows);
+        if (rows.length < pageSize) break;
+        from += pageSize;
+      }
+
+      _recipients = allRows
           .map((json) => BroadcastRecipient.fromJson(json))
           .toList();
 
@@ -344,6 +360,43 @@ class BroadcastsProvider extends ChangeNotifier {
     }
   }
 
+  /// Rename a broadcast campaign
+  Future<void> renameBroadcast(String broadcastId, String newName) async {
+    try {
+      await SupabaseService.client
+          .from(_broadcastsTable)
+          .update({'campaign_name': newName})
+          .eq('id', broadcastId);
+
+      // Verify the update actually persisted (RLS may silently block)
+      final verify = await SupabaseService.client
+          .from(_broadcastsTable)
+          .select('campaign_name')
+          .eq('id', broadcastId)
+          .maybeSingle();
+
+      final persistedName = verify?['campaign_name']?.toString();
+      if (persistedName != newName) {
+        print('⚠️ Rename did not persist! DB has: $persistedName, expected: $newName');
+        print('⚠️ This is likely an RLS policy issue — check UPDATE policy on $_broadcastsTable');
+        throw Exception('Rename failed — check Supabase RLS policies on $_broadcastsTable');
+      }
+
+      // Update local state
+      final index = _broadcasts.indexWhere((b) => b.id == broadcastId);
+      if (index != -1) {
+        _broadcasts[index] = _broadcasts[index].copyWith(campaignName: newName);
+      }
+      if (_selectedBroadcast?.id == broadcastId) {
+        _selectedBroadcast = _selectedBroadcast!.copyWith(campaignName: newName);
+      }
+      notifyListeners();
+    } catch (e) {
+      print('Error renaming broadcast: $e');
+      rethrow;
+    }
+  }
+
   void clearSelection() {
     _selectedBroadcast = null;
     _recipients = [];
@@ -369,14 +422,28 @@ class BroadcastsProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      // Debug: log config state
+      final client = ClientConfig.currentClient;
+      print('📢 [sendBroadcast] Client: ${client?.name} (${client?.id})');
+      print('📢 [sendBroadcast] broadcastsPhone: ${ClientConfig.broadcastsPhone}');
+      print('📢 [sendBroadcast] broadcastsWebhookUrl: ${ClientConfig.broadcastsWebhookUrl}');
+      print('📢 [sendBroadcast] businessPhone fallback: ${client?.businessPhone}');
+      print('📢 [sendBroadcast] webhookUrl fallback: ${client?.webhookUrl}');
+
       final webhookUrl = ClientConfig.broadcastsWebhookUrl;
       if (webhookUrl == null || webhookUrl.isEmpty) {
-        throw Exception('Broadcasts webhook URL not configured');
+        _sendError = 'Broadcasts webhook URL not configured. Ask your admin to set it in client settings.';
+        _isSending = false;
+        notifyListeners();
+        return false;
       }
 
       final broadcastPhone = ClientConfig.broadcastsPhone;
       if (broadcastPhone == null || broadcastPhone.isEmpty) {
-        throw Exception('Broadcasts phone number not configured');
+        _sendError = 'Broadcasts phone number not configured. Ask your admin to set it in client settings.';
+        _isSending = false;
+        notifyListeners();
+        return false;
       }
 
       final payload = {
@@ -385,14 +452,14 @@ class BroadcastsProvider extends ChangeNotifier {
         'instruction': instruction.trim(),
         'ai_phone': broadcastPhone,
         'phone': broadcastPhone,
-        'client_id': ClientConfig.currentClient?.id,
-        'client_name': ClientConfig.currentClient?.name,
+        'client_id': client?.id,
+        'client_name': client?.name,
         'user_name': ClientConfig.currentUserName,
         'timestamp': DateTime.now().toIso8601String(),
       };
 
-      print('📢 Sending broadcast to $webhookUrl');
-      print('📢 Payload: $payload');
+      print('📢 [sendBroadcast] Sending to: $webhookUrl');
+      print('📢 [sendBroadcast] Payload: $payload');
 
       final response = await http.post(
         Uri.parse(webhookUrl),
@@ -400,10 +467,10 @@ class BroadcastsProvider extends ChangeNotifier {
         body: jsonEncode(payload),
       );
 
-      print('📢 Webhook response: ${response.statusCode} ${response.body}');
+      print('📢 [sendBroadcast] Response: ${response.statusCode} ${response.body}');
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
-        print('📢 Broadcast sent successfully');
+        print('📢 [sendBroadcast] Success!');
 
         // Log the broadcast action
         await SupabaseService.instance.log(
@@ -411,10 +478,10 @@ class BroadcastsProvider extends ChangeNotifier {
           description: 'Sent broadcast: ${instruction.length > 50 ? '${instruction.substring(0, 50)}...' : instruction}',
           metadata: {
             'instruction': instruction,
-            'client_name': ClientConfig.currentClient?.name,
+            'client_name': client?.name,
           },
         );
-        
+
         Future.delayed(const Duration(seconds: 2), () {
           fetchBroadcasts();
           fetchMonthlySentCount();
@@ -424,11 +491,17 @@ class BroadcastsProvider extends ChangeNotifier {
         notifyListeners();
         return true;
       } else {
-        throw Exception('Server returned ${response.statusCode}: ${response.body}');
+        _sendError = 'Server error (${response.statusCode}). Please try again.';
+        print('📢 [sendBroadcast] Server error: ${response.statusCode} ${response.body}');
+        _isSending = false;
+        notifyListeners();
+        return false;
       }
     } catch (e) {
-      print('Send broadcast error: $e');
-      _sendError = 'Failed to send broadcast: $e';
+      print('📢 [sendBroadcast] Error: $e');
+      _sendError = e.toString().contains('XMLHttpRequest')
+          ? 'Network error — could not reach the broadcast server. Check webhook URL.'
+          : 'Failed to send: $e';
       _isSending = false;
       notifyListeners();
       return false;

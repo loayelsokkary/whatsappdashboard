@@ -1,4 +1,5 @@
 import 'dart:js_interop';
+import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +12,9 @@ import '../models/models.dart';
 import '../theme/vivid_theme.dart';
 import '../utils/time_utils.dart';
 import '../utils/date_formatter.dart';
+import '../utils/audio_controller.dart';
+import 'voice_message_bubble.dart';
+import '../utils/initials_helper.dart';
 
 class ConversationDetailPanel extends StatefulWidget {
   final Conversation conversation;
@@ -34,6 +38,10 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
   // AI Toggle loading state only
   bool _aiToggleLoading = false;
   bool _isUploading = false;
+  bool _showEmojiPicker = false;
+  bool _showCopied = false;
+  String? _lastScrolledToHighlight;
+  Message? _replyingTo;
 
   @override
   void initState() {
@@ -47,7 +55,10 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
   @override
   void didUpdateWidget(ConversationDetailPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // No need to load AI status - provider handles it
+    // Stop voice playback when switching conversations
+    if (oldWidget.conversation.id != widget.conversation.id) {
+      AudioController.instance.stop();
+    }
   }
 
   Future<void> _toggleAi(bool value) async {
@@ -84,6 +95,7 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
 
   @override
   void dispose() {
+    AudioController.instance.stop();
     _messageController.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
@@ -92,10 +104,10 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
 
   void _scrollToBottom({bool animate = true}) {
     if (!_scrollController.hasClients) return;
-    
+
     Future.delayed(const Duration(milliseconds: 50), () {
       if (!_scrollController.hasClients) return;
-      
+
       final maxScroll = _scrollController.position.maxScrollExtent;
       if (animate) {
         _scrollController.animateTo(
@@ -109,18 +121,41 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
     });
   }
 
+  /// Scroll to a specific message by its exchange ID prefix
+  void _scrollToHighlightedMessage(String exchangeId, List<Message> visibleMessages) {
+    final index = visibleMessages.indexWhere((m) => m.id.startsWith(exchangeId));
+    if (index < 0 || !_scrollController.hasClients) return;
+
+    // Estimate position: each message ~80px average height
+    final estimatedOffset = (index * 80.0).clamp(
+      0.0,
+      _scrollController.position.maxScrollExtent,
+    );
+    _scrollController.animateTo(
+      estimatedOffset,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
+  }
+
   Future<void> _handleSend() async {
     final text = _messageController.text.trim();
     if (text.isEmpty) return;
 
     final provider = context.read<ConversationsProvider>();
+    final replyTo = _replyingTo;
 
     // Clear immediately
     _messageController.clear();
+    setState(() => _replyingTo = null);
     _focusNode.requestFocus();
 
     // Send
-    final success = await provider.sendMessage(widget.conversation.id, text);
+    final success = await provider.sendMessage(
+      widget.conversation.id,
+      text,
+      replyToMessage: replyTo,
+    );
 
     if (!success && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -137,6 +172,13 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       );
+    }
+
+    // Re-request focus after the next frame so it survives any rebuild
+    if (mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _focusNode.requestFocus();
+      });
     }
   }
 
@@ -196,8 +238,6 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
           ? 'image'
           : 'document';
 
-      _focusNode.requestFocus();
-
       await provider.sendMessage(
         widget.conversation.id,
         caption,
@@ -220,6 +260,9 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
 
     if (mounted) {
       setState(() => _isUploading = false);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _focusNode.requestFocus();
+      });
     }
   }
 
@@ -381,14 +424,18 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
               borderRadius: BorderRadius.circular(12),
             ),
             child: Center(
-              child: Text(
-                _getInitials(),
-                style: const TextStyle(
-                  color: VividColors.brightBlue,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
-                ),
-              ),
+              child: Builder(builder: (context) {
+                final initials = _getInitials();
+                return Text(
+                  initials,
+                  textDirection: isArabicText(initials) ? TextDirection.rtl : TextDirection.ltr,
+                  style: const TextStyle(
+                    color: VividColors.brightBlue,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                  ),
+                );
+              }),
             ),
           ),
           const SizedBox(width: 12),
@@ -408,22 +455,161 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  widget.conversation.customerPhone,
-                  style: const TextStyle(
-                    color: VividColors.textMuted,
-                    fontSize: 13,
-                  ),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        widget.conversation.customerPhone,
+                        style: const TextStyle(
+                          color: VividColors.textMuted,
+                          fontSize: 13,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: IconButton(
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        icon: const Icon(
+                          Icons.copy_rounded,
+                          size: 14,
+                          color: VividColors.textMuted,
+                        ),
+                        onPressed: () {
+                          Clipboard.setData(ClipboardData(
+                            text: widget.conversation.customerPhone,
+                          ));
+                          setState(() => _showCopied = true);
+                          Future.delayed(const Duration(seconds: 2), () {
+                            if (mounted) setState(() => _showCopied = false);
+                          });
+                        },
+                      ),
+                    ),
+                    if (_showCopied) ...[
+                      const SizedBox(width: 4),
+                      const Text('Copied!', style: TextStyle(color: Colors.green, fontSize: 11)),
+                    ],
+                  ],
                 ),
               ],
             ),
           ),
 
+          const SizedBox(width: 8),
+
+          // Label button
+          _buildLabelButton(),
+
           // AI Toggle (only for AI-enabled clients)
-          if (ClientConfig.hasAiConversations)
+          if (ClientConfig.hasAiConversations) ...[
+            const SizedBox(width: 8),
             _buildAiToggle(),
+          ],
         ],
       ),
+    );
+  }
+
+  Widget _buildLabelButton() {
+    final currentLabel = widget.conversation.label;
+    final hasRevenueLabel = currentLabel == 'Appointment Booked' || currentLabel == 'Payment Done';
+
+    return PopupMenuButton<String>(
+      tooltip: 'Label conversation',
+      color: VividColors.navy,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+      ),
+      offset: const Offset(0, 40),
+      onSelected: (label) {
+        final provider = context.read<ConversationsProvider>();
+        if (label == '_clear') {
+          provider.setConversationLabel(widget.conversation.customerPhone, '');
+        } else {
+          provider.setConversationLabel(widget.conversation.customerPhone, label);
+        }
+      },
+      itemBuilder: (_) => [
+        _labelMenuItem('Appointment Booked', Icons.event_available, const Color(0xFF10B981),
+            isActive: currentLabel == 'Appointment Booked'),
+        _labelMenuItem('Payment Done', Icons.payments, const Color(0xFF06B6D4),
+            isActive: currentLabel == 'Payment Done'),
+        if (hasRevenueLabel) ...[
+          const PopupMenuDivider(),
+          const PopupMenuItem<String>(
+            value: '_clear',
+            child: Row(children: [
+              Icon(Icons.close, size: 16, color: VividColors.textMuted),
+              SizedBox(width: 10),
+              Text('Clear Label', style: TextStyle(color: VividColors.textMuted, fontSize: 13)),
+            ]),
+          ),
+        ],
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: hasRevenueLabel
+              ? (currentLabel == 'Appointment Booked'
+                  ? const Color(0xFF10B981).withOpacity(0.15)
+                  : const Color(0xFF06B6D4).withOpacity(0.15))
+              : VividColors.darkNavy,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: hasRevenueLabel
+                ? (currentLabel == 'Appointment Booked'
+                    ? const Color(0xFF10B981).withOpacity(0.4)
+                    : const Color(0xFF06B6D4).withOpacity(0.4))
+                : VividColors.tealBlue.withOpacity(0.2),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              hasRevenueLabel
+                  ? (currentLabel == 'Appointment Booked' ? Icons.event_available : Icons.payments)
+                  : Icons.label_outline,
+              size: 16,
+              color: hasRevenueLabel
+                  ? (currentLabel == 'Appointment Booked' ? const Color(0xFF10B981) : const Color(0xFF06B6D4))
+                  : VividColors.textMuted,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              hasRevenueLabel ? currentLabel! : 'Label',
+              style: TextStyle(
+                color: hasRevenueLabel
+                    ? (currentLabel == 'Appointment Booked' ? const Color(0xFF10B981) : const Color(0xFF06B6D4))
+                    : VividColors.textMuted,
+                fontSize: 12,
+                fontWeight: hasRevenueLabel ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  PopupMenuItem<String> _labelMenuItem(String label, IconData icon, Color color, {bool isActive = false}) {
+    return PopupMenuItem(
+      value: label,
+      child: Row(children: [
+        Icon(icon, size: 16, color: color),
+        const SizedBox(width: 10),
+        Text(label, style: TextStyle(color: VividColors.textPrimary, fontSize: 13)),
+        if (isActive) ...[
+          const Spacer(),
+          Icon(Icons.check, size: 16, color: color),
+        ],
+      ]),
     );
   }
 
@@ -513,6 +699,17 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
     final visibleMessages = messages.where((m) =>
         (m.content.isNotEmpty && m.content.trim().isNotEmpty) || m.hasMedia).toList();
 
+    // Scroll to highlighted message from search
+    final hlId = context.read<ConversationsProvider>().highlightedExchangeId;
+    if (hlId != null && hlId != _lastScrolledToHighlight) {
+      _lastScrolledToHighlight = hlId;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToHighlightedMessage(hlId, visibleMessages);
+      });
+    } else if (hlId == null) {
+      _lastScrolledToHighlight = null;
+    }
+
     return ListView.builder(
       controller: _scrollController,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -537,12 +734,22 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
           children: [
             if (showDateDivider)
               _buildDateDivider(DateFormatter.formatChatDate(msg.createdAt)),
-            _AnimatedMessageBubble(
-              key: ValueKey(msg.id),
-              message: msg,
-              isPending: isPending,
-              animate: isNew && isPending, // Only animate new pending messages
-            ),
+            Builder(builder: (context) {
+              final provider = context.watch<ConversationsProvider>();
+              final hlId = provider.highlightedExchangeId;
+              final isHighlighted = hlId != null && msg.id.startsWith(hlId);
+              return _AnimatedMessageBubble(
+                key: ValueKey(msg.id),
+                message: msg,
+                isPending: isPending,
+                animate: isNew && isPending,
+                isHighlighted: isHighlighted,
+                onReply: (message) => setState(() {
+                  _replyingTo = message;
+                  _focusNode.requestFocus();
+                }),
+              );
+            }),
           ],
         );
       },
@@ -580,156 +787,325 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
     );
   }
 
+  void _onEmojiSelected(Category? category, Emoji emoji) {
+    final text = _messageController.text;
+    final selection = _messageController.selection;
+    final cursorPos = selection.baseOffset >= 0 ? selection.baseOffset : text.length;
+    final newText = text.substring(0, cursorPos) + emoji.emoji + text.substring(cursorPos);
+    _messageController.text = newText;
+    final newCursor = cursorPos + emoji.emoji.length;
+    _messageController.selection = TextSelection.collapsed(offset: newCursor);
+  }
+
+  Color _replyBorderColor(SenderType type) {
+    switch (type) {
+      case SenderType.customer:
+        return VividColors.deepBlue;
+      case SenderType.ai:
+        return VividColors.cyan;
+      case SenderType.manager:
+        return VividColors.brightBlue;
+    }
+  }
+
+  String _replySenderName(Message msg) {
+    switch (msg.senderType) {
+      case SenderType.customer:
+        return msg.senderName ?? widget.conversation.customerName ?? 'Customer';
+      case SenderType.ai:
+        return 'Vivid AI';
+      case SenderType.manager:
+        return ClientConfig.currentUserName;
+    }
+  }
+
   Widget _buildInput(bool isSending) {
     final busy = isSending || _isUploading;
 
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: VividColors.navy,
-        border: Border(
-          top: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
-        ),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Upload progress indicator
-            if (_isUploading)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  children: [
-                    const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: VividColors.cyan,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'Uploading...',
-                      style: TextStyle(color: VividColors.textMuted, fontSize: 13),
-                    ),
-                  ],
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Emoji picker panel (above input bar)
+        if (_showEmojiPicker)
+          Container(
+            height: 300,
+            decoration: BoxDecoration(
+              color: VividColors.navy,
+              border: Border(
+                top: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+              ),
+            ),
+            child: EmojiPicker(
+              onEmojiSelected: _onEmojiSelected,
+              config: Config(
+                height: 300,
+                checkPlatformCompatibility: true,
+                emojiViewConfig: EmojiViewConfig(
+                  backgroundColor: VividColors.navy,
+                  columns: 8,
+                  emojiSizeMax: 28,
+                  noRecents: const Text(
+                    'No Recents',
+                    style: TextStyle(fontSize: 16, color: VividColors.textMuted),
+                  ),
+                ),
+                categoryViewConfig: CategoryViewConfig(
+                  backgroundColor: VividColors.navy,
+                  iconColor: VividColors.textMuted,
+                  iconColorSelected: VividColors.cyan,
+                  indicatorColor: VividColors.cyan,
+                  dividerColor: VividColors.tealBlue.withOpacity(0.2),
+                ),
+                searchViewConfig: SearchViewConfig(
+                  backgroundColor: VividColors.navy,
+                  buttonIconColor: VividColors.cyan,
+                  hintText: 'Search emoji...',
+                ),
+                bottomActionBarConfig: const BottomActionBarConfig(
+                  enabled: false,
                 ),
               ),
+            ),
+          ),
 
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
+        // Reply preview bar
+        if (_replyingTo != null)
+          Container(
+            padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+            decoration: BoxDecoration(
+              color: VividColors.navy,
+              border: Border(
+                top: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+              ),
+            ),
+            child: Row(
               children: [
-                // Attach button
-                GestureDetector(
-                  onTap: busy ? null : _pickAndUploadFile,
-                  child: Container(
-                    width: 42,
-                    height: 42,
-                    decoration: BoxDecoration(
-                      color: VividColors.darkNavy,
-                      borderRadius: BorderRadius.circular(21),
-                      border: Border.all(
-                        color: VividColors.tealBlue.withOpacity(0.3),
-                      ),
-                    ),
-                    child: Icon(
-                      Icons.attach_file,
-                      color: busy ? VividColors.textMuted : VividColors.cyan,
-                      size: 20,
-                    ),
+                Container(
+                  width: 3,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: _replyBorderColor(_replyingTo!.senderType),
+                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
                 const SizedBox(width: 8),
-
-                // Text field
                 Expanded(
-                  child: Container(
-                    constraints: const BoxConstraints(maxHeight: 120),
-                    decoration: BoxDecoration(
-                      color: VividColors.darkNavy,
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(
-                        color: VividColors.tealBlue.withOpacity(0.3),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _replySenderName(_replyingTo!),
+                        style: TextStyle(
+                          color: _replyBorderColor(_replyingTo!.senderType),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
-                    child: TextField(
-                      controller: _messageController,
-                      focusNode: _focusNode,
-                      enabled: !busy,
-                      maxLines: null,
-                      textInputAction: TextInputAction.send,
-                      onSubmitted: (_) => _handleSend(),
-                      style: const TextStyle(color: VividColors.textPrimary, fontSize: 15),
-                      decoration: InputDecoration(
-                        hintText: _isUploading
-                            ? 'Uploading...'
-                            : isSending
-                                ? 'Sending...'
-                                : 'Type a message...',
-                        hintStyle: const TextStyle(color: VividColors.textMuted),
-                        border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      const SizedBox(height: 2),
+                      Text(
+                        _replyingTo!.content.length > 50
+                            ? '${_replyingTo!.content.substring(0, 50)}...'
+                            : _replyingTo!.content,
+                        style: const TextStyle(
+                          color: VividColors.textMuted,
+                          fontSize: 12,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 10),
-
-                // Send button
-                GestureDetector(
-                  onTap: busy ? null : _handleSend,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    width: 46,
-                    height: 46,
-                    decoration: BoxDecoration(
-                      gradient: busy ? null : VividColors.primaryGradient,
-                      color: busy ? VividColors.deepBlue : null,
-                      borderRadius: BorderRadius.circular(23),
-                      boxShadow: busy ? null : [
-                        BoxShadow(
-                          color: VividColors.brightBlue.withOpacity(0.3),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Center(
-                      child: busy
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: VividColors.cyan,
-                              ),
-                            )
-                          : const Icon(
-                              Icons.send_rounded,
-                              color: VividColors.darkNavy,
-                              size: 20,
-                            ),
-                    ),
-                  ),
+                IconButton(
+                  onPressed: () => setState(() => _replyingTo = null),
+                  icon: const Icon(Icons.close, size: 18, color: VividColors.textMuted),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                 ),
               ],
             ),
-          ],
+          ),
+
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: VividColors.navy,
+            border: _replyingTo != null ? null : Border(
+              top: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+            ),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Upload progress indicator
+                if (_isUploading)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      children: [
+                        const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: VividColors.cyan,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Uploading...',
+                          style: TextStyle(color: VividColors.textMuted, fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    // Attach button
+                    GestureDetector(
+                      onTap: busy ? null : _pickAndUploadFile,
+                      child: Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: VividColors.darkNavy,
+                          borderRadius: BorderRadius.circular(21),
+                          border: Border.all(
+                            color: VividColors.tealBlue.withOpacity(0.3),
+                          ),
+                        ),
+                        child: Icon(
+                          Icons.attach_file,
+                          color: busy ? VividColors.textMuted : VividColors.cyan,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+
+                    // Emoji button
+                    GestureDetector(
+                      onTap: busy ? null : () {
+                        setState(() => _showEmojiPicker = !_showEmojiPicker);
+                        if (!_showEmojiPicker) _focusNode.requestFocus();
+                      },
+                      child: Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: _showEmojiPicker
+                              ? VividColors.cyan.withOpacity(0.15)
+                              : VividColors.darkNavy,
+                          borderRadius: BorderRadius.circular(21),
+                          border: Border.all(
+                            color: _showEmojiPicker
+                                ? VividColors.cyan.withOpacity(0.5)
+                                : VividColors.tealBlue.withOpacity(0.3),
+                          ),
+                        ),
+                        child: Center(
+                          child: Text(
+                            _showEmojiPicker ? '⌨️' : '😊',
+                            style: const TextStyle(fontSize: 20),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+
+                    // Text field
+                    Expanded(
+                      child: Container(
+                        constraints: const BoxConstraints(maxHeight: 120),
+                        decoration: BoxDecoration(
+                          color: VividColors.darkNavy,
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                            color: VividColors.tealBlue.withOpacity(0.3),
+                          ),
+                        ),
+                        child: TextField(
+                          controller: _messageController,
+                          focusNode: _focusNode,
+                          enabled: !busy,
+                          maxLines: null,
+                          textInputAction: TextInputAction.send,
+                          onSubmitted: (_) => _handleSend(),
+                          onTap: () {
+                            if (_showEmojiPicker) {
+                              setState(() => _showEmojiPicker = false);
+                            }
+                          },
+                          style: const TextStyle(color: VividColors.textPrimary, fontSize: 15),
+                          decoration: InputDecoration(
+                            hintText: _isUploading
+                                ? 'Uploading...'
+                                : isSending
+                                    ? 'Sending...'
+                                    : 'Type a message...',
+                            hintStyle: const TextStyle(color: VividColors.textMuted),
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+
+                    // Send button
+                    GestureDetector(
+                      onTap: busy ? null : _handleSend,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        width: 46,
+                        height: 46,
+                        decoration: BoxDecoration(
+                          gradient: busy ? null : VividColors.primaryGradient,
+                          color: busy ? VividColors.deepBlue : null,
+                          borderRadius: BorderRadius.circular(23),
+                          boxShadow: busy ? null : [
+                            BoxShadow(
+                              color: VividColors.brightBlue.withOpacity(0.3),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Center(
+                          child: busy
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: VividColors.cyan,
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.send_rounded,
+                                  color: VividColors.darkNavy,
+                                  size: 20,
+                                ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
         ),
-      ),
+      ],
     );
   }
 
   String _getInitials() {
-    final name = widget.conversation.customerName ?? widget.conversation.customerPhone;
-    final parts = name.split(' ');
-    if (parts.length >= 2) {
-      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-    }
-    return name.substring(0, name.length.clamp(0, 2)).toUpperCase();
+    return getInitials(widget.conversation.customerName ?? widget.conversation.customerPhone);
   }
 }
 
@@ -741,12 +1117,16 @@ class _AnimatedMessageBubble extends StatefulWidget {
   final Message message;
   final bool isPending;
   final bool animate;
+  final bool isHighlighted;
+  final ValueChanged<Message>? onReply;
 
   const _AnimatedMessageBubble({
     super.key,
     required this.message,
     this.isPending = false,
     this.animate = false,
+    this.isHighlighted = false,
+    this.onReply,
   });
 
   @override
@@ -830,6 +1210,8 @@ class _AnimatedMessageBubbleState extends State<_AnimatedMessageBubble>
       child: _MessageBubble(
         message: widget.message,
         isPending: widget.isPending,
+        isHighlighted: widget.isHighlighted,
+        onReply: widget.onReply,
       ),
     );
   }
@@ -842,8 +1224,10 @@ class _AnimatedMessageBubbleState extends State<_AnimatedMessageBubble>
 class _MessageBubble extends StatefulWidget {
   final Message message;
   final bool isPending;
+  final bool isHighlighted;
+  final ValueChanged<Message>? onReply;
 
-  const _MessageBubble({required this.message, this.isPending = false});
+  const _MessageBubble({required this.message, this.isPending = false, this.isHighlighted = false, this.onReply});
 
   @override
   State<_MessageBubble> createState() => _MessageBubbleState();
@@ -853,6 +1237,9 @@ class _MessageBubbleState extends State<_MessageBubble>
     with SingleTickerProviderStateMixin {
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
+  bool _isHovered = false;
+  double _swipeOffset = 0;
+  bool _showCopiedBubble = false;
 
   @override
   void initState() {
@@ -889,6 +1276,83 @@ class _MessageBubbleState extends State<_MessageBubble>
     super.dispose();
   }
 
+  void _onMenuSelected(String value) {
+    if (value == 'reply') {
+      widget.onReply?.call(widget.message);
+    } else if (value == 'copy') {
+      Clipboard.setData(ClipboardData(text: widget.message.content));
+      setState(() => _showCopiedBubble = true);
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) setState(() => _showCopiedBubble = false);
+      });
+    }
+  }
+
+  void _handleSwipeReply() {
+    if (widget.onReply != null) {
+      widget.onReply!(widget.message);
+    }
+  }
+
+  Widget _buildDropdownMenu() {
+    final hasText = widget.message.content.trim().isNotEmpty;
+    return SizedBox(
+      width: 24,
+      height: 24,
+      child: PopupMenuButton<String>(
+        onSelected: _onMenuSelected,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(),
+        color: VividColors.navy,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+          side: BorderSide(color: VividColors.tealBlue.withOpacity(0.3)),
+        ),
+        icon: Container(
+          width: 24,
+          height: 24,
+          decoration: BoxDecoration(
+            color: _bubbleColor().withOpacity(0.9),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Icon(
+            Icons.keyboard_arrow_down,
+            size: 18,
+            color: VividColors.textMuted,
+          ),
+        ),
+        itemBuilder: (_) => [
+          if (widget.onReply != null)
+            const PopupMenuItem<String>(
+              value: 'reply',
+              height: 40,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.reply, size: 16, color: VividColors.textPrimary),
+                  SizedBox(width: 8),
+                  Text('Reply', style: TextStyle(color: VividColors.textPrimary, fontSize: 13)),
+                ],
+              ),
+            ),
+          if (hasText)
+            const PopupMenuItem<String>(
+              value: 'copy',
+              height: 40,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.copy, size: 16, color: VividColors.textPrimary),
+                  SizedBox(width: 8),
+                  Text('Copy', style: TextStyle(color: VividColors.textPrimary, fontSize: 13)),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isCustomer = widget.message.senderType == SenderType.customer;
@@ -901,7 +1365,7 @@ class _MessageBubbleState extends State<_MessageBubble>
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (!isCustomer) const Spacer(flex: 1),
-          
+
           Flexible(
             flex: 3,
             child: Column(
@@ -921,7 +1385,9 @@ class _MessageBubbleState extends State<_MessageBubble>
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          isManager ? ClientConfig.currentUserName : (ClientConfig.hasAiConversations ? 'Vivid AI' : 'System'),
+                          isManager
+                              ? (widget.message.senderName?.isNotEmpty == true ? widget.message.senderName! : ClientConfig.currentUserName)
+                              : (ClientConfig.hasAiConversations ? 'Vivid AI' : 'System'),
                           style: TextStyle(
                             color: isManager ? VividColors.brightBlue : VividColors.cyan,
                             fontSize: 11,
@@ -936,111 +1402,196 @@ class _MessageBubbleState extends State<_MessageBubble>
                     ),
                   ),
 
-                // Bubble
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: _bubbleColor(),
-                    borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(16),
-                      topRight: const Radius.circular(16),
-                      bottomLeft: Radius.circular(isCustomer ? 4 : 16),
-                      bottomRight: Radius.circular(isCustomer ? 16 : 4),
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: widget.isPending 
-                            ? VividColors.brightBlue.withOpacity(0.2)
-                            : Colors.black.withOpacity(0.12),
-                        blurRadius: widget.isPending ? 8 : 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: isCustomer ? CrossAxisAlignment.start : CrossAxisAlignment.end,
+                // Bubble with swipe-to-reply + hover dropdown
+                GestureDetector(
+                  onHorizontalDragUpdate: widget.onReply != null ? (details) {
+                    setState(() {
+                      _swipeOffset = (_swipeOffset + details.delta.dx).clamp(0, 60);
+                    });
+                  } : null,
+                  onHorizontalDragEnd: widget.onReply != null ? (details) {
+                    if (_swipeOffset > 40) _handleSwipeReply();
+                    setState(() => _swipeOffset = 0);
+                  } : null,
+                  onHorizontalDragCancel: widget.onReply != null ? () {
+                    setState(() => _swipeOffset = 0);
+                  } : null,
+                  child: Stack(
+                    clipBehavior: Clip.none,
                     children: [
-                      // Customer name
-                      if (isCustomer && widget.message.senderName != null)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 4),
-                          child: Text(
-                            widget.message.senderName!,
-                            style: const TextStyle(
-                              color: VividColors.cyan,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-
-                      // Media
-                      if (widget.message.hasMedia)
-                        _buildMediaContent(),
-                      if (widget.message.hasMedia && widget.message.content.trim().isNotEmpty)
-                        const SizedBox(height: 8),
-
-                      // Text
-                      if (widget.message.content.trim().isNotEmpty)
-                        Text(
-                          widget.message.content,
-                          style: const TextStyle(
-                            color: VividColors.textPrimary,
-                            fontSize: 15,
-                            height: 1.4,
-                          ),
-                          textDirection: _textDirection(),
-                        ),
-
-                      const SizedBox(height: 4),
-
-                      // Time + status + voice indicator
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Voice message indicator (subtle)
-                          if (isCustomer && widget.message.isVoiceMessage) ...[
-                            Icon(
-                              Icons.mic,
-                              size: 11,
-                              color: VividColors.textPrimary.withOpacity(0.4),
-                            ),
-                            const SizedBox(width: 3),
-                          ],
-                          AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 200),
-                            child: Text(
-                              widget.isPending ? 'Sending...' : _formatTime(widget.message.createdAt),
-                              key: ValueKey(widget.isPending ? 'pending' : 'sent'),
-                              style: TextStyle(
-                                color: VividColors.textPrimary.withOpacity(0.5),
-                                fontSize: 10,
-                              ),
-                            ),
-                          ),
-                          if (!isCustomer && !widget.isPending) ...[
-                            const SizedBox(width: 4),
-                            TweenAnimationBuilder<double>(
-                              tween: Tween(begin: 0.0, end: 1.0),
-                              duration: const Duration(milliseconds: 300),
-                              builder: (context, value, child) {
-                                return Transform.scale(
-                                  scale: value,
-                                  child: Opacity(
-                                    opacity: value,
-                                    child: child,
-                                  ),
-                                );
-                              },
+                      // Reply icon behind the bubble during swipe
+                      if (_swipeOffset > 0)
+                        Positioned(
+                          left: 0,
+                          top: 0,
+                          bottom: 0,
+                          child: Center(
+                            child: Opacity(
+                              opacity: (_swipeOffset / 40).clamp(0, 1),
                               child: Icon(
-                                Icons.done_all,
-                                size: 14,
-                                color: VividColors.cyan.withOpacity(0.7),
+                                Icons.reply_rounded,
+                                size: 20,
+                                color: VividColors.cyan.withOpacity(0.8),
                               ),
                             ),
-                          ],
-                        ],
+                          ),
+                        ),
+
+                      // The actual bubble
+                      Transform.translate(
+                        offset: Offset(_swipeOffset, 0),
+                        child: MouseRegion(
+                          onEnter: (_) => setState(() => _isHovered = true),
+                          onExit: (_) => setState(() => _isHovered = false),
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              AnimatedContainer(
+                                duration: const Duration(milliseconds: 500),
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: widget.isHighlighted
+                                      ? Color.alphaBlend(Colors.amber.withOpacity(0.25), _bubbleColor())
+                                      : _bubbleColor(),
+                                  borderRadius: BorderRadius.only(
+                                    topLeft: const Radius.circular(16),
+                                    topRight: const Radius.circular(16),
+                                    bottomLeft: Radius.circular(isCustomer ? 4 : 16),
+                                    bottomRight: Radius.circular(isCustomer ? 16 : 4),
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: widget.isPending
+                                          ? VividColors.brightBlue.withOpacity(0.2)
+                                          : Colors.black.withOpacity(0.12),
+                                      blurRadius: widget.isPending ? 8 : 4,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: isCustomer ? CrossAxisAlignment.start : CrossAxisAlignment.end,
+                                  children: [
+                                    // Customer name
+                                    if (isCustomer && widget.message.senderName != null)
+                                      Padding(
+                                        padding: const EdgeInsets.only(bottom: 4),
+                                        child: Text(
+                                          widget.message.senderName!,
+                                          style: const TextStyle(
+                                            color: VividColors.cyan,
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+
+                                    // Quoted reply
+                                    if (widget.message.replyToMessage != null)
+                                      _buildQuotedReply(widget.message.replyToMessage!),
+
+                                    // Voice message player (replaces text for voice messages)
+                                    if (isCustomer && widget.message.isVoiceMessage)
+                                      ConstrainedBox(
+                                        constraints: const BoxConstraints(minWidth: 220),
+                                        child: VoiceMessageBubble(message: widget.message),
+                                      )
+                                    else ...[
+                                      // Media
+                                      if (widget.message.hasMedia)
+                                        _buildMediaContent(),
+                                      if (widget.message.hasMedia && widget.message.content.trim().isNotEmpty)
+                                        const SizedBox(height: 8),
+
+                                      // Text (selectable for copy/highlight)
+                                      if (widget.message.content.trim().isNotEmpty)
+                                        SelectableText(
+                                          widget.message.content,
+                                          style: const TextStyle(
+                                            color: VividColors.textPrimary,
+                                            fontSize: 15,
+                                            height: 1.4,
+                                          ),
+                                          textDirection: _textDirection(),
+                                        ),
+                                    ],
+
+                                    const SizedBox(height: 4),
+
+                                    // Time + status + voice indicator
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        AnimatedSwitcher(
+                                          duration: const Duration(milliseconds: 200),
+                                          child: Text(
+                                            widget.isPending ? 'Sending...' : _formatTime(widget.message.createdAt),
+                                            key: ValueKey(widget.isPending ? 'pending' : 'sent'),
+                                            style: TextStyle(
+                                              color: VividColors.textPrimary.withOpacity(0.5),
+                                              fontSize: 10,
+                                            ),
+                                          ),
+                                        ),
+                                        if (!isCustomer && !widget.isPending) ...[
+                                          const SizedBox(width: 4),
+                                          TweenAnimationBuilder<double>(
+                                            tween: Tween(begin: 0.0, end: 1.0),
+                                            duration: const Duration(milliseconds: 300),
+                                            builder: (context, value, child) {
+                                              return Transform.scale(
+                                                scale: value,
+                                                child: Opacity(
+                                                  opacity: value,
+                                                  child: child,
+                                                ),
+                                              );
+                                            },
+                                            child: Icon(
+                                              Icons.done_all,
+                                              size: 14,
+                                              color: VividColors.cyan.withOpacity(0.7),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+
+                              // "Copied!" feedback overlay
+                              if (_showCopiedBubble)
+                                Positioned.fill(
+                                  child: Center(
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black87,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: const Text(
+                                        'Copied!',
+                                        style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+
+                              // Dropdown arrow button (visible on hover / always on mobile)
+                              if (widget.message.content.trim().isNotEmpty || widget.onReply != null)
+                                Positioned(
+                                  top: 2,
+                                  right: 2,
+                                  child: AnimatedOpacity(
+                                    opacity: _isHovered ? 1.0 : 0.0,
+                                    duration: const Duration(milliseconds: 150),
+                                    child: _buildDropdownMenu(),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -1048,7 +1599,7 @@ class _MessageBubbleState extends State<_MessageBubble>
               ],
             ),
           ),
-          
+
           if (isCustomer) const Spacer(flex: 1),
         ],
       ),
@@ -1069,6 +1620,60 @@ class _MessageBubbleState extends State<_MessageBubble>
     }
 
     return bubble;
+  }
+
+  Widget _buildQuotedReply(Message replied) {
+    Color borderColor;
+    String senderName;
+    switch (replied.senderType) {
+      case SenderType.customer:
+        borderColor = VividColors.deepBlue;
+        senderName = replied.senderName ?? 'Customer';
+      case SenderType.ai:
+        borderColor = VividColors.cyan;
+        senderName = 'Vivid AI';
+      case SenderType.manager:
+        borderColor = VividColors.brightBlue;
+        senderName = ClientConfig.currentUserName;
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(8),
+        border: Border(
+          left: BorderSide(color: borderColor, width: 3),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            senderName,
+            style: TextStyle(
+              color: borderColor,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            replied.content.length > 50
+                ? '${replied.content.substring(0, 50)}...'
+                : replied.content,
+            style: TextStyle(
+              color: VividColors.textPrimary.withOpacity(0.7),
+              fontSize: 12,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
   }
 
   Color _bubbleColor() {

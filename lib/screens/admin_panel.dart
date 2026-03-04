@@ -7,6 +7,7 @@ import '../models/models.dart';
 import '../theme/vivid_theme.dart';
 import '../widgets/client_analytics_view.dart';
 import '../widgets/vivid_company_analytics_view.dart';
+import '../utils/initials_helper.dart';
 
 /// Admin Panel - Manage clients and users
 class AdminPanel extends StatefulWidget {
@@ -63,126 +64,139 @@ class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateM
 
   Widget _buildHeader() {
     final agent = context.watch<AgentProvider>().agent;
-    
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-      decoration: BoxDecoration(
-        color: VividColors.navy,
-        border: Border(
-          bottom: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
-        ),
-      ),
-      child: Row(
-        children: [
-          // Logo
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              gradient: VividColors.primaryGradient,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(Icons.admin_panel_settings, color: Colors.white, size: 24),
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 600;
+
+        return Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: isMobile ? 12 : 24,
+            vertical: isMobile ? 10 : 16,
           ),
-          const SizedBox(width: 16),
-          
-          // Title
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          decoration: BoxDecoration(
+            color: VividColors.navy,
+            border: Border(
+              bottom: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+            ),
+          ),
+          child: Row(
             children: [
-              const Text(
-                'Vivid Admin',
-                style: TextStyle(
-                  color: VividColors.textPrimary,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
+              // Logo
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  gradient: VividColors.primaryGradient,
+                  borderRadius: BorderRadius.circular(10),
                 ),
+                child: const Icon(Icons.admin_panel_settings, color: Colors.white, size: 24),
               ),
-              Text(
-                'Manage clients and users',
-                style: TextStyle(
-                  color: VividColors.textMuted,
-                  fontSize: 13,
-                ),
+              const SizedBox(width: 12),
+
+              // Title
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Vivid Admin',
+                    style: TextStyle(
+                      color: VividColors.textPrimary,
+                      fontSize: isMobile ? 16 : 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  if (!isMobile)
+                    Text(
+                      'Manage clients and users',
+                      style: TextStyle(
+                        color: VividColors.textMuted,
+                        fontSize: 13,
+                      ),
+                    ),
+                ],
               ),
-            ],
-          ),
-          
-          const Spacer(),
-          
-          // User info
-          if (agent != null) ...[
-            CircleAvatar(
-              radius: 18,
-              backgroundColor: VividColors.brightBlue.withOpacity(0.2),
-              child: Text(
-                agent.initials,
-                style: const TextStyle(
-                  color: VividColors.cyan,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  agent.name,
-                  style: const TextStyle(
-                    color: VividColors.textPrimary,
-                    fontWeight: FontWeight.w500,
+
+              const Spacer(),
+
+              // User info
+              if (agent != null) ...[
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: VividColors.brightBlue.withOpacity(0.2),
+                  child: Text(
+                    agent.initials,
+                    style: const TextStyle(
+                      color: VividColors.cyan,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
-                const Text(
-                  'Administrator',
-                  style: TextStyle(
-                    color: VividColors.cyan,
-                    fontSize: 11,
+                if (!isMobile) ...[
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        agent.name,
+                        style: const TextStyle(
+                          color: VividColors.textPrimary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const Text(
+                        'Administrator',
+                        style: TextStyle(
+                          color: VividColors.cyan,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
                   ),
+                ],
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: () => context.read<AgentProvider>().logout(),
+                  icon: const Icon(Icons.logout, color: VividColors.textMuted),
+                  tooltip: 'Logout',
                 ),
               ],
-            ),
-            const SizedBox(width: 16),
-            IconButton(
-              onPressed: () => context.read<AgentProvider>().logout(),
-              icon: const Icon(Icons.logout, color: VividColors.textMuted),
-              tooltip: 'Logout',
-            ),
-          ],
-        ],
-      ),
+            ],
+          ),
+        );
+      },
     );
   }
 
   Widget _buildTabs() {
-    return Container(
-      color: VividColors.navy,
-      child: TabBar(
-        controller: _tabController,
-        indicatorColor: VividColors.cyan,
-        indicatorWeight: 3,
-        labelColor: VividColors.cyan,
-        unselectedLabelColor: VividColors.textMuted,
-        tabs: const [
-          Tab(
-            icon: Icon(Icons.business),
-            text: 'Clients',
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 600;
+
+        return Container(
+          color: VividColors.navy,
+          child: TabBar(
+            controller: _tabController,
+            indicatorColor: VividColors.cyan,
+            indicatorWeight: 3,
+            labelColor: VividColors.cyan,
+            unselectedLabelColor: VividColors.textMuted,
+            tabs: isMobile
+                ? const [
+                    Tab(icon: Icon(Icons.business)),
+                    Tab(icon: Icon(Icons.people)),
+                    Tab(icon: Icon(Icons.insights)),
+                    Tab(icon: Icon(Icons.auto_graph)),
+                  ]
+                : const [
+                    Tab(icon: Icon(Icons.business), text: 'Clients'),
+                    Tab(icon: Icon(Icons.people), text: 'Users'),
+                    Tab(icon: Icon(Icons.insights), text: 'Client Analytics'),
+                    Tab(icon: Icon(Icons.auto_graph), text: 'Vivid Analytics'),
+                  ],
           ),
-          Tab(
-            icon: Icon(Icons.people),
-            text: 'Users',
-          ),
-          Tab(
-            icon: Icon(Icons.insights),
-            text: 'Client Analytics',
-          ),
-          Tab(
-            icon: Icon(Icons.auto_graph),
-            text: 'Vivid Analytics',
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -196,16 +210,58 @@ class _ClientsTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final provider = context.watch<AdminProvider>();
 
-    return Row(
-      children: [
-        // Client list
-        SizedBox(
-          width: 400,
-          child: Column(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 600;
+
+        if (isMobile) {
+          // Mobile: show detail full-screen when a client is selected
+          if (provider.selectedClient != null) {
+            return Column(
+              children: [
+                // Back button header
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: VividColors.navy,
+                    border: Border(
+                      bottom: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        onPressed: () => provider.clearSelection(),
+                        icon: const Icon(Icons.arrow_back, color: VividColors.textPrimary),
+                        tooltip: 'Back to clients',
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          provider.selectedClient!.name,
+                          style: const TextStyle(
+                            color: VividColors.textPrimary,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: _ClientDetail(client: provider.selectedClient!),
+                ),
+              ],
+            );
+          }
+
+          // Mobile: full-screen client list
+          return Column(
             children: [
-              // Add button
               Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(12),
                 child: SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
@@ -220,12 +276,8 @@ class _ClientsTab extends StatelessWidget {
                   ),
                 ),
               ),
-              
-              // List
               Expanded(
-                child: provider.isLoading
-                    ? const Center(child: CircularProgressIndicator(color: VividColors.cyan))
-                    : provider.clients.isEmpty
+                child: provider.clients.isEmpty
                         ? _buildEmptyState('No clients yet', 'Add your first client to get started')
                         : ListView.builder(
                             itemCount: provider.clients.length,
@@ -243,35 +295,86 @@ class _ClientsTab extends StatelessWidget {
                           ),
               ),
             ],
-          ),
-        ),
-        
-        // Divider
-        Container(width: 1, color: VividColors.tealBlue.withOpacity(0.2)),
-        
-        // Client details / users
-        Expanded(
-          child: provider.selectedClient == null
-              ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.touch_app, size: 64, color: VividColors.textMuted.withOpacity(0.5)),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Select a client',
-                        style: TextStyle(color: VividColors.textPrimary, fontSize: 18),
+          );
+        }
+
+        // Desktop: side-by-side layout
+        return Row(
+          children: [
+            // Client list
+            SizedBox(
+              width: 400,
+              child: Column(
+                children: [
+                  // Add button
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () => _showClientDialog(context),
+                        icon: const Icon(Icons.add),
+                        label: const Text('Add Client'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: VividColors.brightBlue,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
                       ),
-                      const Text(
-                        'View and manage their users',
-                        style: TextStyle(color: VividColors.textMuted),
-                      ),
-                    ],
+                    ),
                   ),
-                )
-              : _ClientDetail(client: provider.selectedClient!),
-        ),
-      ],
+
+                  // List
+                  Expanded(
+                    child: provider.clients.isEmpty
+                            ? _buildEmptyState('No clients yet', 'Add your first client to get started')
+                            : ListView.builder(
+                                itemCount: provider.clients.length,
+                                itemBuilder: (context, index) {
+                                  final client = provider.clients[index];
+                                  final isSelected = provider.selectedClient?.id == client.id;
+                                  return _ClientCard(
+                                    client: client,
+                                    isSelected: isSelected,
+                                    onTap: () => provider.selectClient(client),
+                                    onEdit: () => _showClientDialog(context, client: client),
+                                    onDelete: () => _confirmDelete(context, client),
+                                  );
+                                },
+                              ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Divider
+            Container(width: 1, color: VividColors.tealBlue.withOpacity(0.2)),
+
+            // Client details / users
+            Expanded(
+              child: provider.selectedClient == null
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.touch_app, size: 64, color: VividColors.textMuted.withOpacity(0.5)),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Select a client',
+                            style: TextStyle(color: VividColors.textPrimary, fontSize: 18),
+                          ),
+                          const Text(
+                            'View and manage their users',
+                            style: TextStyle(color: VividColors.textMuted),
+                          ),
+                        ],
+                      ),
+                    )
+                  : _ClientDetail(client: provider.selectedClient!),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -769,13 +872,7 @@ class _UserTile extends StatelessWidget {
     );
   }
 
-  String _getInitials(String name) {
-    final parts = name.split(' ');
-    if (parts.length >= 2) {
-      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-    }
-    return name.substring(0, name.length.clamp(0, 2)).toUpperCase();
-  }
+  String _getInitials(String name) => getInitials(name);
 }
 
 // ============================================
@@ -874,205 +971,299 @@ class _UsersTab extends StatelessWidget {
     final provider = context.watch<AdminProvider>();
     final users = provider.allUsers;
 
-    return Column(
-      children: [
-        // Header
-        Container(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Text(
-                'All Users (${users.length})',
-                style: const TextStyle(
-                  color: VividColors.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 600;
+
+        return Column(
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Text(
+                    'All Users (${users.length})',
+                    style: const TextStyle(
+                      color: VividColors.textPrimary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Table header (desktop only)
+            if (!isMobile)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                decoration: BoxDecoration(
+                  color: VividColors.navy,
+                  border: Border(
+                    bottom: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+                  ),
+                ),
+                child: const Row(
+                  children: [
+                    Expanded(flex: 2, child: Text('Name', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
+                    Expanded(flex: 3, child: Text('Email', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
+                    Expanded(flex: 1, child: Text('Role', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
+                    Expanded(flex: 2, child: Text('Client', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
+                    SizedBox(width: 90, child: Text('Actions', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
+                  ],
                 ),
               ),
-            ],
-          ),
-        ),
-        
-        // Table header
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-          decoration: BoxDecoration(
-            color: VividColors.navy,
-            border: Border(
-              bottom: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+
+            // Users list
+            Expanded(
+              child: users.isEmpty
+                      ? const Center(child: Text('No users found', style: TextStyle(color: VividColors.textMuted)))
+                      : ListView.builder(
+                          itemCount: users.length,
+                          itemBuilder: (context, index) {
+                            final user = users[index];
+                            final clientName = user['clients']?['name'] ?? 'No Client';
+                            final role = user['role'] ?? 'unknown';
+
+                            if (isMobile) {
+                              return _buildMobileUserCard(context, user, clientName, role, provider);
+                            }
+                            return _buildDesktopUserRow(context, user, clientName, role, provider);
+                          },
+                        ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildMobileUserCard(
+    BuildContext context,
+    Map<String, dynamic> user,
+    String clientName,
+    String role,
+    AdminProvider provider,
+  ) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: VividColors.deepBlue,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Name + role badge
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        user['name'] ?? '',
+                        style: const TextStyle(
+                          color: VividColors.textPrimary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _RoleBadge(role: role),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                // Email
+                Text(
+                  user['email'] ?? '',
+                  style: const TextStyle(color: VividColors.textMuted, fontSize: 12),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                // Client name
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: VividColors.brightBlue.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    clientName,
+                    style: const TextStyle(color: VividColors.cyan, fontSize: 11),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
             ),
           ),
-          child: const Row(
-            children: [
-              Expanded(flex: 2, child: Text('Name', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
-              Expanded(flex: 3, child: Text('Email', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
-              Expanded(flex: 1, child: Text('Role', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
-              Expanded(flex: 2, child: Text('Client', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
-              SizedBox(width: 90, child: Text('Actions', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
-            ],
+          // Action buttons
+          _buildUserActions(context, user, provider),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopUserRow(
+    BuildContext context,
+    Map<String, dynamic> user,
+    String clientName,
+    String role,
+    AdminProvider provider,
+  ) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: VividColors.tealBlue.withOpacity(0.1)),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 2,
+            child: Text(
+              user['name'] ?? '',
+              style: const TextStyle(color: VividColors.textPrimary),
+            ),
           ),
-        ),
+          Expanded(
+            flex: 3,
+            child: Text(
+              user['email'] ?? '',
+              style: const TextStyle(color: VividColors.textMuted),
+            ),
+          ),
+          Expanded(
+            flex: 1,
+            child: _RoleBadge(role: role),
+          ),
+          Expanded(
+            flex: 2,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: VividColors.brightBlue.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                clientName,
+                style: const TextStyle(color: VividColors.cyan, fontSize: 12),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+          _buildUserActions(context, user, provider),
+        ],
+      ),
+    );
+  }
 
-        // Users list
-        Expanded(
-          child: provider.isLoading
-              ? const Center(child: CircularProgressIndicator(color: VividColors.cyan))
-              : users.isEmpty
-                  ? const Center(child: Text('No users found', style: TextStyle(color: VividColors.textMuted)))
-                  : ListView.builder(
-                      itemCount: users.length,
-                      itemBuilder: (context, index) {
-                        final user = users[index];
-                        final clientName = user['clients']?['name'] ?? 'No Client';
-                        final role = user['role'] ?? 'unknown';
+  Widget _buildUserActions(
+    BuildContext context,
+    Map<String, dynamic> user,
+    AdminProvider provider,
+  ) {
+    return SizedBox(
+      width: 90,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          IconButton(
+            onPressed: () => _showResetPasswordDialog(
+              context,
+              user['id'] as String,
+              user['name'] as String? ?? 'User',
+              provider,
+            ),
+            icon: const Icon(Icons.lock_reset, size: 18),
+            color: VividColors.cyan,
+            tooltip: 'Reset Password',
+            visualDensity: VisualDensity.compact,
+          ),
+          IconButton(
+            onPressed: () async {
+              final userId = user['id'] as String;
+              final userName = user['name'] as String? ?? 'User';
+              final currentStatus = user['status'] as String? ?? 'active';
+              final isBlocking = currentStatus != 'blocked';
+              final newStatus = isBlocking ? 'blocked' : 'active';
 
-                        return Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                          decoration: BoxDecoration(
-                            border: Border(
-                              bottom: BorderSide(color: VividColors.tealBlue.withOpacity(0.1)),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                flex: 2,
-                                child: Text(
-                                  user['name'] ?? '',
-                                  style: const TextStyle(color: VividColors.textPrimary),
-                                ),
-                              ),
-                              Expanded(
-                                flex: 3,
-                                child: Text(
-                                  user['email'] ?? '',
-                                  style: const TextStyle(color: VividColors.textMuted),
-                                ),
-                              ),
-                              Expanded(
-                                flex: 1,
-                                child: _RoleBadge(role: role),
-                              ),
-                              Expanded(
-                                flex: 2,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: VividColors.brightBlue.withOpacity(0.2),
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: Text(
-                                    clientName,
-                                    style: const TextStyle(color: VividColors.cyan, fontSize: 12),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ),
-                              SizedBox(
-                                width: 90,
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.end,
-                                  children: [
-                                    IconButton(
-                                      onPressed: () => _showResetPasswordDialog(
-                                        context,
-                                        user['id'] as String,
-                                        user['name'] as String? ?? 'User',
-                                        provider,
-                                      ),
-                                      icon: const Icon(Icons.lock_reset, size: 18),
-                                      color: VividColors.cyan,
-                                      tooltip: 'Reset Password',
-                                      visualDensity: VisualDensity.compact,
-                                    ),
-                                    IconButton(
-                                      onPressed: () async {
-                                        final userId = user['id'] as String;
-                                        final userName = user['name'] as String? ?? 'User';
-                                        final currentStatus = user['status'] as String? ?? 'active';
-                                        final isBlocking = currentStatus != 'blocked';
-                                        final newStatus = isBlocking ? 'blocked' : 'active';
-
-                                        final confirmed = await showDialog<bool>(
-                                          context: context,
-                                          builder: (ctx) => AlertDialog(
-                                            backgroundColor: VividColors.navy,
-                                            title: Text(
-                                              isBlocking ? 'Block User' : 'Unblock User',
-                                              style: const TextStyle(color: VividColors.textPrimary),
-                                            ),
-                                            content: Text(
-                                              isBlocking
-                                                  ? 'Block "$userName"? They will no longer be able to log in.'
-                                                  : 'Unblock "$userName"? They will be able to log in again.',
-                                              style: const TextStyle(color: VividColors.textMuted),
-                                            ),
-                                            actions: [
-                                              TextButton(
-                                                onPressed: () => Navigator.pop(ctx, false),
-                                                child: const Text('Cancel'),
-                                              ),
-                                              ElevatedButton(
-                                                onPressed: () => Navigator.pop(ctx, true),
-                                                style: ElevatedButton.styleFrom(
-                                                  backgroundColor: isBlocking ? Colors.red : VividColors.statusSuccess,
-                                                ),
-                                                child: Text(isBlocking ? 'Block' : 'Unblock'),
-                                              ),
-                                            ],
-                                          ),
-                                        );
-
-                                        if (confirmed == true && context.mounted) {
-                                          final success = await provider.toggleUserStatus(userId, newStatus);
-
-                                          if (context.mounted) {
-                                            ScaffoldMessenger.of(context).showSnackBar(
-                                              SnackBar(
-                                                content: Row(
-                                                  children: [
-                                                    Icon(
-                                                      success ? Icons.check_circle : Icons.error,
-                                                      color: Colors.white,
-                                                      size: 18,
-                                                    ),
-                                                    const SizedBox(width: 8),
-                                                    Text(success
-                                                        ? 'User "$userName" ${isBlocking ? "blocked" : "unblocked"}'
-                                                        : 'Failed to ${isBlocking ? "block" : "unblock"} user.'),
-                                                  ],
-                                                ),
-                                                backgroundColor: success ? VividColors.statusSuccess : Colors.red,
-                                                behavior: SnackBarBehavior.floating,
-                                              ),
-                                            );
-                                          }
-                                        }
-                                      },
-                                      icon: Icon(
-                                        (user['status'] as String? ?? 'active') == 'blocked'
-                                            ? Icons.lock_open
-                                            : Icons.block,
-                                        size: 18,
-                                      ),
-                                      color: (user['status'] as String? ?? 'active') == 'blocked'
-                                          ? VividColors.statusSuccess
-                                          : Colors.red.withOpacity(0.7),
-                                      tooltip: (user['status'] as String? ?? 'active') == 'blocked'
-                                          ? 'Unblock'
-                                          : 'Block',
-                                      visualDensity: VisualDensity.compact,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
+              final confirmed = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  backgroundColor: VividColors.navy,
+                  title: Text(
+                    isBlocking ? 'Block User' : 'Unblock User',
+                    style: const TextStyle(color: VividColors.textPrimary),
+                  ),
+                  content: Text(
+                    isBlocking
+                        ? 'Block "$userName"? They will no longer be able to log in.'
+                        : 'Unblock "$userName"? They will be able to log in again.',
+                    style: const TextStyle(color: VividColors.textMuted),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('Cancel'),
                     ),
-        ),
-      ],
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: isBlocking ? Colors.red : VividColors.statusSuccess,
+                      ),
+                      child: Text(isBlocking ? 'Block' : 'Unblock'),
+                    ),
+                  ],
+                ),
+              );
+
+              if (confirmed == true && context.mounted) {
+                final success = await provider.toggleUserStatus(userId, newStatus);
+
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Row(
+                        children: [
+                          Icon(
+                            success ? Icons.check_circle : Icons.error,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(success
+                              ? 'User "$userName" ${isBlocking ? "blocked" : "unblocked"}'
+                              : 'Failed to ${isBlocking ? "block" : "unblock"} user.'),
+                        ],
+                      ),
+                      backgroundColor: success ? VividColors.statusSuccess : Colors.red,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              }
+            },
+            icon: Icon(
+              (user['status'] as String? ?? 'active') == 'blocked'
+                  ? Icons.lock_open
+                  : Icons.block,
+              size: 18,
+            ),
+            color: (user['status'] as String? ?? 'active') == 'blocked'
+                ? VividColors.statusSuccess
+                : Colors.red.withOpacity(0.7),
+            tooltip: (user['status'] as String? ?? 'active') == 'blocked'
+                ? 'Unblock'
+                : 'Block',
+            visualDensity: VisualDensity.compact,
+          ),
+        ],
+      ),
     );
   }
 
@@ -1108,7 +1299,9 @@ class _UsersTab extends StatelessWidget {
               ],
             ),
             content: SizedBox(
-              width: 400,
+              width: MediaQuery.of(ctx).size.width < 600
+                  ? MediaQuery.of(ctx).size.width * 0.9
+                  : 400,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -1326,7 +1519,9 @@ class _ClientDialogState extends State<_ClientDialog> {
         style: const TextStyle(color: VividColors.textPrimary),
       ),
       content: SizedBox(
-        width: 500,
+        width: MediaQuery.of(context).size.width < 600
+            ? MediaQuery.of(context).size.width * 0.9
+            : 500,
         child: Form(
           key: _formKey,
           child: SingleChildScrollView(
@@ -1768,7 +1963,9 @@ class _UserDialogState extends State<_UserDialog> {
         style: const TextStyle(color: VividColors.textPrimary),
       ),
       content: SizedBox(
-        width: 500,
+        width: MediaQuery.of(context).size.width < 600
+            ? MediaQuery.of(context).size.width * 0.9
+            : 500,
         child: Form(
           key: _formKey,
           child: SingleChildScrollView(
@@ -2342,54 +2539,64 @@ class _AnalyticsTabState extends State<_AnalyticsTab> {
   Widget build(BuildContext context) {
     return Consumer<AdminProvider>(
       builder: (context, provider, _) {
-        if (provider.isLoading && provider.clients.isEmpty) {
-          return const Center(
-            child: CircularProgressIndicator(color: VividColors.cyan),
-          );
-        }
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final isMobile = constraints.maxWidth < 600;
 
-        return Row(
-          children: [
-            // Client list sidebar
-            Container(
-              width: 280,
-              decoration: BoxDecoration(
-                color: VividColors.navy,
-                border: Border(
-                  right: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
-                ),
-              ),
-              child: Column(
+            if (isMobile) {
+              // Mobile: full-screen list or detail
+              if (_selectedClient != null) {
+                return Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: VividColors.navy,
+                        border: Border(
+                          bottom: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          IconButton(
+                            onPressed: () => setState(() => _selectedClient = null),
+                            icon: const Icon(Icons.arrow_back, color: VividColors.textPrimary),
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              _selectedClient!.name,
+                              style: const TextStyle(
+                                color: VividColors.textPrimary,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(child: ClientAnalyticsView(client: _selectedClient!)),
+                  ],
+                );
+              }
+
+              return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Header
                   Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Select Client',
-                          style: TextStyle(
-                            color: VividColors.textPrimary,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'View internal metrics',
-                          style: TextStyle(
-                            color: VividColors.textMuted.withOpacity(0.7),
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
+                    padding: const EdgeInsets.all(16),
+                    child: const Text(
+                      'Select Client',
+                      style: TextStyle(
+                        color: VividColors.textPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                   const Divider(color: VividColors.tealBlue, height: 1),
-                  
-                  // Client list
                   Expanded(
                     child: ListView.builder(
                       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -2397,7 +2604,6 @@ class _AnalyticsTabState extends State<_AnalyticsTab> {
                       itemBuilder: (context, index) {
                         final client = provider.clients[index];
                         final isSelected = _selectedClient?.id == client.id;
-                        
                         return _ClientListItem(
                           client: client,
                           isSelected: isSelected,
@@ -2409,16 +2615,76 @@ class _AnalyticsTabState extends State<_AnalyticsTab> {
                     ),
                   ),
                 ],
-              ),
-            ),
-            
-            // Analytics content
-            Expanded(
-              child: _selectedClient == null
-                  ? _buildEmptyState()
-                  : ClientAnalyticsView(client: _selectedClient!),
-            ),
-          ],
+              );
+            }
+
+            // Desktop: side-by-side
+            return Row(
+              children: [
+                Container(
+                  width: 280,
+                  decoration: BoxDecoration(
+                    color: VividColors.navy,
+                    border: Border(
+                      right: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Select Client',
+                              style: TextStyle(
+                                color: VividColors.textPrimary,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'View internal metrics',
+                              style: TextStyle(
+                                color: VividColors.textMuted.withOpacity(0.7),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Divider(color: VividColors.tealBlue, height: 1),
+                      Expanded(
+                        child: ListView.builder(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          itemCount: provider.clients.length,
+                          itemBuilder: (context, index) {
+                            final client = provider.clients[index];
+                            final isSelected = _selectedClient?.id == client.id;
+                            return _ClientListItem(
+                              client: client,
+                              isSelected: isSelected,
+                              onTap: () {
+                                setState(() => _selectedClient = client);
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: _selectedClient == null
+                      ? _buildEmptyState()
+                      : ClientAnalyticsView(client: _selectedClient!),
+                ),
+              ],
+            );
+          },
         );
       },
     );

@@ -4,8 +4,7 @@ import 'package:provider/provider.dart';
 import 'services/supabase_service.dart';
 import 'providers/conversations_provider.dart';
 import 'providers/agent_provider.dart';
-import 'providers/analytics_provider.dart';
-import 'providers/broadcast_analytics_provider.dart';
+import 'providers/roi_analytics_provider.dart';
 import 'providers/admin_analytics_provider.dart';
 import 'providers/notification_provider.dart';
 import 'providers/ai_settings_provider.dart';
@@ -27,10 +26,12 @@ import 'widgets/manager_chat_panel.dart';
 import 'widgets/booking_reminders_panel.dart';
 import 'widgets/activity_logs_panel.dart';
 import 'theme/vivid_theme.dart';
+import 'utils/audio_controller.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SupabaseService.initialize();
+  AudioController.instance.init();
   runApp(const VividDashboardApp());
 }
 
@@ -43,8 +44,7 @@ class VividDashboardApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => AgentProvider()),
         ChangeNotifierProvider(create: (_) => ConversationsProvider()),
-        ChangeNotifierProvider(create: (_) => AnalyticsProvider()),
-        ChangeNotifierProvider(create: (_) => BroadcastAnalyticsProvider()),
+        ChangeNotifierProvider(create: (_) => RoiAnalyticsProvider()),
         ChangeNotifierProvider(create: (_) => AdminAnalyticsProvider()),
         ChangeNotifierProvider(create: (_) => NotificationProvider()),
         ChangeNotifierProvider(create: (_) => AiSettingsProvider()),
@@ -140,7 +140,6 @@ class _MainScaffoldState extends State<MainScaffold> {
       // Only initialize broadcasts if properly configured
       if (_isFeatureConfigured('broadcasts')) {
         context.read<BroadcastsProvider>().fetchBroadcasts();
-        context.read<BroadcastAnalyticsProvider>().fetchAnalytics();
       }
       
       // Only initialize booking reminders if properly configured
@@ -221,27 +220,119 @@ class _MainScaffoldState extends State<MainScaffold> {
     }
   }
 
+  /// Build list of available nav destinations for bottom nav
+  List<NavDestination> get _availableDestinations {
+    final destinations = <NavDestination>[];
+    if (ClientConfig.hasFeature('conversations')) destinations.add(NavDestination.conversations);
+    if (ClientConfig.hasFeature('broadcasts')) destinations.add(NavDestination.broadcasts);
+    if (ClientConfig.hasFeature('booking_reminders')) destinations.add(NavDestination.bookingReminders);
+    if (ClientConfig.hasFeature('analytics')) destinations.add(NavDestination.analytics);
+    if (ClientConfig.hasFeature('manager_chat')) destinations.add(NavDestination.managerChat);
+    if (ClientConfig.isClientAdmin) destinations.add(NavDestination.activityLogs);
+    return destinations;
+  }
+
+  IconData _navIcon(NavDestination dest) {
+    switch (dest) {
+      case NavDestination.conversations: return Icons.forum;
+      case NavDestination.broadcasts: return Icons.campaign;
+      case NavDestination.bookingReminders: return Icons.calendar_month;
+      case NavDestination.analytics: return Icons.analytics;
+      case NavDestination.managerChat: return Icons.chat_bubble_rounded;
+      case NavDestination.activityLogs: return Icons.history;
+    }
+  }
+
+  String _navLabel(NavDestination dest) {
+    switch (dest) {
+      case NavDestination.conversations: return 'Chats';
+      case NavDestination.broadcasts: return 'Broadcasts';
+      case NavDestination.bookingReminders: return 'Bookings';
+      case NavDestination.analytics: return 'Analytics';
+      case NavDestination.managerChat: return 'Vivid AI';
+      case NavDestination.activityLogs: return 'Logs';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: VividColors.darkNavy,
-      body: Row(
-        children: [
-          // Sidebar
-          Sidebar(
-            currentDestination: _currentDestination ?? NavDestination.conversations,
-            onDestinationChanged: (destination) {
-              setState(() {
-                _currentDestination = destination;
-              });
-            },
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 600;
+        final isTablet = constraints.maxWidth < 900;
+
+        if (isMobile) {
+          return Scaffold(
+            backgroundColor: VividColors.darkNavy,
+            body: _buildContent(),
+            bottomNavigationBar: _buildBottomNav(),
+          );
+        }
+
+        return Scaffold(
+          backgroundColor: VividColors.darkNavy,
+          body: Row(
+            children: [
+              Sidebar(
+                compact: isTablet,
+                currentDestination: _currentDestination ?? NavDestination.conversations,
+                onDestinationChanged: (destination) {
+                  setState(() => _currentDestination = destination);
+                },
+              ),
+              Expanded(child: _buildContent()),
+            ],
           ),
-          
-          // Main content
-          Expanded(
-            child: _buildContent(),
-          ),
-        ],
+        );
+      },
+    );
+  }
+
+  Widget _buildBottomNav() {
+    final destinations = _availableDestinations;
+    final current = _currentDestination ?? NavDestination.conversations;
+    final currentIndex = destinations.indexOf(current).clamp(0, destinations.length - 1);
+    final conversationsProvider = context.watch<ConversationsProvider>();
+
+    return Container(
+      decoration: BoxDecoration(
+        color: VividColors.navy,
+        border: Border(
+          top: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+        ),
+      ),
+      child: SafeArea(
+        top: false,
+        child: BottomNavigationBar(
+          currentIndex: currentIndex,
+          onTap: (index) {
+            setState(() => _currentDestination = destinations[index]);
+          },
+          type: BottomNavigationBarType.fixed,
+          backgroundColor: VividColors.navy,
+          selectedItemColor: VividColors.cyan,
+          unselectedItemColor: VividColors.textMuted,
+          selectedFontSize: 11,
+          unselectedFontSize: 10,
+          iconSize: 22,
+          items: destinations.map((dest) {
+            final unread = dest == NavDestination.conversations
+                ? conversationsProvider.totalUnreadCount
+                : 0;
+            return BottomNavigationBarItem(
+              icon: unread > 0
+                  ? Badge(
+                      label: Text(unread > 99 ? '99+' : '$unread',
+                          style: const TextStyle(fontSize: 9)),
+                      backgroundColor: VividColors.statusUrgent,
+                      child: Icon(_navIcon(dest)),
+                    )
+                  : Icon(_navIcon(dest)),
+              activeIcon: Icon(_navIcon(dest)),
+              label: _navLabel(dest),
+            );
+          }).toList(),
+        ),
       ),
     );
   }
@@ -261,7 +352,16 @@ class _MainScaffoldState extends State<MainScaffold> {
         if (ClientConfig.hasFeature('broadcasts') && !ClientConfig.hasFeature('conversations')) {
           return const BroadcastAnalyticsScreen();
         }
-        return const AnalyticsScreen();
+        return AnalyticsScreen(
+          onNavigateToConversation: (phone) {
+            final provider = context.read<ConversationsProvider>();
+            final conv = provider.conversations.where((c) => c.customerPhone == phone).firstOrNull;
+            if (conv != null) {
+              provider.selectConversation(conv);
+            }
+            setState(() => _currentDestination = NavDestination.conversations);
+          },
+        );
       case NavDestination.activityLogs:
         return _buildActivityLogsContent();
       default:
@@ -344,8 +444,9 @@ class _MainScaffoldState extends State<MainScaffold> {
         description: 'Activity logs are only available for administrators.',
       );
     }
+    final isMobile = MediaQuery.of(context).size.width < 600;
     return Padding(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.all(isMobile ? 8 : 24),
       child: ActivityLogsPanel(
         clientId: ClientConfig.currentClient?.id,
         clientName: ClientConfig.currentClient?.name,

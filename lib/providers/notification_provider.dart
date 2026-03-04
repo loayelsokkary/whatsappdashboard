@@ -62,30 +62,40 @@ class NotificationProvider extends ChangeNotifier {
   void _subscribeToMessages() {
     _channel?.unsubscribe();
 
+    // Use the client-specific messages table name
+    final tableName = ClientConfig.isConversationsConfigured
+        ? ClientConfig.messagesTableName
+        : 'messages';
+    final businessPhone = ClientConfig.conversationsPhone ?? ClientConfig.businessPhone;
+
     _channel = _client
         .channel('notifications_channel')
         .onPostgresChanges(
           event: PostgresChangeEvent.insert,
           schema: 'public',
-          table: 'messages',
+          table: tableName,
           callback: (payload) async {
             final newMessage = payload.newRecord;
             final aiPhone = newMessage['ai_phone']?.toString();
             final customerPhone = newMessage['customer_phone']?.toString();
 
             // Only process messages for our business
-            if (aiPhone != ClientConfig.businessPhone) return;
+            if (aiPhone != businessPhone) return;
             if (customerPhone == null) return;
+
+            // Only notify for customer messages (not broadcasts or system)
+            final customerMsg = (newMessage['customer_message']?.toString() ?? '').trim();
+            if (customerMsg.isEmpty) return;
 
             // For non-AI clients, always notify; for AI clients, only notify when AI is disabled
             final shouldNotify = !ClientConfig.hasAiConversations || await _checkAiDisabled(customerPhone);
 
             if (shouldNotify) {
               final notification = ManagerNotification(
-                id: newMessage['id'] as String,
+                id: newMessage['id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
                 customerPhone: customerPhone,
                 customerName: newMessage['customer_name'] as String?,
-                message: newMessage['customer_message'] as String? ?? '',
+                message: customerMsg,
                 createdAt: DateTime.now(),
               );
 
@@ -95,7 +105,7 @@ class NotificationProvider extends ChangeNotifier {
         )
         .subscribe();
 
-    print('Subscribed to notification channel');
+    print('Subscribed to notification channel: $tableName');
   }
 
   /// Check if AI is disabled for customer

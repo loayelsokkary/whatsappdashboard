@@ -118,26 +118,34 @@ class BroadcastAnalyticsProvider extends ChangeNotifier {
 
       print('📊 Fetching recipients from: $_recipientsTable');
 
-      // Fetch all recipients from client-specific table
-      final recipientsResponse = await _client
-          .from(_recipientsTable)
-          .select();
-
-      final recipients = recipientsResponse as List;
+      // Fetch all recipients (paginated — Supabase default limit is 1000)
+      List<Map<String, dynamic>> recipients = [];
+      const rPageSize = 1000;
+      int rFrom = 0;
+      while (true) {
+        final rRaw = await _client
+            .from(_recipientsTable)
+            .select()
+            .range(rFrom, rFrom + rPageSize - 1);
+        final rows = List<Map<String, dynamic>>.from(rRaw as List);
+        recipients.addAll(rows);
+        if (rows.length < rPageSize) break;
+        rFrom += rPageSize;
+      }
 
       // Calculate totals
       int totalRecipients = recipients.length;
       int totalDelivered = 0;
       int totalRead = 0;
       int totalFailed = 0;
-      int totalSent = 0;
 
       for (final r in recipients) {
-        final status = r['status']?.toString();
-        if (status == 'accepted') {
-          totalDelivered++;
-        } else {
+        final status = (r['status']?.toString() ?? '').toLowerCase().trim();
+        if (status == 'failed') {
           totalFailed++;
+        } else {
+          // NULL, empty, 'accepted', 'sent', 'delivered', etc. → sent successfully
+          totalDelivered++;
         }
       }
 
@@ -160,11 +168,12 @@ class BroadcastAnalyticsProvider extends ChangeNotifier {
         int failed = 0;
 
         for (final r in campaignRecipients) {
-          final status = r['status']?.toString();
-          if (status == 'accepted') {
-            delivered++;
-          } else {
+          final status = (r['status']?.toString() ?? '').toLowerCase().trim();
+          if (status == 'failed') {
             failed++;
+          } else {
+            // NULL, empty, 'accepted', 'sent', 'delivered', etc. → sent successfully
+            delivered++;
           }
         }
 

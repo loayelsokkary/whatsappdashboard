@@ -1,3 +1,5 @@
+import '../utils/initials_helper.dart';
+
 /// Simplified Data Models for Vivid WhatsApp Dashboard
 /// Single messages table - each row is one exchange
 
@@ -72,9 +74,9 @@ enum ActionType {
   String get displayName {
     switch (this) {
       case ActionType.login:
-        return 'Login';
+        return 'Session Started';
       case ActionType.logout:
-        return 'Logout';
+        return 'Session Ended';
       case ActionType.messageSent:
         return 'Message Sent';
       case ActionType.broadcastSent:
@@ -118,6 +120,9 @@ class RawExchange {
   final String? mediaUrl;
   final String? mediaType;
   final String? mediaFilename;
+  final bool isVoiceFlag;
+  final String? voiceNoteUrl;
+  final String? sentBy;
   final DateTime createdAt;
 
   const RawExchange({
@@ -133,13 +138,16 @@ class RawExchange {
     this.mediaUrl,
     this.mediaType,
     this.mediaFilename,
+    this.isVoiceFlag = false,
+    this.voiceNoteUrl,
+    this.sentBy,
     required this.createdAt,
   });
 
   factory RawExchange.fromJson(Map<String, dynamic> json) {
     final rawAiPhone = json['ai_phone'];
     final rawCustomerPhone = json['customer_phone'];
-    
+
     return RawExchange(
       id: json['id'] as String,
       aiPhone: rawAiPhone?.toString() ?? '',
@@ -153,14 +161,17 @@ class RawExchange {
       mediaUrl: json['media_url'] as String?,
       mediaType: json['media_type'] as String?,
       mediaFilename: json['media_filename'] as String?,
+      isVoiceFlag: json['is_voice_message'] as bool? ?? false,
+      voiceNoteUrl: json['voice_note_url'] as String?,
+      sentBy: json['sent_by'] as String?,
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : DateTime.now(),
     );
   }
 
-  bool get isVoiceMessage => voiceResponse != null && voiceResponse!.trim().isNotEmpty;
-  String get customerInput => isVoiceMessage ? voiceResponse! : customerMessage;
+  bool get isVoiceMessage => isVoiceFlag || (voiceResponse != null && voiceResponse!.trim().isNotEmpty);
+  String get customerInput => isVoiceMessage && voiceResponse != null ? voiceResponse! : customerMessage;
   bool get hasMedia => mediaUrl != null && mediaUrl!.isNotEmpty;
   bool get isImage => mediaType == 'image';
   bool get isDocument => mediaType == 'document' || mediaType == 'pdf';
@@ -197,10 +208,13 @@ class Message {
   final String? senderName;
   final DateTime createdAt;
   final bool isVoiceMessage;
+  final String? voiceNoteUrl;
   final String? label;
   final String? mediaUrl;
   final String? mediaType;
   final String? mediaFilename;
+  final String? replyToId;
+  final Message? replyToMessage;
 
   const Message({
     required this.id,
@@ -210,10 +224,13 @@ class Message {
     this.senderName,
     required this.createdAt,
     this.isVoiceMessage = false,
+    this.voiceNoteUrl,
     this.label,
     this.mediaUrl,
     this.mediaType,
     this.mediaFilename,
+    this.replyToId,
+    this.replyToMessage,
   });
 
   bool get hasMedia => mediaUrl != null && mediaUrl!.isNotEmpty;
@@ -272,6 +289,27 @@ class Conversation {
       label: clearLabel ? null : (label ?? this.label),
     );
   }
+}
+
+/// A single message-level search result
+class MessageSearchResult {
+  final String customerPhone;
+  final String? customerName;
+  final String matchedText;
+  final String matchedField; // 'customer_message', 'manager_response', 'name', 'phone'
+  final DateTime date;
+  final String exchangeId;
+
+  const MessageSearchResult({
+    required this.customerPhone,
+    this.customerName,
+    required this.matchedText,
+    required this.matchedField,
+    required this.date,
+    required this.exchangeId,
+  });
+
+  String get displayName => customerName ?? customerPhone;
 }
 
 // ============================================
@@ -723,13 +761,7 @@ class AppUser {
   }
 
   /// Get the user's initials
-  String get initials {
-    final parts = name.split(' ');
-    if (parts.length >= 2) {
-      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-    }
-    return name.substring(0, name.length.clamp(0, 2)).toUpperCase();
-  }
+  String get initials => getInitials(name);
 }
 
 // ============================================
@@ -1072,13 +1104,7 @@ class Agent {
     required this.email,
   });
 
-  String get initials {
-    final parts = name.split(' ');
-    if (parts.length >= 2) {
-      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-    }
-    return name.substring(0, name.length.clamp(0, 2)).toUpperCase();
-  }
+  String get initials => getInitials(name);
 }
 
 // ============================================

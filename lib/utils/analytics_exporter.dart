@@ -2,231 +2,219 @@ import 'dart:convert';
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 import 'dart:typed_data';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../models/models.dart';
+import '../providers/roi_analytics_provider.dart';
+import 'initials_helper.dart';
 
-/// Utility class for exporting analytics data to CSV, Excel, and PDF
+/// Utility class for exporting analytics data to CSV and PDF.
+/// Works with the v4 ROI analytics data models.
 class AnalyticsExporter {
-  // Brand colors for PDF
   static final _pdfColors = _PdfBrandColors();
+  static pw.Font? _arabicFont;
+
+  static Future<pw.Font> _loadArabicFont() async {
+    if (_arabicFont != null) return _arabicFont!;
+    final fontData = await rootBundle.load('assets/fonts/NotoSansArabic-Regular.ttf');
+    _arabicFont = pw.Font.ttf(fontData);
+    return _arabicFont!;
+  }
 
   // ============================================
-  // ANALYTICS EXPORT - CSV
+  // ANALYTICS - CSV (Change 9: Organized export)
   // ============================================
 
-  static void exportAnalyticsToCsv({
-    required dynamic data,
-    required List<dynamic> dailyActivity,
-    required List<dynamic> topCustomers,
-    required String analyticsType,
-    String filename = 'analytics_export',
+  static void exportAnalyticsCsv({
+    required AnalyticsData data,
+    required String clientName,
+    required String dateRange,
   }) {
     final buffer = StringBuffer();
-    final timestamp = DateTime.now().toIso8601String().split('T')[0];
+    final timestamp = _formatDateIso(DateTime.now());
+    final m = data.current;
 
-    buffer.writeln('${analyticsType.toUpperCase()} ANALYTICS REPORT');
+    // Section: Header
+    buffer.writeln('# ═══════════════════════════════════════');
+    buffer.writeln('# ANALYTICS REPORT');
+    buffer.writeln('# ═══════════════════════════════════════');
     buffer.writeln('Generated,$timestamp');
-    buffer.writeln('Business,${ClientConfig.businessName}');
+    buffer.writeln('Business,${_escapeCsv(clientName)}');
+    buffer.writeln('Date Range,$dateRange');
     buffer.writeln('');
 
-    buffer.writeln('SUMMARY');
+    // Section: Overview
+    buffer.writeln('# ─── OVERVIEW METRICS ───');
     buffer.writeln('Metric,Value');
-    if (analyticsType == 'broadcasts') {
-      buffer.writeln('Total Recipients,${data.totalMessages}');
-      buffer.writeln('Total Campaigns,${data.aiResponses}');
-      buffer.writeln('Avg Recipients per Campaign,${data.aiResponses > 0 ? (data.totalMessages / data.aiResponses).round() : 0}');
-      buffer.writeln('Today Recipients,${data.todayMessages}');
-      buffer.writeln('This Week Recipients,${data.thisWeekMessages}');
-      buffer.writeln('This Month Recipients,${data.thisMonthMessages}');
-    } else {
-      final hasAi = ClientConfig.currentClient?.hasAiConversations ?? false;
-      buffer.writeln('Total Messages,${data.totalMessages}');
-      if (hasAi) {
-        buffer.writeln('AI Responses,${data.aiResponses}');
-      }
-      buffer.writeln('Manager Responses,${data.managerResponses}');
-      buffer.writeln('Unique Customers,${data.uniqueCustomers}');
-      buffer.writeln('Today,${data.todayMessages}');
-      buffer.writeln('This Week,${data.thisWeekMessages}');
-      buffer.writeln('This Month,${data.thisMonthMessages}');
-      if (data.totalMessages > 0) {
-        if (hasAi) {
-          final aiRate = ((data.aiResponses / data.totalMessages) * 100).toStringAsFixed(1);
-          buffer.writeln('AI Response Rate,$aiRate%');
-        }
-        final managerRate = ((data.managerResponses / data.totalMessages) * 100).toStringAsFixed(1);
-        buffer.writeln('Manager Response Rate,$managerRate%');
-      }
-    }
+    buffer.writeln('Leads,${m.leads}');
+    buffer.writeln('Revenue,"${_fmtNumber(m.revenue)} BHD"');
+    buffer.writeln('Engagement Rate,${m.engagementRate.toStringAsFixed(1)}%');
+    buffer.writeln('Avg Response Time,${_fmtDurationCsv(m.avgResponseTimeSeconds)}');
+    buffer.writeln('Open Conversations,${m.openConversationCount}');
+    buffer.writeln('Overdue Conversations,${m.overdueConversationCount}');
+    buffer.writeln('Messages Sent,"${_fmtInt(m.messagesSent)}"');
+    buffer.writeln('Messages Received,"${_fmtInt(m.messagesReceived)}"');
     buffer.writeln('');
 
-    buffer.writeln('DAILY ACTIVITY');
-    buffer.writeln(analyticsType == 'broadcasts' ? 'Date,Recipients' : 'Date,Messages');
-    for (final day in dailyActivity) {
-      buffer.writeln('${_formatDateIso(day.date)},${day.count}');
+    // Section: Comparison
+    if (data.comparison != null) {
+      final c = data.comparison!;
+      buffer.writeln('# ─── COMPARISON PERIOD ───');
+      buffer.writeln('Metric,Value');
+      buffer.writeln('Leads,${c.leads}');
+      buffer.writeln('Revenue,"${_fmtNumber(c.revenue)} BHD"');
+      buffer.writeln('Engagement Rate,${c.engagementRate.toStringAsFixed(1)}%');
+      buffer.writeln('Avg Response Time,${_fmtDurationCsv(c.avgResponseTimeSeconds)}');
+      buffer.writeln('Messages Sent,"${_fmtInt(c.messagesSent)}"');
+      buffer.writeln('Messages Received,"${_fmtInt(c.messagesReceived)}"');
+      buffer.writeln('');
     }
-    buffer.writeln('');
 
-    if (analyticsType == 'broadcasts') {
-      buffer.writeln('TOP CAMPAIGNS');
-      buffer.writeln('Rank,Campaign,Recipients');
-      for (var i = 0; i < topCustomers.length; i++) {
-        final c = topCustomers[i];
-        final name = c.name ?? 'Unnamed Campaign';
-        buffer.writeln('${i + 1},${_escapeCsv(name)},${c.messageCount}');
+    // Section: Campaign performance
+    if (data.campaigns.isNotEmpty) {
+      buffer.writeln('# ─── CAMPAIGN PERFORMANCE ───');
+      buffer.writeln('Campaign,Date,Sent,Responded,Leads,Revenue,Engagement Rate');
+      for (final c in data.campaigns) {
+        final date = c.sentAt != null ? _formatDateIso(c.sentAt!) : 'N/A';
+        buffer.writeln(
+          '${_escapeCsv(c.name)},$date,${c.sent},${c.responded},${c.leads},"${_fmtNumber(c.revenue)} BHD",${c.engagementRate.toStringAsFixed(1)}%',
+        );
       }
-    } else {
-      buffer.writeln('TOP CUSTOMERS');
-      buffer.writeln('Rank,Name,Phone,Messages');
-      for (var i = 0; i < topCustomers.length; i++) {
-        final c = topCustomers[i];
-        final name = c.name ?? 'Unknown';
-        buffer.writeln('${i + 1},${_escapeCsv(name)},${c.phone},${c.messageCount}');
+      buffer.writeln('');
+    }
+
+    // Section: Open conversations
+    if (data.openConversations.isNotEmpty) {
+      buffer.writeln('# ─── OPEN CONVERSATIONS ───');
+      buffer.writeln('Phone,Name,Last Message,Waiting Time');
+      for (final c in data.openConversations) {
+        buffer.writeln(
+          '${c.customerPhone},${_escapeCsv(c.customerName ?? '')},${_escapeCsv(c.lastMessage)},${_fmtWaitTimeCsv(c.waitingTime)}',
+        );
+      }
+      buffer.writeln('');
+    }
+
+    // Section: Daily breakdown
+    if (data.dailyBreakdown.isNotEmpty) {
+      buffer.writeln('# ─── DAILY BREAKDOWN ───');
+      buffer.writeln('Date,Leads,Revenue,Engagement Rate,Avg Response Time');
+      for (final d in data.dailyBreakdown) {
+        buffer.writeln(
+          '${d.date},${d.leads},"${_fmtNumber(d.revenue)} BHD",${d.engagementRate.toStringAsFixed(1)}%,${_fmtDurationCsv(d.avgResponseTimeSeconds)}',
+        );
       }
     }
 
     _downloadFile(
       content: utf8.encode(buffer.toString()),
-      filename: '${filename}_${analyticsType}_$timestamp.csv',
+      filename: 'analytics_$timestamp.csv',
       mimeType: 'text/csv',
     );
   }
 
-  // ============================================
-  // ANALYTICS EXPORT - EXCEL
-  // ============================================
+  // CSV formatting helpers
+  static String _fmtNumber(double v) {
+    if (v == 0) return '0';
+    if (v == v.roundToDouble()) return v.toStringAsFixed(0);
+    return v.toStringAsFixed(2);
+  }
 
-  static void exportAnalyticsToExcel({
-    required dynamic data,
-    required List<dynamic> dailyActivity,
-    required List<dynamic> topCustomers,
-    required String analyticsType,
-    String filename = 'analytics_export',
-  }) {
-    final buffer = StringBuffer();
-    final timestamp = DateTime.now().toIso8601String().split('T')[0];
-    final typeTitle = analyticsType == 'conversations' ? 'Conversations' : 'Broadcasts';
+  static String _fmtInt(int v) {
+    if (v < 1000) return v.toString();
+    if (v < 1000000) return '${(v / 1000).toStringAsFixed(1)}K';
+    return '${(v / 1000000).toStringAsFixed(1)}M';
+  }
 
-    buffer.writeln('<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">');
-    buffer.writeln('<head><meta charset="UTF-8">');
-    buffer.writeln('<style>');
-    buffer.writeln('body { font-family: Arial, sans-serif; }');
-    buffer.writeln('table { border-collapse: collapse; margin-bottom: 30px; }');
-    buffer.writeln('th { background-color: #1E88E5; color: white; font-weight: bold; padding: 12px; text-align: left; }');
-    buffer.writeln('td { padding: 10px; border: 1px solid #e0e0e0; }');
-    buffer.writeln('.header { background-color: #0A1628; color: #00D9FF; font-size: 18px; padding: 15px; }');
-    buffer.writeln('.metric-label { font-weight: 600; background-color: #f8f9fa; color: #333; }');
-    buffer.writeln('.number { text-align: right; font-weight: 500; color: #1E88E5; }');
-    buffer.writeln('.highlight { background-color: #f0f7ff; }');
-    buffer.writeln('</style></head><body>');
-
-    // Summary Table
-    buffer.writeln('<table width="500">');
-    buffer.writeln('<tr><th colspan="2" class="header">$typeTitle Analytics - ${_escapeHtml(ClientConfig.businessName)}</th></tr>');
-    buffer.writeln('<tr><td class="metric-label">Report Generated</td><td>$timestamp</td></tr>');
-    if (analyticsType == 'broadcasts') {
-      buffer.writeln('<tr><td class="metric-label">Total Recipients</td><td class="number">${data.totalMessages}</td></tr>');
-      buffer.writeln('<tr><td class="metric-label">Total Campaigns</td><td class="number">${data.aiResponses}</td></tr>');
-      buffer.writeln('<tr><td class="metric-label">Avg Recipients per Campaign</td><td class="number">${data.aiResponses > 0 ? (data.totalMessages / data.aiResponses).round() : 0}</td></tr>');
-      buffer.writeln('<tr><td class="metric-label">Today Recipients</td><td class="number">${data.todayMessages}</td></tr>');
-      buffer.writeln('<tr><td class="metric-label">This Week Recipients</td><td class="number">${data.thisWeekMessages}</td></tr>');
-      buffer.writeln('<tr><td class="metric-label">This Month Recipients</td><td class="number">${data.thisMonthMessages}</td></tr>');
-    } else {
-      final hasAi = ClientConfig.currentClient?.hasAiConversations ?? false;
-      buffer.writeln('<tr><td class="metric-label">Total Messages</td><td class="number">${data.totalMessages}</td></tr>');
-      if (hasAi) {
-        buffer.writeln('<tr><td class="metric-label">AI Responses</td><td class="number">${data.aiResponses}</td></tr>');
-      }
-      buffer.writeln('<tr><td class="metric-label">Manager Responses</td><td class="number">${data.managerResponses}</td></tr>');
-      buffer.writeln('<tr><td class="metric-label">Unique Customers</td><td class="number">${data.uniqueCustomers}</td></tr>');
-      buffer.writeln('<tr><td class="metric-label">Today</td><td class="number">${data.todayMessages}</td></tr>');
-      buffer.writeln('<tr><td class="metric-label">This Week</td><td class="number">${data.thisWeekMessages}</td></tr>');
-      buffer.writeln('<tr><td class="metric-label">This Month</td><td class="number">${data.thisMonthMessages}</td></tr>');
+  static String _fmtDurationCsv(double seconds) {
+    if (seconds <= 0) return '0s';
+    if (seconds < 60) return '${seconds.toStringAsFixed(0)}s';
+    if (seconds < 3600) {
+      final m = (seconds / 60).floor();
+      final s = (seconds % 60).floor();
+      return s > 0 ? '${m}m ${s}s' : '${m}m';
     }
-    buffer.writeln('</table>');
+    final h = (seconds / 3600).floor();
+    final m = ((seconds % 3600) / 60).floor();
+    return m > 0 ? '${h}h ${m}m' : '${h}h';
+  }
 
-    // Daily Activity Table
-    final activityLabel = analyticsType == 'broadcasts' ? 'Recipients' : 'Messages';
-    buffer.writeln('<table width="300">');
-    buffer.writeln('<tr><th colspan="2">Daily Activity</th></tr>');
-    buffer.writeln('<tr><th>Date</th><th>$activityLabel</th></tr>');
-    for (var i = 0; i < dailyActivity.length; i++) {
-      final day = dailyActivity[i];
-      final rowClass = i % 2 == 0 ? '' : ' class="highlight"';
-      buffer.writeln('<tr$rowClass><td>${_formatDateIso(day.date)}</td><td class="number">${day.count}</td></tr>');
-    }
-    buffer.writeln('</table>');
-
-    // Top Campaigns / Top Customers Table
-    if (analyticsType == 'broadcasts') {
-      buffer.writeln('<table width="400">');
-      buffer.writeln('<tr><th colspan="3">Top Campaigns</th></tr>');
-      buffer.writeln('<tr><th>#</th><th>Campaign</th><th>Recipients</th></tr>');
-      for (var i = 0; i < topCustomers.length; i++) {
-        final c = topCustomers[i];
-        final rowClass = i % 2 == 0 ? '' : ' class="highlight"';
-        final name = c.name ?? 'Unnamed Campaign';
-        buffer.writeln('<tr$rowClass><td>${i + 1}</td><td>${_escapeHtml(name)}</td><td class="number">${c.messageCount}</td></tr>');
-      }
-    } else {
-      buffer.writeln('<table width="500">');
-      buffer.writeln('<tr><th colspan="4">Top Customers</th></tr>');
-      buffer.writeln('<tr><th>#</th><th>Name</th><th>Phone</th><th>Messages</th></tr>');
-      for (var i = 0; i < topCustomers.length; i++) {
-        final c = topCustomers[i];
-        final rowClass = i % 2 == 0 ? '' : ' class="highlight"';
-        final name = c.name ?? 'Unknown';
-        buffer.writeln('<tr$rowClass><td>${i + 1}</td><td>${_escapeHtml(name)}</td><td>${c.phone}</td><td class="number">${c.messageCount}</td></tr>');
-      }
-    }
-    buffer.writeln('</table></body></html>');
-
-    _downloadFile(
-      content: utf8.encode(buffer.toString()),
-      filename: '${filename}_${analyticsType}_$timestamp.xls',
-      mimeType: 'application/vnd.ms-excel',
-    );
+  static String _fmtWaitTimeCsv(Duration d) {
+    if (d.inDays > 0) return '${d.inDays}d ${d.inHours % 24}h';
+    if (d.inHours > 0) return '${d.inHours}h ${d.inMinutes % 60}m';
+    return '${d.inMinutes}m';
   }
 
   // ============================================
-  // ANALYTICS EXPORT - PDF
+  // ANALYTICS - PDF (Change 8: Branded export)
   // ============================================
 
-  static Future<void> exportAnalyticsToPdf({
-    required dynamic data,
-    required List<dynamic> dailyActivity,
-    required List<dynamic> topCustomers,
-    required String analyticsType,
-    String filename = 'analytics_report',
+  static Future<void> exportAnalyticsPdf({
+    required AnalyticsData data,
+    required String clientName,
+    required String dateRange,
   }) async {
+    final arabicFont = await _loadArabicFont();
     final pdf = pw.Document();
-    final timestamp = DateTime.now();
-    final timestampStr = _formatDateIso(timestamp);
-    final typeTitle = analyticsType == 'conversations' ? 'Conversations' : 'Broadcasts';
-
-    final isBroadcasts = analyticsType == 'broadcasts';
+    final timestamp = _formatDateIso(DateTime.now());
+    final m = data.current;
 
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(40),
-        header: (context) => _buildPdfHeader(typeTitle, timestampStr),
+        theme: pw.ThemeData.withFont(fontFallback: [arabicFont]),
+        header: (context) => _buildBrandedHeader(clientName, '$dateRange  |  $timestamp'),
         footer: (context) => _buildPdfFooter(context),
         build: (context) => [
-          _buildPdfSectionHeader('Summary Statistics'),
-          pw.SizedBox(height: 16),
-          isBroadcasts ? _buildPdfBroadcastStatsRow(data) : _buildPdfStatsRow(data),
-          pw.SizedBox(height: 20),
-          _buildPdfTimeStats(data, label: isBroadcasts ? 'recipients' : 'messages'),
+          // Overview section
+          _buildColoredSectionHeader('Overview Metrics', _pdfColors.cyan),
+          pw.SizedBox(height: 14),
+          // 2x4 KPI grid
+          pw.Row(children: [
+            _buildPdfStatCard('Leads', '${m.leads}', _pdfColors.cyan),
+            pw.SizedBox(width: 8),
+            _buildPdfStatCard('Revenue', '${m.revenue.toStringAsFixed(0)} BHD', _pdfColors.green),
+            pw.SizedBox(width: 8),
+            _buildPdfStatCard('Engagement', '${m.engagementRate.toStringAsFixed(0)}%', _pdfColors.blue),
+            pw.SizedBox(width: 8),
+            _buildPdfStatCard('Avg Response', _formatDurationPdf(m.avgResponseTimeSeconds), _pdfColors.orange),
+          ]),
+          pw.SizedBox(height: 8),
+          pw.Row(children: [
+            _buildPdfStatCard('Messages Sent', '${m.messagesSent}', _pdfColors.blue),
+            pw.SizedBox(width: 8),
+            _buildPdfStatCard('Messages Received', '${m.messagesReceived}', _pdfColors.cyan),
+            pw.SizedBox(width: 8),
+            _buildPdfStatCard('Open Convos', '${m.openConversationCount}', m.overdueConversationCount > 0 ? _pdfColors.red : _pdfColors.teal),
+            pw.SizedBox(width: 8),
+            _buildPdfStatCard('Overdue', '${m.overdueConversationCount}', m.overdueConversationCount > 0 ? _pdfColors.red : _pdfColors.green),
+          ]),
           pw.SizedBox(height: 24),
-          _buildPdfSectionHeader(isBroadcasts ? 'Activity (Last 7 Days)' : 'Activity (Last 7 Days)'),
-          pw.SizedBox(height: 16),
-          _buildPdfActivityChart(dailyActivity.take(7).toList()),
-          pw.SizedBox(height: 24),
-          _buildPdfSectionHeader(isBroadcasts ? 'Top Campaigns' : 'Top Customers'),
-          pw.SizedBox(height: 16),
-          isBroadcasts ? _buildPdfCampaignListTable(topCustomers) : _buildPdfCustomerTable(topCustomers),
+
+          // Campaign performance
+          if (data.campaigns.isNotEmpty) ...[
+            _buildColoredSectionHeader('Campaign Performance', _pdfColors.blue),
+            pw.SizedBox(height: 14),
+            _buildCampaignTable(data.campaigns),
+            pw.SizedBox(height: 24),
+          ],
+
+          // Open conversations
+          if (data.openConversations.isNotEmpty) ...[
+            _buildColoredSectionHeader('Open Conversations', _pdfColors.orange),
+            pw.SizedBox(height: 14),
+            _buildOpenConversationsTable(data.openConversations),
+            pw.SizedBox(height: 24),
+          ],
+
+          // Daily breakdown
+          if (data.dailyBreakdown.isNotEmpty) ...[
+            _buildColoredSectionHeader('Daily Breakdown', _pdfColors.teal),
+            pw.SizedBox(height: 14),
+            _buildDailyTable(data.dailyBreakdown),
+          ],
         ],
       ),
     );
@@ -234,8 +222,167 @@ class AnalyticsExporter {
     final bytes = await pdf.save();
     _downloadFile(
       content: bytes,
-      filename: '${filename}_${analyticsType}_$timestampStr.pdf',
+      filename: 'analytics_$timestamp.pdf',
       mimeType: 'application/pdf',
+    );
+  }
+
+  static String _formatDurationPdf(double seconds) {
+    if (seconds <= 0) return '0s';
+    if (seconds < 60) return '${seconds.toStringAsFixed(0)}s';
+    if (seconds < 3600) {
+      final m = (seconds / 60).floor();
+      final s = (seconds % 60).floor();
+      return s > 0 ? '${m}m ${s}s' : '${m}m';
+    }
+    final h = (seconds / 3600).floor();
+    final m = ((seconds % 3600) / 60).floor();
+    return m > 0 ? '${h}h ${m}m' : '${h}h';
+  }
+
+  // ============================================
+  // PDF TABLES
+  // ============================================
+
+  static pw.Widget _buildCampaignTable(List<CampaignPerformance> campaigns) {
+    return pw.Table(
+      border: pw.TableBorder.all(color: PdfColor.fromHex('#E0E0E0'), width: 0.5),
+      columnWidths: {
+        0: const pw.FlexColumnWidth(2.5),
+        1: const pw.FixedColumnWidth(50),
+        2: const pw.FixedColumnWidth(45),
+        3: const pw.FixedColumnWidth(55),
+        4: const pw.FixedColumnWidth(40),
+        5: const pw.FixedColumnWidth(50),
+        6: const pw.FixedColumnWidth(50),
+      },
+      children: [
+        pw.TableRow(
+          decoration: pw.BoxDecoration(color: _pdfColors.navy),
+          children: ['Campaign', 'Date', 'Sent', 'Responded', 'Leads', 'Revenue', 'Eng. %'].map((h) => pw.Padding(
+            padding: const pw.EdgeInsets.all(8),
+            child: pw.Text(h, style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: PdfColors.white)),
+          )).toList(),
+        ),
+        ...List.generate(campaigns.length, (i) {
+          final c = campaigns[i];
+          final bg = i % 2 == 0 ? PdfColors.white : PdfColor.fromHex('#F8F9FA');
+
+          return pw.TableRow(
+            decoration: pw.BoxDecoration(color: bg),
+            children: [
+              pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(
+                c.name,
+                style: pw.TextStyle(fontSize: 8, color: _pdfColors.navy),
+                textDirection: isArabicText(c.name) ? pw.TextDirection.rtl : pw.TextDirection.ltr,
+              )),
+              pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(
+                c.sentAt != null ? _formatDateShort(c.sentAt!) : 'N/A',
+                style: const pw.TextStyle(fontSize: 7),
+              )),
+              pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('${c.sent}', style: const pw.TextStyle(fontSize: 8), textAlign: pw.TextAlign.center)),
+              pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('${c.responded}', style: pw.TextStyle(fontSize: 8, color: _pdfColors.green), textAlign: pw.TextAlign.center)),
+              pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('${c.leads}', style: pw.TextStyle(fontSize: 8, color: _pdfColors.cyan), textAlign: pw.TextAlign.center)),
+              pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(
+                c.revenue > 0 ? c.revenue.toStringAsFixed(0) : '-',
+                style: pw.TextStyle(fontSize: 8, color: c.revenue > 0 ? _pdfColors.green : _pdfColors.textMuted),
+                textAlign: pw.TextAlign.center,
+              )),
+              pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('${c.engagementRate.toStringAsFixed(0)}%', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: _pdfColors.blue), textAlign: pw.TextAlign.center)),
+            ],
+          );
+        }),
+      ],
+    );
+  }
+
+  static pw.Widget _buildOpenConversationsTable(List<OpenConversation> convos) {
+    final sorted = [...convos]..sort((a, b) => b.waitingTime.compareTo(a.waitingTime));
+    final display = sorted.take(20).toList();
+
+    return pw.Table(
+      border: pw.TableBorder.all(color: PdfColor.fromHex('#E0E0E0'), width: 0.5),
+      columnWidths: {
+        0: const pw.FlexColumnWidth(1.5),
+        1: const pw.FlexColumnWidth(1.5),
+        2: const pw.FlexColumnWidth(3),
+        3: const pw.FixedColumnWidth(55),
+      },
+      children: [
+        pw.TableRow(
+          decoration: pw.BoxDecoration(color: _pdfColors.navy),
+          children: ['Phone', 'Name', 'Last Message', 'Waiting'].map((h) => pw.Padding(
+            padding: const pw.EdgeInsets.all(8),
+            child: pw.Text(h, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColors.white)),
+          )).toList(),
+        ),
+        ...List.generate(display.length, (i) {
+          final c = display[i];
+          final bg = i % 2 == 0 ? PdfColors.white : PdfColor.fromHex('#F8F9FA');
+          final waitMin = c.waitingTime.inMinutes;
+          final waitLabel = waitMin > 1440 ? '${waitMin ~/ 1440}d' : waitMin > 60 ? '${waitMin ~/ 60}h' : '${waitMin}m';
+
+          return pw.TableRow(
+            decoration: pw.BoxDecoration(color: bg),
+            children: [
+              pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(c.customerPhone, style: const pw.TextStyle(fontSize: 8))),
+              pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(
+                c.customerName ?? '-',
+                style: pw.TextStyle(fontSize: 8, color: _pdfColors.navy),
+                textDirection: isArabicText(c.customerName ?? '') ? pw.TextDirection.rtl : pw.TextDirection.ltr,
+              )),
+              pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(
+                c.lastMessage.length > 60 ? '${c.lastMessage.substring(0, 60)}...' : c.lastMessage,
+                style: pw.TextStyle(fontSize: 8, color: _pdfColors.textMuted),
+                textDirection: isArabicText(c.lastMessage) ? pw.TextDirection.rtl : pw.TextDirection.ltr,
+              )),
+              pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(
+                waitLabel,
+                style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: waitMin > 30 ? _pdfColors.red : _pdfColors.orange),
+                textAlign: pw.TextAlign.center,
+              )),
+            ],
+          );
+        }),
+      ],
+    );
+  }
+
+  static pw.Widget _buildDailyTable(List<DailyBreakdown> days) {
+    final recent = days.length > 30 ? days.sublist(days.length - 30) : days;
+
+    return pw.Table(
+      border: pw.TableBorder.all(color: PdfColor.fromHex('#E0E0E0'), width: 0.5),
+      columnWidths: {
+        0: const pw.FlexColumnWidth(2),
+        1: const pw.FixedColumnWidth(40),
+        2: const pw.FixedColumnWidth(50),
+        3: const pw.FixedColumnWidth(55),
+        4: const pw.FixedColumnWidth(55),
+      },
+      children: [
+        pw.TableRow(
+          decoration: pw.BoxDecoration(color: _pdfColors.navy),
+          children: ['Date', 'Leads', 'Revenue', 'Eng. Rate', 'Resp. Time'].map((h) => pw.Padding(
+            padding: const pw.EdgeInsets.all(8),
+            child: pw.Text(h, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColors.white)),
+          )).toList(),
+        ),
+        ...List.generate(recent.length, (i) {
+          final d = recent[i];
+          final bg = i % 2 == 0 ? PdfColors.white : PdfColor.fromHex('#F8F9FA');
+          return pw.TableRow(
+            decoration: pw.BoxDecoration(color: bg),
+            children: [
+              pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(d.date, style: const pw.TextStyle(fontSize: 9))),
+              pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('${d.leads}', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: _pdfColors.cyan), textAlign: pw.TextAlign.center)),
+              pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(d.revenue > 0 ? d.revenue.toStringAsFixed(0) : '-', style: pw.TextStyle(fontSize: 9, color: d.revenue > 0 ? _pdfColors.green : _pdfColors.textMuted), textAlign: pw.TextAlign.center)),
+              pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('${d.engagementRate.toStringAsFixed(0)}%', style: pw.TextStyle(fontSize: 9, color: _pdfColors.blue), textAlign: pw.TextAlign.center)),
+              pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(_formatDurationPdf(d.avgResponseTimeSeconds), style: const pw.TextStyle(fontSize: 9), textAlign: pw.TextAlign.center)),
+            ],
+          );
+        }),
+      ],
     );
   }
 
@@ -243,44 +390,53 @@ class AnalyticsExporter {
   // PDF HELPER WIDGETS
   // ============================================
 
-  static pw.Widget _buildPdfHeader(String title, String timestamp) {
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        pw.Row(
-          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-          children: [
-            pw.Text(
-              '$title Analytics',
-              style: pw.TextStyle(
-                fontSize: 22,
+  // Change 8: Branded dark navy header rectangle
+  static pw.Widget _buildBrandedHeader(String clientName, String subtitle) {
+    return pw.Container(
+      width: double.infinity,
+      padding: const pw.EdgeInsets.symmetric(horizontal: 24, vertical: 18),
+      margin: const pw.EdgeInsets.only(bottom: 20),
+      decoration: pw.BoxDecoration(
+        color: _pdfColors.navy,
+        borderRadius: pw.BorderRadius.circular(10),
+      ),
+      child: pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text('VIVID', style: pw.TextStyle(
+                fontSize: 10,
                 fontWeight: pw.FontWeight.bold,
-                color: _pdfColors.navy,
-              ),
-            ),
-            pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.end,
-              children: [
-                pw.Text(
-                  ClientConfig.businessName,
-                  style: pw.TextStyle(
-                    fontSize: 12,
-                    fontWeight: pw.FontWeight.bold,
-                    color: _pdfColors.navy,
-                  ),
-                ),
-                pw.Text(
-                  timestamp,
-                  style: pw.TextStyle(fontSize: 10, color: _pdfColors.textMuted),
-                ),
-              ],
-            ),
-          ],
-        ),
-        pw.SizedBox(height: 4),
-        pw.Container(height: 3, color: _pdfColors.primary),
-        pw.SizedBox(height: 20),
-      ],
+                color: _pdfColors.primary,
+                letterSpacing: 3,
+              )),
+              pw.SizedBox(height: 4),
+              pw.Text('Analytics Report', style: pw.TextStyle(
+                fontSize: 20,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColors.white,
+              )),
+            ],
+          ),
+          pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.end,
+            children: [
+              pw.Text(clientName, style: pw.TextStyle(
+                fontSize: 12,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColors.white,
+              )),
+              pw.SizedBox(height: 2),
+              pw.Text(subtitle, style: pw.TextStyle(
+                fontSize: 9,
+                color: PdfColor.fromHex('#8B97B0'),
+              )),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -288,65 +444,22 @@ class AnalyticsExporter {
     return pw.Row(
       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
       children: [
-        pw.Text(
-          'Vivid Dashboard',
-          style: pw.TextStyle(fontSize: 9, color: _pdfColors.textMuted),
-        ),
-        pw.Text(
-          'Page ${context.pageNumber} of ${context.pagesCount}',
-          style: pw.TextStyle(fontSize: 9, color: _pdfColors.textMuted),
-        ),
+        pw.Text('Vivid Dashboard', style: pw.TextStyle(fontSize: 9, color: _pdfColors.textMuted)),
+        pw.Text('Page ${context.pageNumber} of ${context.pagesCount}', style: pw.TextStyle(fontSize: 9, color: _pdfColors.textMuted)),
       ],
     );
   }
 
-  static pw.Widget _buildPdfSectionHeader(String title) {
+  // Change 8: Colored section headers
+  static pw.Widget _buildColoredSectionHeader(String title, PdfColor color) {
     return pw.Container(
       width: double.infinity,
       padding: const pw.EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: pw.BoxDecoration(
-        color: _pdfColors.primary,
+        color: color,
         borderRadius: pw.BorderRadius.circular(8),
       ),
-      child: pw.Text(
-        title,
-        style: pw.TextStyle(
-          fontSize: 13,
-          fontWeight: pw.FontWeight.bold,
-          color: PdfColors.white,
-        ),
-      ),
-    );
-  }
-
-  static pw.Widget _buildPdfStatsRow(dynamic data) {
-    final hasAi = ClientConfig.currentClient?.hasAiConversations ?? false;
-    return pw.Row(
-      children: [
-        _buildPdfStatCard('Total Messages', data.totalMessages.toString(), _pdfColors.blue),
-        pw.SizedBox(width: 10),
-        if (hasAi) ...[
-          _buildPdfStatCard('AI Responses', data.aiResponses.toString(), _pdfColors.cyan),
-          pw.SizedBox(width: 10),
-        ],
-        _buildPdfStatCard('Manager', data.managerResponses.toString(), _pdfColors.teal),
-        pw.SizedBox(width: 10),
-        _buildPdfStatCard('Customers', data.uniqueCustomers.toString(), _pdfColors.orange),
-      ],
-    );
-  }
-
-  static pw.Widget _buildPdfBroadcastStatsRow(dynamic data) {
-    return pw.Row(
-      children: [
-        _buildPdfStatCard('Total Recipients', data.totalMessages.toString(), _pdfColors.blue),
-        pw.SizedBox(width: 10),
-        _buildPdfStatCard('Campaigns', data.aiResponses.toString(), _pdfColors.cyan),
-        pw.SizedBox(width: 10),
-        _buildPdfStatCard('Avg/Campaign', data.aiResponses > 0 ? (data.totalMessages / data.aiResponses).round().toString() : '0', _pdfColors.teal),
-        pw.SizedBox(width: 10),
-        _buildPdfStatCard('Total Campaigns', data.uniqueCustomers.toString(), _pdfColors.orange),
-      ],
+      child: pw.Text(title, style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.white)),
     );
   }
 
@@ -362,318 +475,64 @@ class AnalyticsExporter {
         child: pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
-            pw.Text(
-              label,
-              style: pw.TextStyle(fontSize: 9, color: _pdfColors.textMuted),
-            ),
+            pw.Text(label, style: pw.TextStyle(fontSize: 9, color: _pdfColors.textMuted)),
             pw.SizedBox(height: 6),
-            pw.Text(
-              value,
-              style: pw.TextStyle(
-                fontSize: 24,
-                fontWeight: pw.FontWeight.bold,
-                color: color,
-              ),
-            ),
+            pw.Text(value, style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold, color: color)),
           ],
         ),
       ),
     );
   }
 
-  static pw.Widget _buildPdfTimeStats(dynamic data, {String label = 'messages'}) {
-    return pw.Row(
-      children: [
-        _buildPdfGradientCard('Today', data.todayMessages.toString(), _pdfColors.purple, sublabel: label),
-        pw.SizedBox(width: 10),
-        _buildPdfGradientCard('This Week', data.thisWeekMessages.toString(), _pdfColors.green, sublabel: label),
-        pw.SizedBox(width: 10),
-        _buildPdfGradientCard('This Month', data.thisMonthMessages.toString(), _pdfColors.red, sublabel: label),
-      ],
-    );
-  }
+  // ============================================
+  // LEGACY: PDF header used by broadcast exports
+  // ============================================
 
-  static pw.Widget _buildPdfGradientCard(String label, String value, PdfColor color, {String sublabel = 'messages'}) {
-    return pw.Expanded(
-      child: pw.Container(
-        padding: const pw.EdgeInsets.all(16),
-        decoration: pw.BoxDecoration(
-          color: color,
-          borderRadius: pw.BorderRadius.circular(10),
-        ),
-        child: pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: [
-            pw.Text(
-              label,
-              style: pw.TextStyle(fontSize: 11, color: PdfColors.white),
-            ),
-            pw.SizedBox(height: 4),
-            pw.Text(
-              value,
-              style: pw.TextStyle(
-                fontSize: 28,
-                fontWeight: pw.FontWeight.bold,
-                color: PdfColors.white,
-              ),
-            ),
-            pw.Text(
-              sublabel,
-              style: pw.TextStyle(fontSize: 9, color: PdfColors.white),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  static pw.Widget _buildPdfActivityChart(List<dynamic> days) {
-    if (days.isEmpty) {
-      return pw.Text(
-        'No activity data',
-        style: pw.TextStyle(color: _pdfColors.textMuted),
-      );
-    }
-
-    int maxCount = 0;
-    for (final day in days) {
-      final count = day.count as int;
-      if (count > maxCount) maxCount = count;
-    }
-
+  static pw.Widget _buildPdfHeader(String title, String clientName, String subtitle) {
     return pw.Column(
-      children: days.map((day) {
-        final count = day.count as int;
-        final pct = maxCount > 0 ? count / maxCount : 0.0;
-        final filledFlex = (pct * 100).round().clamp(1, 100);
-        final emptyFlex = 100 - filledFlex;
-
-        return pw.Padding(
-          padding: const pw.EdgeInsets.symmetric(vertical: 5),
-          child: pw.Row(
-            children: [
-              pw.SizedBox(
-                width: 75,
-                child: pw.Text(
-                  _formatDateShort(day.date as DateTime),
-                  style: pw.TextStyle(fontSize: 10, color: _pdfColors.navy),
-                ),
-              ),
-              pw.Expanded(
-                child: pw.Container(
-                  height: 18,
-                  decoration: pw.BoxDecoration(
-                    color: PdfColor.fromHex('#E8E8E8'),
-                    borderRadius: pw.BorderRadius.circular(4),
-                  ),
-                  child: pw.Row(
-                    children: [
-                      if (pct > 0)
-                        pw.Expanded(
-                          flex: filledFlex,
-                          child: pw.Container(
-                            decoration: pw.BoxDecoration(
-                              color: _pdfColors.primary,
-                              borderRadius: pw.BorderRadius.circular(4),
-                            ),
-                          ),
-                        ),
-                      if (pct < 1)
-                        pw.Expanded(
-                          flex: emptyFlex,
-                          child: pw.Container(),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-              pw.SizedBox(width: 8),
-              pw.SizedBox(
-                width: 35,
-                child: pw.Text(
-                  count.toString(),
-                  style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
-                  textAlign: pw.TextAlign.right,
-                ),
-              ),
-            ],
-          ),
-        );
-      }).toList(),
-    );
-  }
-
-  static pw.Widget _buildPdfCustomerTable(List<dynamic> customers) {
-    if (customers.isEmpty) {
-      return pw.Text(
-        'No customers yet',
-        style: pw.TextStyle(color: _pdfColors.textMuted),
-      );
-    }
-
-    final rankColors = [
-      _pdfColors.cyan,
-      _pdfColors.blue,
-      _pdfColors.teal,
-      _pdfColors.purple,
-      _pdfColors.orange,
-    ];
-
-    return pw.Table(
-      border: pw.TableBorder.all(color: PdfColor.fromHex('#E0E0E0'), width: 0.5),
-      columnWidths: {
-        0: const pw.FixedColumnWidth(35),
-        1: const pw.FlexColumnWidth(2),
-        2: const pw.FlexColumnWidth(1.5),
-        3: const pw.FixedColumnWidth(55),
-      },
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
-        pw.TableRow(
-          decoration: pw.BoxDecoration(color: _pdfColors.navy),
-          children: ['#', 'Name', 'Phone', 'Messages'].map((h) {
-            return pw.Padding(
-              padding: const pw.EdgeInsets.all(10),
-              child: pw.Text(
-                h,
-                style: pw.TextStyle(
-                  fontSize: 10,
-                  fontWeight: pw.FontWeight.bold,
-                  color: PdfColors.white,
-                ),
-              ),
-            );
-          }).toList(),
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Text(title, style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold, color: _pdfColors.navy)),
+            pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.end,
+              children: [
+                pw.Text(clientName, style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold, color: _pdfColors.navy)),
+                pw.Text(subtitle, style: pw.TextStyle(fontSize: 10, color: _pdfColors.textMuted)),
+              ],
+            ),
+          ],
         ),
-        ...List.generate(customers.length, (i) {
-          final c = customers[i];
-          final bg = i % 2 == 0 ? PdfColors.white : PdfColor.fromHex('#F8F9FA');
-          final rankColor = rankColors[i % rankColors.length];
-          final name = c.name ?? 'Unknown';
-
-          return pw.TableRow(
-            decoration: pw.BoxDecoration(color: bg),
-            children: [
-              pw.Padding(
-                padding: const pw.EdgeInsets.all(8),
-                child: pw.Center(
-                  child: pw.Container(
-                    width: 22,
-                    height: 22,
-                    decoration: pw.BoxDecoration(
-                      color: rankColor,
-                      borderRadius: pw.BorderRadius.circular(6),
-                    ),
-                    child: pw.Center(
-                      child: pw.Text(
-                        '${i + 1}',
-                        style: pw.TextStyle(
-                          fontSize: 10,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              pw.Padding(
-                padding: const pw.EdgeInsets.all(8),
-                child: pw.Text(name, style: pw.TextStyle(fontSize: 9, color: _pdfColors.navy)),
-              ),
-              pw.Padding(
-                padding: const pw.EdgeInsets.all(8),
-                child: pw.Text(c.phone, style: pw.TextStyle(fontSize: 9, color: _pdfColors.navy)),
-              ),
-              pw.Padding(
-                padding: const pw.EdgeInsets.all(8),
-                child: pw.Text(
-                  c.messageCount.toString(),
-                  style: pw.TextStyle(
-                    fontSize: 10,
-                    fontWeight: pw.FontWeight.bold,
-                    color: _pdfColors.primary,
-                  ),
-                  textAlign: pw.TextAlign.center,
-                ),
-              ),
-            ],
-          );
-        }),
+        pw.SizedBox(height: 4),
+        pw.Container(height: 3, color: _pdfColors.primary),
+        pw.SizedBox(height: 20),
       ],
     );
   }
 
-  static pw.Widget _buildPdfCampaignListTable(List<dynamic> campaigns) {
-    if (campaigns.isEmpty) {
-      return pw.Text('No campaigns yet', style: pw.TextStyle(color: _pdfColors.textMuted));
-    }
-
-    final rankColors = [_pdfColors.cyan, _pdfColors.blue, _pdfColors.teal, _pdfColors.purple, _pdfColors.orange];
-
-    return pw.Table(
-      border: pw.TableBorder.all(color: PdfColor.fromHex('#E0E0E0'), width: 0.5),
-      columnWidths: {
-        0: const pw.FixedColumnWidth(35),
-        1: const pw.FlexColumnWidth(3),
-        2: const pw.FixedColumnWidth(65),
-      },
-      children: [
-        pw.TableRow(
-          decoration: pw.BoxDecoration(color: _pdfColors.navy),
-          children: ['#', 'Campaign', 'Recipients'].map((h) {
-            return pw.Padding(
-              padding: const pw.EdgeInsets.all(10),
-              child: pw.Text(h, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.white)),
-            );
-          }).toList(),
-        ),
-        ...List.generate(campaigns.length, (i) {
-          final c = campaigns[i];
-          final bg = i % 2 == 0 ? PdfColors.white : PdfColor.fromHex('#F8F9FA');
-          final rankColor = rankColors[i % rankColors.length];
-          final name = c.name ?? 'Unnamed Campaign';
-
-          return pw.TableRow(
-            decoration: pw.BoxDecoration(color: bg),
-            children: [
-              pw.Padding(
-                padding: const pw.EdgeInsets.all(8),
-                child: pw.Center(
-                  child: pw.Container(
-                    width: 22, height: 22,
-                    decoration: pw.BoxDecoration(color: rankColor, borderRadius: pw.BorderRadius.circular(6)),
-                    child: pw.Center(child: pw.Text('${i + 1}', style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.white))),
-                  ),
-                ),
-              ),
-              pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text(name, style: pw.TextStyle(fontSize: 9, color: _pdfColors.navy))),
-              pw.Padding(
-                padding: const pw.EdgeInsets.all(8),
-                child: pw.Text(c.messageCount.toString(), style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: _pdfColors.primary), textAlign: pw.TextAlign.center),
-              ),
-            ],
-          );
-        }),
-      ],
+  static pw.Widget _buildPdfSectionHeader(String title) {
+    return pw.Container(
+      width: double.infinity,
+      padding: const pw.EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: pw.BoxDecoration(color: _pdfColors.primary, borderRadius: pw.BorderRadius.circular(8)),
+      child: pw.Text(title, style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.white)),
     );
   }
 
   // ============================================
-  // BROADCAST ANALYTICS EXPORT - CSV
+  // LEGACY BROADCAST EXPORTS (used by broadcast_analytics_screen)
   // ============================================
 
-  static void exportBroadcastAnalyticsToCsv({
-    required dynamic data, // BroadcastAnalyticsData
-    String filename = 'broadcast_analytics_export',
-  }) {
+  static void exportBroadcastAnalyticsToCsv({required dynamic data}) {
     final buffer = StringBuffer();
-    final timestamp = DateTime.now().toIso8601String().split('T')[0];
+    final timestamp = _formatDateIso(DateTime.now());
 
     buffer.writeln('BROADCAST ANALYTICS REPORT');
     buffer.writeln('Generated,$timestamp');
     buffer.writeln('Business,${ClientConfig.businessName}');
     buffer.writeln('');
-
     buffer.writeln('SUMMARY');
     buffer.writeln('Metric,Value');
     buffer.writeln('Total Campaigns,${data.totalCampaigns}');
@@ -684,320 +543,127 @@ class AnalyticsExporter {
     buffer.writeln('Delivery Rate,${data.deliveryRate.toStringAsFixed(1)}%');
     buffer.writeln('Read Rate,${data.readRate.toStringAsFixed(1)}%');
     buffer.writeln('');
-
-    buffer.writeln('DAILY ACTIVITY (LAST 7 DAYS)');
-    buffer.writeln('Date,Campaigns,Recipients');
-    for (final day in data.last7Days) {
-      buffer.writeln('${_formatDateIso(day.date)},${day.campaigns},${day.recipients}');
-    }
-    buffer.writeln('');
-
     buffer.writeln('RECENT CAMPAIGNS');
-    buffer.writeln('Campaign,Recipients,Delivered,Read,Failed,Delivery Rate,Read Rate,Sent At');
+    buffer.writeln('Campaign,Recipients,Delivered,Read,Failed,Sent At');
     for (final c in data.recentCampaigns) {
-      buffer.writeln(
-        '${_escapeCsv(c.name)},${c.recipients},${c.delivered},${c.read},${c.failed},'
-        '${c.deliveryRate.toStringAsFixed(1)}%,${c.readRate.toStringAsFixed(1)}%,${_formatDateIso(c.sentAt)}',
-      );
+      buffer.writeln('${_escapeCsv(c.name)},${c.recipients},${c.delivered},${c.read},${c.failed},${_formatDateIso(c.sentAt)}');
     }
 
     _downloadFile(
       content: utf8.encode(buffer.toString()),
-      filename: '${filename}_$timestamp.csv',
+      filename: 'broadcast_analytics_$timestamp.csv',
       mimeType: 'text/csv',
     );
   }
 
-  // ============================================
-  // BROADCAST ANALYTICS EXPORT - EXCEL
-  // ============================================
-
-  static void exportBroadcastAnalyticsToExcel({
-    required dynamic data, // BroadcastAnalyticsData
-    String filename = 'broadcast_analytics_export',
-  }) {
+  static void exportBroadcastAnalyticsToExcel({required dynamic data}) {
     final buffer = StringBuffer();
-    final timestamp = DateTime.now().toIso8601String().split('T')[0];
+    final timestamp = _formatDateIso(DateTime.now());
 
-    buffer.writeln('<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">');
-    buffer.writeln('<head><meta charset="UTF-8">');
-    buffer.writeln('<style>');
-    buffer.writeln('body { font-family: Arial, sans-serif; }');
-    buffer.writeln('table { border-collapse: collapse; margin-bottom: 30px; }');
-    buffer.writeln('th { background-color: #9C27B0; color: white; font-weight: bold; padding: 12px; text-align: left; }');
-    buffer.writeln('td { padding: 10px; border: 1px solid #e0e0e0; }');
-    buffer.writeln('.header { background-color: #0A1628; color: #00D9FF; font-size: 18px; padding: 15px; }');
-    buffer.writeln('.metric-label { font-weight: 600; background-color: #f8f9fa; color: #333; }');
-    buffer.writeln('.number { text-align: right; font-weight: 500; color: #9C27B0; }');
+    buffer.writeln('<html><head><meta charset="UTF-8"><style>');
+    buffer.writeln('table { border-collapse: collapse; margin-bottom: 20px; }');
+    buffer.writeln('th { background-color: #9C27B0; color: white; padding: 10px; }');
+    buffer.writeln('td { padding: 8px; border: 1px solid #e0e0e0; }');
     buffer.writeln('.highlight { background-color: #f9f0ff; }');
-    buffer.writeln('.rate-good { color: #4CAF50; font-weight: 600; }');
-    buffer.writeln('.rate-mid { color: #FF9800; font-weight: 600; }');
-    buffer.writeln('.rate-bad { color: #F44336; font-weight: 600; }');
     buffer.writeln('</style></head><body>');
 
-    // Summary Table
     buffer.writeln('<table width="500">');
-    buffer.writeln('<tr><th colspan="2" class="header">Broadcast Analytics - ${_escapeHtml(ClientConfig.businessName)}</th></tr>');
-    buffer.writeln('<tr><td class="metric-label">Report Generated</td><td>$timestamp</td></tr>');
-    buffer.writeln('<tr><td class="metric-label">Total Campaigns</td><td class="number">${data.totalCampaigns}</td></tr>');
-    buffer.writeln('<tr><td class="metric-label">Total Recipients</td><td class="number">${data.totalRecipients}</td></tr>');
-    buffer.writeln('<tr><td class="metric-label">Total Delivered</td><td class="number">${data.totalDelivered}</td></tr>');
-    buffer.writeln('<tr><td class="metric-label">Total Read</td><td class="number">${data.totalRead}</td></tr>');
-    buffer.writeln('<tr><td class="metric-label">Total Failed</td><td class="number">${data.totalFailed}</td></tr>');
-    buffer.writeln('<tr><td class="metric-label">Delivery Rate</td><td class="number">${data.deliveryRate.toStringAsFixed(1)}%</td></tr>');
-    buffer.writeln('<tr><td class="metric-label">Read Rate</td><td class="number">${data.readRate.toStringAsFixed(1)}%</td></tr>');
+    buffer.writeln('<tr><th colspan="2">Broadcast Analytics - ${_escapeHtml(ClientConfig.businessName)}</th></tr>');
+    buffer.writeln('<tr><td>Total Campaigns</td><td>${data.totalCampaigns}</td></tr>');
+    buffer.writeln('<tr><td>Total Recipients</td><td>${data.totalRecipients}</td></tr>');
+    buffer.writeln('<tr><td>Delivered</td><td>${data.totalDelivered}</td></tr>');
+    buffer.writeln('<tr><td>Read</td><td>${data.totalRead}</td></tr>');
+    buffer.writeln('<tr><td>Failed</td><td>${data.totalFailed}</td></tr>');
+    buffer.writeln('<tr><td>Delivery Rate</td><td>${data.deliveryRate.toStringAsFixed(1)}%</td></tr>');
+    buffer.writeln('<tr><td>Read Rate</td><td>${data.readRate.toStringAsFixed(1)}%</td></tr>');
     buffer.writeln('</table>');
 
-    // Daily Activity Table
-    buffer.writeln('<table width="400">');
-    buffer.writeln('<tr><th colspan="3">Daily Activity (Last 7 Days)</th></tr>');
-    buffer.writeln('<tr><th>Date</th><th>Campaigns</th><th>Recipients</th></tr>');
-    for (var i = 0; i < data.last7Days.length; i++) {
-      final day = data.last7Days[i];
-      final rowClass = i % 2 == 0 ? '' : ' class="highlight"';
-      buffer.writeln('<tr$rowClass><td>${_formatDateIso(day.date)}</td><td class="number">${day.campaigns}</td><td class="number">${day.recipients}</td></tr>');
-    }
-    buffer.writeln('</table>');
-
-    // Recent Campaigns Table
-    buffer.writeln('<table width="800">');
-    buffer.writeln('<tr><th colspan="7">Recent Campaign Performance</th></tr>');
-    buffer.writeln('<tr><th>Campaign</th><th>Recipients</th><th>Delivered</th><th>Read</th><th>Failed</th><th>Delivery Rate</th><th>Read Rate</th></tr>');
+    buffer.writeln('<table width="700">');
+    buffer.writeln('<tr><th>Campaign</th><th>Recipients</th><th>Delivered</th><th>Read</th><th>Failed</th></tr>');
     for (var i = 0; i < data.recentCampaigns.length; i++) {
       final c = data.recentCampaigns[i];
-      final rowClass = i % 2 == 0 ? '' : ' class="highlight"';
-      final drClass = c.deliveryRate >= 70 ? 'rate-good' : (c.deliveryRate >= 40 ? 'rate-mid' : 'rate-bad');
-      final rrClass = c.readRate >= 70 ? 'rate-good' : (c.readRate >= 40 ? 'rate-mid' : 'rate-bad');
-      buffer.writeln(
-        '<tr$rowClass><td>${_escapeHtml(c.name)}</td><td class="number">${c.recipients}</td>'
-        '<td class="number">${c.delivered}</td><td class="number">${c.read}</td><td class="number">${c.failed}</td>'
-        '<td class="$drClass">${c.deliveryRate.toStringAsFixed(1)}%</td><td class="$rrClass">${c.readRate.toStringAsFixed(1)}%</td></tr>',
-      );
+      final cls = i % 2 != 0 ? ' class="highlight"' : '';
+      buffer.writeln('<tr$cls><td>${_escapeHtml(c.name)}</td><td>${c.recipients}</td><td>${c.delivered}</td><td>${c.read}</td><td>${c.failed}</td></tr>');
     }
     buffer.writeln('</table></body></html>');
 
     _downloadFile(
       content: utf8.encode(buffer.toString()),
-      filename: '${filename}_$timestamp.xls',
+      filename: 'broadcast_analytics_$timestamp.xls',
       mimeType: 'application/vnd.ms-excel',
     );
   }
 
-  // ============================================
-  // BROADCAST ANALYTICS EXPORT - PDF
-  // ============================================
-
-  static Future<void> exportBroadcastAnalyticsToPdf({
-    required dynamic data, // BroadcastAnalyticsData
-    String filename = 'broadcast_analytics_report',
-  }) async {
+  static Future<void> exportBroadcastAnalyticsToPdf({required dynamic data}) async {
+    final arabicFont = await _loadArabicFont();
     final pdf = pw.Document();
-    final timestamp = DateTime.now();
-    final timestampStr = _formatDateIso(timestamp);
-    final purple = PdfColor.fromHex('#9C27B0');
-    final green = PdfColor.fromHex('#4CAF50');
-    final red = PdfColor.fromHex('#F44336');
-    final blue = PdfColor.fromHex('#2196F3');
+    final timestamp = _formatDateIso(DateTime.now());
 
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(40),
-        header: (context) => pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: [
-            pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-              children: [
-                pw.Text(
-                  'Broadcast Analytics',
-                  style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold, color: _pdfColors.navy),
-                ),
-                pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.end,
-                  children: [
-                    pw.Text(ClientConfig.businessName, style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold, color: _pdfColors.navy)),
-                    pw.Text(timestampStr, style: pw.TextStyle(fontSize: 10, color: _pdfColors.textMuted)),
-                  ],
-                ),
-              ],
-            ),
-            pw.SizedBox(height: 4),
-            pw.Container(height: 3, color: purple),
-            pw.SizedBox(height: 20),
-          ],
-        ),
+        theme: pw.ThemeData.withFont(fontFallback: [arabicFont]),
+        header: (context) => _buildPdfHeader('Broadcast Analytics', ClientConfig.businessName, timestamp),
         footer: (context) => _buildPdfFooter(context),
         build: (context) => [
-          _buildPdfSectionHeaderColored('Summary Statistics', purple),
-          pw.SizedBox(height: 16),
-          // Top metrics row
+          _buildPdfSectionHeader('Summary'),
+          pw.SizedBox(height: 14),
           pw.Row(children: [
-            _buildPdfStatCard('Total Campaigns', data.totalCampaigns.toString(), purple),
-            pw.SizedBox(width: 10),
-            _buildPdfStatCard('Total Recipients', data.totalRecipients.toString(), blue),
-            pw.SizedBox(width: 10),
-            _buildPdfStatCard('Delivered', data.totalDelivered.toString(), green),
-            pw.SizedBox(width: 10),
-            _buildPdfStatCard('Read', data.totalRead.toString(), _pdfColors.cyan),
+            _buildPdfStatCard('Campaigns', '${data.totalCampaigns}', _pdfColors.blue),
+            pw.SizedBox(width: 8),
+            _buildPdfStatCard('Recipients', '${data.totalRecipients}', _pdfColors.cyan),
+            pw.SizedBox(width: 8),
+            _buildPdfStatCard('Delivered', '${data.totalDelivered}', _pdfColors.green),
+            pw.SizedBox(width: 8),
+            _buildPdfStatCard('Failed', '${data.totalFailed}', _pdfColors.red),
           ]),
-          pw.SizedBox(height: 10),
-          pw.Row(children: [
-            _buildPdfGradientCard('Delivery Rate', '${data.deliveryRate.toStringAsFixed(1)}%', green, sublabel: 'of recipients'),
-            pw.SizedBox(width: 10),
-            _buildPdfGradientCard('Read Rate', '${data.readRate.toStringAsFixed(1)}%', blue, sublabel: 'of recipients'),
-            pw.SizedBox(width: 10),
-            _buildPdfGradientCard('Failed', data.totalFailed.toString(), red, sublabel: 'recipients'),
-          ]),
-          pw.SizedBox(height: 24),
-          _buildPdfSectionHeaderColored('Activity (Last 7 Days)', purple),
-          pw.SizedBox(height: 16),
-          _buildPdfBroadcastActivityChart(data.last7Days),
-          pw.SizedBox(height: 24),
-          _buildPdfSectionHeaderColored('Recent Campaign Performance', purple),
-          pw.SizedBox(height: 16),
-          _buildPdfCampaignTable(data.recentCampaigns),
+          pw.SizedBox(height: 20),
+          _buildPdfSectionHeader('Recent Campaigns'),
+          pw.SizedBox(height: 14),
+          pw.Table(
+            border: pw.TableBorder.all(color: PdfColor.fromHex('#E0E0E0'), width: 0.5),
+            columnWidths: {
+              0: const pw.FlexColumnWidth(3),
+              1: const pw.FixedColumnWidth(55),
+              2: const pw.FixedColumnWidth(55),
+              3: const pw.FixedColumnWidth(40),
+              4: const pw.FixedColumnWidth(40),
+            },
+            children: [
+              pw.TableRow(
+                decoration: pw.BoxDecoration(color: _pdfColors.navy),
+                children: ['Campaign', 'Recipients', 'Delivered', 'Read', 'Failed'].map((h) => pw.Padding(
+                  padding: const pw.EdgeInsets.all(8),
+                  child: pw.Text(h, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColors.white)),
+                )).toList(),
+              ),
+              ...List.generate((data.recentCampaigns as List).length, (i) {
+                final c = data.recentCampaigns[i];
+                final bg = i % 2 == 0 ? PdfColors.white : PdfColor.fromHex('#F8F9FA');
+                return pw.TableRow(
+                  decoration: pw.BoxDecoration(color: bg),
+                  children: [
+                    pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(
+                      c.name as String,
+                      style: pw.TextStyle(fontSize: 9, color: _pdfColors.navy),
+                      textDirection: isArabicText(c.name as String) ? pw.TextDirection.rtl : pw.TextDirection.ltr,
+                    )),
+                    pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('${c.recipients}', style: const pw.TextStyle(fontSize: 9), textAlign: pw.TextAlign.center)),
+                    pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('${c.delivered}', style: pw.TextStyle(fontSize: 9, color: _pdfColors.green), textAlign: pw.TextAlign.center)),
+                    pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('${c.read}', style: pw.TextStyle(fontSize: 9, color: _pdfColors.blue), textAlign: pw.TextAlign.center)),
+                    pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('${c.failed}', style: pw.TextStyle(fontSize: 9, color: c.failed > 0 ? _pdfColors.red : _pdfColors.textMuted), textAlign: pw.TextAlign.center)),
+                  ],
+                );
+              }),
+            ],
+          ),
         ],
       ),
     );
 
     final bytes = await pdf.save();
-    _downloadFile(
-      content: bytes,
-      filename: '${filename}_$timestampStr.pdf',
-      mimeType: 'application/pdf',
-    );
-  }
-
-  static pw.Widget _buildPdfSectionHeaderColored(String title, PdfColor color) {
-    return pw.Container(
-      width: double.infinity,
-      padding: const pw.EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: pw.BoxDecoration(color: color, borderRadius: pw.BorderRadius.circular(8)),
-      child: pw.Text(title, style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.white)),
-    );
-  }
-
-  static pw.Widget _buildPdfBroadcastActivityChart(List<dynamic> days) {
-    if (days.isEmpty) {
-      return pw.Text('No activity data', style: pw.TextStyle(color: _pdfColors.textMuted));
-    }
-
-    int maxCount = 0;
-    for (final day in days) {
-      final count = day.recipients as int;
-      if (count > maxCount) maxCount = count;
-    }
-
-    return pw.Column(
-      children: days.map((day) {
-        final count = day.recipients as int;
-        final campaigns = day.campaigns as int;
-        final pct = maxCount > 0 ? count / maxCount : 0.0;
-        final filledFlex = (pct * 100).round().clamp(1, 100);
-        final emptyFlex = 100 - filledFlex;
-
-        return pw.Padding(
-          padding: const pw.EdgeInsets.symmetric(vertical: 5),
-          child: pw.Row(
-            children: [
-              pw.SizedBox(
-                width: 75,
-                child: pw.Text(_formatDateShort(day.date as DateTime), style: pw.TextStyle(fontSize: 10, color: _pdfColors.navy)),
-              ),
-              pw.Expanded(
-                child: pw.Container(
-                  height: 18,
-                  decoration: pw.BoxDecoration(color: PdfColor.fromHex('#E8E8E8'), borderRadius: pw.BorderRadius.circular(4)),
-                  child: pw.Row(
-                    children: [
-                      if (pct > 0)
-                        pw.Expanded(
-                          flex: filledFlex,
-                          child: pw.Container(
-                            decoration: pw.BoxDecoration(color: PdfColor.fromHex('#9C27B0'), borderRadius: pw.BorderRadius.circular(4)),
-                          ),
-                        ),
-                      if (pct < 1)
-                        pw.Expanded(flex: emptyFlex, child: pw.Container()),
-                    ],
-                  ),
-                ),
-              ),
-              pw.SizedBox(width: 8),
-              pw.SizedBox(
-                width: 55,
-                child: pw.Text(
-                  '$count rcpts',
-                  style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
-                  textAlign: pw.TextAlign.right,
-                ),
-              ),
-              pw.SizedBox(width: 4),
-              pw.SizedBox(
-                width: 45,
-                child: pw.Text(
-                  '$campaigns camps',
-                  style: pw.TextStyle(fontSize: 8, color: _pdfColors.textMuted),
-                  textAlign: pw.TextAlign.right,
-                ),
-              ),
-            ],
-          ),
-        );
-      }).toList(),
-    );
-  }
-
-  static pw.Widget _buildPdfCampaignTable(List<dynamic> campaigns) {
-    if (campaigns.isEmpty) {
-      return pw.Text('No campaigns yet', style: pw.TextStyle(color: _pdfColors.textMuted));
-    }
-
-    return pw.Table(
-      border: pw.TableBorder.all(color: PdfColor.fromHex('#E0E0E0'), width: 0.5),
-      columnWidths: {
-        0: const pw.FlexColumnWidth(2.5),
-        1: const pw.FixedColumnWidth(50),
-        2: const pw.FixedColumnWidth(50),
-        3: const pw.FixedColumnWidth(40),
-        4: const pw.FixedColumnWidth(40),
-        5: const pw.FixedColumnWidth(55),
-      },
-      children: [
-        pw.TableRow(
-          decoration: pw.BoxDecoration(color: PdfColor.fromHex('#9C27B0')),
-          children: ['Campaign', 'Recipients', 'Delivered', 'Read', 'Failed', 'Read Rate'].map((h) {
-            return pw.Padding(
-              padding: const pw.EdgeInsets.all(8),
-              child: pw.Text(h, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColors.white)),
-            );
-          }).toList(),
-        ),
-        ...List.generate(campaigns.length, (i) {
-          final c = campaigns[i];
-          final bg = i % 2 == 0 ? PdfColors.white : PdfColor.fromHex('#F9F0FF');
-          final readRate = c.readRate as double;
-          final rateColor = readRate >= 70
-              ? PdfColor.fromHex('#4CAF50')
-              : readRate >= 40
-                  ? PdfColor.fromHex('#FF9800')
-                  : PdfColor.fromHex('#F44336');
-
-          return pw.TableRow(
-            decoration: pw.BoxDecoration(color: bg),
-            children: [
-              pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text(c.name as String, style: pw.TextStyle(fontSize: 9, color: _pdfColors.navy))),
-              pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text((c.recipients as int).toString(), style: const pw.TextStyle(fontSize: 9), textAlign: pw.TextAlign.center)),
-              pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text((c.delivered as int).toString(), style: pw.TextStyle(fontSize: 9, color: PdfColor.fromHex('#4CAF50')), textAlign: pw.TextAlign.center)),
-              pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text((c.read as int).toString(), style: pw.TextStyle(fontSize: 9, color: PdfColor.fromHex('#2196F3')), textAlign: pw.TextAlign.center)),
-              pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text((c.failed as int).toString(), style: pw.TextStyle(fontSize: 9, color: PdfColor.fromHex('#F44336')), textAlign: pw.TextAlign.center)),
-              pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text('${readRate.toStringAsFixed(1)}%', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: rateColor), textAlign: pw.TextAlign.center)),
-            ],
-          );
-        }),
-      ],
-    );
+    _downloadFile(content: bytes, filename: 'broadcast_analytics_$timestamp.pdf', mimeType: 'application/pdf');
   }
 
   // ============================================
@@ -1009,7 +675,7 @@ class AnalyticsExporter {
     String filename = 'activity_logs',
   }) {
     final buffer = StringBuffer();
-    final timestamp = DateTime.now().toIso8601String().split('T')[0];
+    final timestamp = _formatDateIso(DateTime.now());
 
     buffer.writeln('ACTIVITY LOGS REPORT');
     buffer.writeln('Generated,$timestamp');
@@ -1046,7 +712,7 @@ class AnalyticsExporter {
     String filename = 'activity_logs',
   }) {
     final buffer = StringBuffer();
-    final timestamp = DateTime.now().toIso8601String().split('T')[0];
+    final timestamp = _formatDateIso(DateTime.now());
 
     buffer.writeln('<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">');
     buffer.writeln('<head><meta charset="UTF-8">');
@@ -1057,13 +723,6 @@ class AnalyticsExporter {
     buffer.writeln('td { padding: 10px; border: 1px solid #e0e0e0; }');
     buffer.writeln('.header { background-color: #0A1628; color: #00D9FF; font-size: 18px; padding: 15px; }');
     buffer.writeln('.highlight { background-color: #f0f7ff; }');
-    buffer.writeln('.action-login { color: #4CAF50; font-weight: 600; }');
-    buffer.writeln('.action-logout { color: #78909C; font-weight: 600; }');
-    buffer.writeln('.action-message { color: #00BCD4; font-weight: 600; }');
-    buffer.writeln('.action-broadcast { color: #FF9800; font-weight: 600; }');
-    buffer.writeln('.action-ai { color: #1E88E5; font-weight: 600; }');
-    buffer.writeln('.action-user { color: #9C27B0; font-weight: 600; }');
-    buffer.writeln('.action-default { color: #333; font-weight: 600; }');
     buffer.writeln('</style></head><body>');
 
     buffer.writeln('<table width="900">');
@@ -1076,7 +735,6 @@ class AnalyticsExporter {
     for (var i = 0; i < logs.length; i++) {
       final log = logs[i];
       final rowClass = i % 2 == 0 ? '' : ' class="highlight"';
-      final actionClass = _getActionCssClass(log.actionType);
       final date = _formatDateIso(log.createdAt);
       final time = '${log.createdAt.hour.toString().padLeft(2, '0')}:${log.createdAt.minute.toString().padLeft(2, '0')}';
       buffer.writeln(
@@ -1085,7 +743,7 @@ class AnalyticsExporter {
         '<td>$time</td>'
         '<td>${_escapeHtml(log.userName)}</td>'
         '<td>${_escapeHtml(log.userEmail ?? '')}</td>'
-        '<td class="$actionClass">${_escapeHtml(log.actionType.displayName)}</td>'
+        '<td>${_escapeHtml(log.actionType.displayName)}</td>'
         '<td>${_escapeHtml(log.description)}</td>'
         '</tr>',
       );
@@ -1097,27 +755,6 @@ class AnalyticsExporter {
       filename: '${filename}_$timestamp.xls',
       mimeType: 'application/vnd.ms-excel',
     );
-  }
-
-  static String _getActionCssClass(ActionType type) {
-    switch (type) {
-      case ActionType.login:
-        return 'action-login';
-      case ActionType.logout:
-        return 'action-logout';
-      case ActionType.messageSent:
-        return 'action-message';
-      case ActionType.broadcastSent:
-        return 'action-broadcast';
-      case ActionType.aiToggled:
-        return 'action-ai';
-      case ActionType.userCreated:
-      case ActionType.userUpdated:
-      case ActionType.userDeleted:
-        return 'action-user';
-      default:
-        return 'action-default';
-    }
   }
 
   // ============================================

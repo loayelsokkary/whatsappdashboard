@@ -13,6 +13,8 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
+  double? _listWidth;
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -77,16 +79,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // Medium: list + detail side by side
   Widget _buildMediumLayout(BoxConstraints constraints) {
     final conversationsProvider = context.watch<ConversationsProvider>();
-    final listWidth = constraints.maxWidth.clamp(280.0, 360.0) * 0.4;
+    final defaultWidth = (constraints.maxWidth * 0.4).clamp(280.0, 360.0);
+    final listW = (_listWidth ?? defaultWidth).clamp(220.0, constraints.maxWidth * 0.6);
 
     return Row(
       children: [
-        // Conversation list
         SizedBox(
-          width: listWidth.clamp(280.0, 360.0),
+          width: listW,
           child: const ConversationListPanel(),
         ),
-        // Detail or empty state
+        _buildResizableHandle(constraints),
         Expanded(
           child: conversationsProvider.selectedConversation != null
               ? ConversationDetailPanel(
@@ -101,16 +103,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // Large: list + detail with more space
   Widget _buildLargeLayout(BoxConstraints constraints) {
     final conversationsProvider = context.watch<ConversationsProvider>();
-    final listWidth = (constraints.maxWidth * 0.3).clamp(300.0, 420.0);
+    final defaultWidth = (constraints.maxWidth * 0.3).clamp(300.0, 420.0);
+    final listW = (_listWidth ?? defaultWidth).clamp(220.0, constraints.maxWidth * 0.6);
 
     return Row(
       children: [
-        // Conversation list
         SizedBox(
-          width: listWidth,
+          width: listW,
           child: const ConversationListPanel(),
         ),
-        // Detail panel
+        _buildResizableHandle(constraints),
         Expanded(
           child: conversationsProvider.selectedConversation != null
               ? ConversationDetailPanel(
@@ -119,6 +121,34 @@ class _DashboardScreenState extends State<DashboardScreen> {
               : _buildEmptyState(conversationsProvider),
         ),
       ],
+    );
+  }
+
+  Widget _buildResizableHandle(BoxConstraints constraints) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeColumn,
+      child: GestureDetector(
+        onHorizontalDragUpdate: (details) {
+          setState(() {
+            final current = _listWidth ?? (constraints.maxWidth * 0.3).clamp(300.0, 420.0);
+            _listWidth = (current + details.delta.dx).clamp(220.0, constraints.maxWidth * 0.6);
+          });
+        },
+        child: Container(
+          width: 6,
+          color: Colors.transparent,
+          child: Center(
+            child: Container(
+              width: 2,
+              height: 40,
+              decoration: BoxDecoration(
+                color: VividColors.tealBlue.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(1),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 

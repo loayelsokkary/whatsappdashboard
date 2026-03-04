@@ -591,7 +591,9 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
         ],
       ),
       content: SizedBox(
-        width: 360,
+        width: MediaQuery.of(context).size.width < 600
+            ? MediaQuery.of(context).size.width * 0.85
+            : 360,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
