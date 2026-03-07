@@ -751,6 +751,15 @@ class _ConversationsView extends StatelessWidget {
     final m = data.current;
     final c = data.comparison;
 
+    // Compute booked count matching pipeline dialog (excludes customers who also paid)
+    final paidPhones = data.labeledCustomers
+        .where((lc) => lc.label == 'payment done')
+        .map((lc) => lc.phone)
+        .toSet();
+    final bookedCount = data.labeledCustomers
+        .where((lc) => lc.label == 'appointment booked' && !paidPhones.contains(lc.phone))
+        .length;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -795,7 +804,7 @@ class _ConversationsView extends StatelessWidget {
           _MetricCard(
             icon: Icons.event_available,
             label: 'Appointments Booked',
-            value: '${m.appointmentsBooked}',
+            value: '$bookedCount',
             color: Colors.green,
             description: 'Confirmed bookings from conversations or campaigns',
             isHighlight: m.appointmentsBooked > 0,
@@ -2912,6 +2921,7 @@ class _PipelineDialogState extends State<_PipelineDialog> {
                       const Color(0xFF06B6D4),
                       _paid,
                       'payment done',
+                      revenueHeader: _buildRevenueHeader(_paid),
                     )),
                   ],
                 ),
@@ -2923,7 +2933,68 @@ class _PipelineDialogState extends State<_PipelineDialog> {
     );
   }
 
-  Widget _buildColumn(String title, IconData icon, Color color, List<LabeledCustomer> items, String targetLabel) {
+  Widget _buildRevenueHeader(List<LabeledCustomer> paid) {
+    if (paid.isEmpty) return const SizedBox.shrink();
+    final total = paid.fold<double>(0, (s, c) => s + c.offerAmount);
+
+    // Group by campaign name (null → Organic)
+    final Map<String, List<LabeledCustomer>> byCampaign = {};
+    for (final c in paid) {
+      final key = c.campaignName ?? 'Organic';
+      byCampaign.putIfAbsent(key, () => []).add(c);
+    }
+
+    return Builder(builder: (context) {
+      final isDark = Theme.of(context).brightness == Brightness.dark;
+      return Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.green.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.green.withValues(alpha: 0.25)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              const Icon(Icons.calculate, color: Colors.green, size: 14),
+              const SizedBox(width: 6),
+              Text(
+                'Total: ${total.toStringAsFixed(0)} BHD',
+                style: const TextStyle(color: Colors.green, fontSize: 12, fontWeight: FontWeight.w700),
+              ),
+            ]),
+            if (byCampaign.length > 1) ...[
+              const SizedBox(height: 6),
+              ...byCampaign.entries.map((e) {
+                final offerPerUnit = e.value.isNotEmpty ? e.value.first.offerAmount : 0.0;
+                final sub = e.value.fold<double>(0, (s, c) => s + c.offerAmount);
+                return Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Row(children: [
+                    Expanded(
+                      child: Text(e.key,
+                          style: TextStyle(
+                            color: isDark ? VividColors.textMuted : const Color(0xFF64748B),
+                            fontSize: 10),
+                          overflow: TextOverflow.ellipsis),
+                    ),
+                    Text(
+                      '${offerPerUnit.toStringAsFixed(0)}×${e.value.length} = ${sub.toStringAsFixed(0)} BHD',
+                      style: const TextStyle(color: Colors.green, fontSize: 10, fontWeight: FontWeight.w500),
+                    ),
+                  ]),
+                );
+              }),
+            ],
+          ],
+        ),
+      );
+    });
+  }
+
+  Widget _buildColumn(String title, IconData icon, Color color, List<LabeledCustomer> items, String targetLabel, {Widget? revenueHeader}) {
     return DragTarget<LabeledCustomer>(
       onWillAcceptWithDetails: (details) => details.data.label != targetLabel,
       onAcceptWithDetails: (details) {
@@ -2960,7 +3031,11 @@ class _PipelineDialogState extends State<_PipelineDialog> {
                   child: Text('${items.length}', style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600)),
                 ),
               ]),
-              const SizedBox(height: 12),
+              if (revenueHeader != null) ...[
+                const SizedBox(height: 10),
+                revenueHeader,
+              ] else
+                const SizedBox(height: 12),
               Expanded(
                 child: items.isEmpty
                     ? Center(child: Text(

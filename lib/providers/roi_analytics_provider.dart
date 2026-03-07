@@ -260,6 +260,13 @@ class RoiAnalyticsProvider extends ChangeNotifier {
         openConversations: current.open,
         overdueConversations: current.overdue,
         labeledCustomers: current.labeledCustomers,
+        leadContributors: current.leadContributors,
+        organicLeadContributors: current.organicLeadContributors,
+        engagedCustomers: current.engagedCustomers,
+        responseTimeEntries: current.responseTimeEntries,
+        agentMessageCounts: current.agentMessageCounts,
+        automatedMessageCount: current.automatedMessageCount,
+        inboundCustomers: current.inboundCustomers,
       );
     } catch (e, st) {
       _error = 'Failed to load analytics: $e';
@@ -294,18 +301,31 @@ class RoiAnalyticsProvider extends ChangeNotifier {
     // ---- LEADS: 24h gap rule ----
     int totalLeads = 0;
     int organicLeads = 0;
+    final List<LeadContributor> leadContributors = [];
+    final List<LeadContributor> organicLeadContributors = [];
     for (final entry in byPhone.entries) {
       final phone = entry.key;
       final msgs = entry.value;
       final isFromBroadcast = phoneCampaigns.containsKey(phone);
       DateTime? lastCM;
+      String? nameAttr;
       for (final m in msgs) {
         if (!_hasCustomerMessage(m)) continue;
+        nameAttr ??= m['customer_name']?.toString();
         final createdAt = _parseDate(m);
         if (createdAt == null) continue;
         if (lastCM == null || createdAt.difference(lastCM).inHours >= 24) {
           totalLeads++;
           if (!isFromBroadcast) organicLeads++;
+          final lc = LeadContributor(
+            phone: phone,
+            name: nameAttr,
+            displayName: nameAttr ?? phone,
+            date: createdAt,
+            isOrganic: !isFromBroadcast,
+          );
+          leadContributors.add(lc);
+          if (!isFromBroadcast) organicLeadContributors.add(lc);
         }
         lastCM = createdAt;
       }
@@ -316,6 +336,7 @@ class RoiAnalyticsProvider extends ChangeNotifier {
     int appointmentsBooked = 0;
     int paymentsDone = 0;
     final revenueLabels = {'payment done'};
+    const pipelineLabels = {'appointment booked', 'payment done'};
     // First customer_message per phone (for campaign attribution)
     final Map<String, DateTime> phoneFirstMsg = {};
     for (final entry in byPhone.entries) {
@@ -334,7 +355,7 @@ class RoiAnalyticsProvider extends ChangeNotifier {
       final phone = entry.key;
       for (final m in entry.value) {
         final label = (m['label']?.toString() ?? '').toLowerCase().trim();
-        if (!revenueLabels.contains(label)) continue;
+        if (!pipelineLabels.contains(label)) continue;
         // Use label_set_at as the attribution date; fall back to created_at
         final labelSetAt = m['label_set_at'] != null
             ? DateTime.tryParse(m['label_set_at'].toString())
@@ -353,15 +374,10 @@ class RoiAnalyticsProvider extends ChangeNotifier {
       if (label == 'appointment booked') appointmentsBooked++;
       if (label == 'payment done') paymentsDone++;
 
-      labeledCustomers.add(LabeledCustomer(
-        phone: phone,
-        name: msg['customer_name']?.toString(),
-        label: label,
-        date: attrDate ?? DateTime.now(),
-      ));
-
+      // Compute offer amount and campaign name before creating LabeledCustomer
       final cIds = phoneCampaigns[phone] ?? [];
       double offer = 0;
+      String? campaignNameAttr;
       for (final cId in cIds) {
         final sentAt = campaignSentAt[cId];
         final firstMsg = phoneFirstMsg[phone];
@@ -371,10 +387,24 @@ class RoiAnalyticsProvider extends ChangeNotifier {
           offer = double.tryParse(
                   campaignById[cId]?['offer_amount']?.toString() ?? '0') ??
               0;
+          campaignNameAttr = campaignById[cId]?['name']?.toString();
           break;
         }
       }
-      totalRevenue += offer;
+
+      labeledCustomers.add(LabeledCustomer(
+        phone: phone,
+        name: msg['customer_name']?.toString(),
+        label: label,
+        date: attrDate ?? DateTime.now(),
+        offerAmount: offer,
+        campaignName: campaignNameAttr,
+      ));
+
+      // Only count offer toward revenue for revenue labels (payment done)
+      if (revenueLabels.contains(label)) {
+        totalRevenue += offer;
+      }
     }
 
     // ---- ENGAGEMENT RATE (inbound messages / total broadcasts sent) ----
@@ -393,8 +423,13 @@ class RoiAnalyticsProvider extends ChangeNotifier {
     // ---- AVG RESPONSE TIME (capped at 24h / 86400s) ----
     final List<double> responseTimes = [];
     final Map<String, List<double>> responseTimesByEmployee = {};
+    // Per-phone: track first reply time for ResponseTimeEntry list
+    final Map<String, _PhoneResponseAcc> phoneResponseAcc = {};
     for (final entry in byPhone.entries) {
+      final phone = entry.key;
       final msgs = entry.value;
+      String? nameAttr;
+      for (final m in msgs) { nameAttr ??= m['customer_name']?.toString(); }
       for (int i = 0; i < msgs.length; i++) {
         if (!_hasCustomerMessage(msgs[i])) continue;
         final cmTime = _parseDate(msgs[i]);
@@ -410,11 +445,24 @@ class RoiAnalyticsProvider extends ChangeNotifier {
             if (employee.isNotEmpty) {
               responseTimesByEmployee.putIfAbsent(employee, () => []).add(diffSec);
             }
+            // Accumulate per phone for ResponseTimeEntry
+            final acc = phoneResponseAcc.putIfAbsent(phone, () => _PhoneResponseAcc(nameAttr));
+            acc.total += diffSec;
+            acc.count++;
           }
           break;
         }
       }
     }
+    final List<ResponseTimeEntry> responseTimeEntries = phoneResponseAcc.entries.map((e) {
+      return ResponseTimeEntry(
+        phone: e.key,
+        name: e.value.name,
+        displayName: e.value.name ?? e.key,
+        responseTimeSeconds: e.value.count > 0 ? e.value.total / e.value.count : 0,
+      );
+    }).toList()
+      ..sort((a, b) => b.responseTimeSeconds.compareTo(a.responseTimeSeconds));
     final avgResponseTime = responseTimes.isNotEmpty
         ? responseTimes.reduce((a, b) => a + b) / responseTimes.length
         : 0.0;
@@ -452,12 +500,81 @@ class RoiAnalyticsProvider extends ChangeNotifier {
     final overdueConvs =
         openConvs.where((c) => c.waitingTime >= overdueThreshold).toList();
 
-    // ---- MESSAGES SENT / RECEIVED ----
+    // ---- MESSAGES SENT / RECEIVED + AGENT BREAKDOWN ----
     int messagesSent = 0;
     int messagesReceived = 0;
+    int automatedMessageCount = 0;
+    final Map<String, int> agentMessageCounts = {};
     for (final m in messages) {
-      if (_isHumanOutbound(m)) messagesSent++;
+      if (_isHumanOutbound(m)) {
+        messagesSent++;
+        final agent = (m['sent_by']?.toString() ?? '').trim();
+        if (agent.isNotEmpty) {
+          agentMessageCounts[agent] = (agentMessageCounts[agent] ?? 0) + 1;
+        }
+      }
       if (_hasCustomerMessage(m)) messagesReceived++;
+      final sb = (m['sent_by']?.toString() ?? '').toLowerCase().trim();
+      if (sb == 'broadcast' &&
+          m['manager_response'] != null &&
+          m['manager_response'].toString().trim().isNotEmpty) {
+        automatedMessageCount++;
+      }
+    }
+
+    // ---- INBOUND CUSTOMERS (per-phone message counts) ----
+    final List<InboundCustomer> inboundCustomers = [];
+    for (final entry in byPhone.entries) {
+      final phone = entry.key;
+      final msgs = entry.value;
+      int count = 0;
+      String? nameAttr;
+      DateTime? lastAt;
+      for (final m in msgs) {
+        if (_hasCustomerMessage(m)) {
+          count++;
+          nameAttr ??= m['customer_name']?.toString();
+          final t = _parseDate(m);
+          if (t != null && (lastAt == null || t.isAfter(lastAt))) lastAt = t;
+        }
+      }
+      if (count > 0) {
+        inboundCustomers.add(InboundCustomer(
+          phone: phone,
+          name: nameAttr,
+          displayName: nameAttr ?? phone,
+          messageCount: count,
+          lastMessageAt: lastAt,
+        ));
+      }
+    }
+    inboundCustomers.sort((a, b) => b.messageCount.compareTo(a.messageCount));
+
+    // ---- ENGAGED CUSTOMERS (broadcast recipients who replied) ----
+    final Set<String> allCampaignPhones = {};
+    for (final phones in campaignPhones.values) {
+      allCampaignPhones.addAll(phones);
+    }
+    final List<EngagedCustomer> engagedCustomers = [];
+    for (final entry in byPhone.entries) {
+      final phone = entry.key;
+      if (!allCampaignPhones.contains(phone)) continue;
+      String? nameAttr;
+      DateTime? replyDate;
+      for (final m in entry.value) {
+        if (_hasCustomerMessage(m)) {
+          nameAttr ??= m['customer_name']?.toString();
+          replyDate ??= _parseDate(m);
+        }
+      }
+      if (replyDate != null) {
+        engagedCustomers.add(EngagedCustomer(
+          phone: phone,
+          name: nameAttr,
+          displayName: nameAttr ?? phone,
+          date: replyDate,
+        ));
+      }
     }
 
     // ---- DAILY BREAKDOWN (UTC+3 Bahrain) ----
@@ -583,6 +700,13 @@ class RoiAnalyticsProvider extends ChangeNotifier {
       outboundCount: totalBroadcastsSent,
       inboundCustomerCount: inboundMessageCount,
       labeledCustomers: labeledCustomers,
+      leadContributors: leadContributors,
+      organicLeadContributors: organicLeadContributors,
+      engagedCustomers: engagedCustomers,
+      responseTimeEntries: responseTimeEntries,
+      agentMessageCounts: agentMessageCounts,
+      automatedMessageCount: automatedMessageCount,
+      inboundCustomers: inboundCustomers,
     );
   }
 
@@ -751,6 +875,13 @@ class _DayAccumulator {
   List<double> responseTimes = [];
 }
 
+class _PhoneResponseAcc {
+  final String? name;
+  double total = 0;
+  int count = 0;
+  _PhoneResponseAcc(this.name);
+}
+
 class _ComputedMetrics {
   final OverviewMetrics overview;
   final List<DailyBreakdown> daily;
@@ -760,6 +891,13 @@ class _ComputedMetrics {
   final int outboundCount;
   final int inboundCustomerCount;
   final List<LabeledCustomer> labeledCustomers;
+  final List<LeadContributor> leadContributors;
+  final List<LeadContributor> organicLeadContributors;
+  final List<EngagedCustomer> engagedCustomers;
+  final List<ResponseTimeEntry> responseTimeEntries;
+  final Map<String, int> agentMessageCounts;
+  final int automatedMessageCount;
+  final List<InboundCustomer> inboundCustomers;
 
   _ComputedMetrics({
     required this.overview,
@@ -770,6 +908,13 @@ class _ComputedMetrics {
     required this.outboundCount,
     required this.inboundCustomerCount,
     this.labeledCustomers = const [],
+    this.leadContributors = const [],
+    this.organicLeadContributors = const [],
+    this.engagedCustomers = const [],
+    this.responseTimeEntries = const [],
+    this.agentMessageCounts = const {},
+    this.automatedMessageCount = 0,
+    this.inboundCustomers = const [],
   });
 }
 
@@ -783,6 +928,7 @@ class LabeledCustomer {
   final String label; // 'appointment booked' or 'payment done'
   final DateTime date;
   final double offerAmount;
+  final String? campaignName;
 
   LabeledCustomer({
     required this.phone,
@@ -790,6 +936,7 @@ class LabeledCustomer {
     required this.label,
     required this.date,
     this.offerAmount = 0,
+    this.campaignName,
   });
 
   String get displayName => name ?? phone;
