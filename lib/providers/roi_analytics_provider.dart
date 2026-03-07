@@ -782,12 +782,14 @@ class LabeledCustomer {
   final String? name;
   final String label; // 'appointment booked' or 'payment done'
   final DateTime date;
+  final double offerAmount;
 
   LabeledCustomer({
     required this.phone,
     this.name,
     required this.label,
     required this.date,
+    this.offerAmount = 0,
   });
 
   String get displayName => name ?? phone;
@@ -802,6 +804,13 @@ class AnalyticsData {
   final List<OpenConversation> openConversations;
   final List<OpenConversation> overdueConversations;
   final List<LabeledCustomer> labeledCustomers;
+  final List<LeadContributor> leadContributors;
+  final List<LeadContributor> organicLeadContributors;
+  final List<EngagedCustomer> engagedCustomers;
+  final List<ResponseTimeEntry> responseTimeEntries;
+  final Map<String, int> agentMessageCounts;
+  final int automatedMessageCount;
+  final List<InboundCustomer> inboundCustomers;
 
   AnalyticsData({
     required this.current,
@@ -812,6 +821,13 @@ class AnalyticsData {
     required this.openConversations,
     required this.overdueConversations,
     this.labeledCustomers = const [],
+    this.leadContributors = const [],
+    this.organicLeadContributors = const [],
+    this.engagedCustomers = const [],
+    this.responseTimeEntries = const [],
+    this.agentMessageCounts = const {},
+    this.automatedMessageCount = 0,
+    this.inboundCustomers = const [],
   });
 }
 
@@ -871,6 +887,11 @@ class CampaignPerformance {
   final int leads;
   final double revenue;
   final double engagementRate;
+  final List<InboundCustomer> respondedCustomers;
+  final List<LeadContributor> leadContributors;
+  final List<CampaignRecipient> recipients;
+  final List<LabeledCustomer> appointmentCustomers;
+  final List<LabeledCustomer> paymentCustomers;
 
   CampaignPerformance({
     required this.id,
@@ -882,6 +903,11 @@ class CampaignPerformance {
     required this.leads,
     required this.revenue,
     required this.engagementRate,
+    this.respondedCustomers = const [],
+    this.leadContributors = const [],
+    this.recipients = const [],
+    this.appointmentCustomers = const [],
+    this.paymentCustomers = const [],
   });
 }
 
@@ -898,5 +924,77 @@ class OpenConversation {
     required this.lastMessage,
     required this.lastMessageAt,
     required this.waitingTime,
+  });
+}
+
+class LeadContributor {
+  final String phone;
+  final String? name;
+  final String displayName;
+  final DateTime date;
+  final bool isOrganic;
+
+  LeadContributor({
+    required this.phone,
+    this.name,
+    required this.displayName,
+    required this.date,
+    this.isOrganic = false,
+  });
+}
+
+class InboundCustomer {
+  final String phone;
+  final String? name;
+  final String displayName;
+  final int messageCount;
+  final DateTime? lastMessageAt;
+
+  InboundCustomer({
+    required this.phone,
+    this.name,
+    required this.displayName,
+    required this.messageCount,
+    this.lastMessageAt,
+  });
+}
+
+class EngagedCustomer {
+  final String phone;
+  final String? name;
+  final String displayName;
+  final DateTime date;
+
+  EngagedCustomer({
+    required this.phone,
+    this.name,
+    required this.displayName,
+    required this.date,
+  });
+}
+
+class ResponseTimeEntry {
+  final String phone;
+  final String? name;
+  final String displayName;
+  final double responseTimeSeconds;
+
+  ResponseTimeEntry({
+    required this.phone,
+    this.name,
+    required this.displayName,
+    required this.responseTimeSeconds,
+  });
+}
+
+class CampaignRecipient {
+  final String phone;
+  final String? name;
+  final String displayName;
+
+  CampaignRecipient({
+    required this.phone,
+    this.name,
+    required this.displayName,
   });
 }
