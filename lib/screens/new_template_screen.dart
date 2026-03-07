@@ -1,0 +1,1246 @@
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import '../providers/templates_provider.dart';
+import '../theme/vivid_theme.dart';
+
+class NewTemplateScreen extends StatefulWidget {
+  const NewTemplateScreen({super.key});
+
+  @override
+  State<NewTemplateScreen> createState() => _NewTemplateScreenState();
+}
+
+class _NewTemplateScreenState extends State<NewTemplateScreen> {
+  // ─── Form state ────────────────────────────────────────────────────────────
+  final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
+  final _headerTextController = TextEditingController();
+  final _bodyController = TextEditingController();
+  final _footerController = TextEditingController();
+
+  String _language = 'en_US';
+  String _category = 'MARKETING';
+  String _headerType = 'NONE'; // NONE, TEXT, IMAGE
+
+  // Image header upload state
+  Uint8List? _imageBytes;
+  String? _imageName;
+  String? _imageMimeType;
+  int? _imageSize;
+
+  // Variable example controllers keyed by variable number ({{1}} → key 1)
+  final Map<int, TextEditingController> _varControllers = {};
+
+  // Buttons
+  final List<_ButtonEntry> _buttons = [];
+
+  // ─── Preview helpers ───────────────────────────────────────────────────────
+  String get _previewName =>
+      _nameController.text.isEmpty ? 'TEMPLATE_NAME' : _nameController.text;
+  String get _previewBody => _bodyController.text;
+  String get _previewFooter => _footerController.text;
+  String get _previewHeaderText => _headerTextController.text;
+
+  // ─── Language / category options ──────────────────────────────────────────
+  static const _languages = [
+    ('en_US', 'English (US)'),
+    ('ar', 'Arabic'),
+    ('fr', 'French'),
+    ('es', 'Spanish'),
+    ('de', 'German'),
+  ];
+  static const _categories = [
+    ('MARKETING', 'Marketing'),
+    ('UTILITY', 'Utility'),
+    ('AUTHENTICATION', 'Authentication'),
+  ];
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _headerTextController.dispose();
+    _bodyController.dispose();
+    _footerController.dispose();
+    for (final b in _buttons) {
+      b.dispose();
+    }
+    for (final c in _varControllers.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  void _syncVarControllers(String body) {
+    final nums = RegExp(r'\{\{(\d+)\}\}')
+        .allMatches(body)
+        .map((m) => int.parse(m.group(1)!))
+        .toSet();
+
+    // Remove stale controllers
+    _varControllers.removeWhere((k, v) {
+      if (!nums.contains(k)) {
+        v.dispose();
+        return true;
+      }
+      return false;
+    });
+
+    // Add missing controllers
+    for (final n in nums) {
+      _varControllers.putIfAbsent(n, () => TextEditingController());
+    }
+  }
+
+  // ─── Submit ────────────────────────────────────────────────────────────────
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    final provider = context.read<TemplatesProvider>();
+    final components = <Map<String, dynamic>>[];
+
+    // Header component
+    if (_headerType == 'TEXT' && _headerTextController.text.isNotEmpty) {
+      components.add({
+        'type': 'HEADER',
+        'format': 'TEXT',
+        'text': _headerTextController.text.trim(),
+      });
+    } else if (_headerType == 'IMAGE') {
+      String? handle;
+      if (_imageBytes != null && _imageMimeType != null) {
+        handle =
+            await provider.uploadImage(_imageBytes!, _imageMimeType!);
+        if (handle == null) {
+          if (!mounted) return;
+          _showError('Image upload failed. Please try again.');
+          return;
+        }
+      }
+      if (handle != null) {
+        components.add({
+          'type': 'HEADER',
+          'format': 'IMAGE',
+          'example': {
+            'header_handle': [handle],
+          },
+        });
+      }
+    }
+
+    // Body component — collect example values for {{n}} variables
+    final bodyText = _bodyController.text.trim();
+    final varMatches =
+        RegExp(r'\{\{(\d+)\}\}').allMatches(bodyText).toList();
+    final bodyComponent = <String, dynamic>{
+      'type': 'BODY',
+      'text': bodyText,
+    };
+    if (varMatches.isNotEmpty) {
+      bodyComponent['example'] = {
+        'body_text': [
+          varMatches.map((m) {
+            final n = int.parse(m.group(1)!);
+            final val = _varControllers[n]?.text.trim() ?? '';
+            return val.isNotEmpty ? val : 'Example$n';
+          }).toList(),
+        ],
+      };
+    }
+    components.add(bodyComponent);
+
+    // Footer component
+    final footerText = _footerController.text.trim();
+    if (footerText.isNotEmpty) {
+      components.add({'type': 'FOOTER', 'text': footerText});
+    }
+
+    // Buttons component
+    if (_buttons.isNotEmpty) {
+      final btnList = <Map<String, dynamic>>[];
+      for (final b in _buttons) {
+        final entry = <String, dynamic>{
+          'type': b.type,
+          'text': b.textController.text.trim(),
+        };
+        if (b.type == 'URL') entry['url'] = b.extraController.text.trim();
+        if (b.type == 'PHONE_NUMBER') {
+          entry['phone_number'] = b.extraController.text.trim();
+        }
+        btnList.add(entry);
+      }
+      components.add({'type': 'BUTTONS', 'buttons': btnList});
+    }
+
+    final error = await provider.createTemplate(
+      name: _nameController.text.trim().toLowerCase().replaceAll(' ', '_'),
+      language: _language,
+      category: _category,
+      components: components,
+    );
+
+    if (!mounted) return;
+
+    if (error != null) {
+      _showError(error);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Template submitted for Meta approval'),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: VividColors.statusSuccess,
+      ));
+      await provider.fetchTemplates();
+      if (mounted) Navigator.pop(context);
+    }
+  }
+
+  void _showError(String msg) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: VividColors.navy,
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Submission Failed',
+            style: TextStyle(
+                color: VividColors.textPrimary,
+                fontWeight: FontWeight.w600)),
+        content: Text(msg,
+            style: const TextStyle(
+                color: VividColors.textSecondary, fontSize: 14)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK',
+                style: TextStyle(color: VividColors.cyan)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickImage() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['jpg', 'jpeg', 'png'],
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+    final file = result.files.first;
+    if (file.bytes == null) return;
+    if (file.bytes!.lengthInBytes > 5 * 1024 * 1024) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Image exceeds 5 MB limit'),
+        backgroundColor: VividColors.statusUrgent,
+        behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
+    final ext = (file.extension ?? 'jpg').toLowerCase();
+    setState(() {
+      _imageBytes = file.bytes;
+      _imageName = file.name;
+      _imageMimeType = ext == 'png' ? 'image/png' : 'image/jpeg';
+      _imageSize = file.bytes!.lengthInBytes;
+    });
+  }
+
+  // ─── Build ─────────────────────────────────────────────────────────────────
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = context.watch<TemplatesProvider>();
+    final isSubmitting = provider.isSubmitting;
+
+    return Scaffold(
+      body: Column(
+        children: [
+          _buildTopBar(context, isSubmitting),
+          Expanded(
+            child: LayoutBuilder(builder: (context, constraints) {
+              final wide = constraints.maxWidth > 900;
+              if (wide) {
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: _buildForm(isSubmitting),
+                    ),
+                    Container(
+                      width: 1,
+                      color: VividColors.tealBlue.withValues(alpha: 0.2),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: _buildPreviewColumn(),
+                    ),
+                  ],
+                );
+              }
+              return _buildForm(isSubmitting);
+            }),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── Top bar ───────────────────────────────────────────────────────────────
+
+  Widget _buildTopBar(BuildContext context, bool isSubmitting) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 16, 24, 16),
+      decoration: BoxDecoration(
+        color: isDark ? VividColors.navy : Colors.white,
+        border: Border(
+          bottom: BorderSide(
+              color: isDark
+                  ? VividColors.tealBlue.withValues(alpha: 0.2)
+                  : const Color(0xFFE2E8F0)),
+        ),
+      ),
+      child: Row(
+        children: [
+          TextButton.icon(
+            onPressed: isSubmitting ? null : () => Navigator.pop(context),
+            icon: const Icon(Icons.arrow_back_rounded, size: 16),
+            label: const Text('Back'),
+            style: TextButton.styleFrom(
+              foregroundColor: VividColors.cyan,
+              textStyle: const TextStyle(
+                  fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('New Template',
+                    style: TextStyle(
+                        color: VividColors.textPrimary,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700)),
+                Text('Submit a new WhatsApp message template for Meta approval',
+                    style: TextStyle(
+                        color: VividColors.textMuted, fontSize: 12)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── Form column ───────────────────────────────────────────────────────────
+
+  Widget _buildForm(bool isSubmitting) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildSection(
+              title: 'Template Info',
+              child: Column(
+                children: [
+                  _buildField(
+                    label: 'Template Name *',
+                    helper:
+                        'Type naturally — spaces become underscores, text auto-lowercased',
+                    child: TextFormField(
+                      controller: _nameController,
+                      style: _inputTextStyle,
+                      decoration: _inputDecoration('e.g. Summer Sale 2025'),
+                      inputFormatters: [
+                        _TemplateNameFormatter(),
+                      ],
+                      validator: (v) {
+                        if (v == null || v.trim().isEmpty) {
+                          return 'Template name is required';
+                        }
+                        if (!RegExp(r'^[a-z0-9_]+$').hasMatch(v.trim())) {
+                          return 'Only lowercase letters, numbers, underscores';
+                        }
+                        return null;
+                      },
+                      onChanged: (_) => setState(() {}),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildField(
+                          label: 'Language',
+                          child: _buildDropdown(
+                            value: _language,
+                            items: _languages
+                                .map((e) =>
+                                    DropdownMenuItem(
+                                        value: e.$1,
+                                        child: Text(e.$2,
+                                            style: _inputTextStyle)))
+                                .toList(),
+                            onChanged: (v) =>
+                                setState(() => _language = v ?? _language),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: _buildField(
+                          label: 'Category',
+                          child: _buildDropdown(
+                            value: _category,
+                            items: _categories
+                                .map((e) =>
+                                    DropdownMenuItem(
+                                        value: e.$1,
+                                        child: Text(e.$2,
+                                            style: _inputTextStyle)))
+                                .toList(),
+                            onChanged: (v) =>
+                                setState(() => _category = v ?? _category),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            _buildSection(
+              title: 'Content',
+              child: Column(
+                children: [
+                  // Header
+                  _buildField(
+                    label: 'Header (optional)',
+                    child: _buildDropdown(
+                      value: _headerType,
+                      items: const [
+                        DropdownMenuItem(
+                            value: 'NONE',
+                            child: Text('None',
+                                style: TextStyle(
+                                    color: VividColors.textPrimary,
+                                    fontSize: 13))),
+                        DropdownMenuItem(
+                            value: 'TEXT',
+                            child: Text('Text',
+                                style: TextStyle(
+                                    color: VividColors.textPrimary,
+                                    fontSize: 13))),
+                        DropdownMenuItem(
+                            value: 'IMAGE',
+                            child: Text('Image',
+                                style: TextStyle(
+                                    color: VividColors.textPrimary,
+                                    fontSize: 13))),
+                      ],
+                      onChanged: (v) {
+                        setState(() {
+                          _headerType = v ?? 'NONE';
+                          _imageBytes = null;
+                        });
+                      },
+                    ),
+                  ),
+
+                  if (_headerType == 'TEXT') ...[
+                    const SizedBox(height: 14),
+                    _buildField(
+                      label: 'Header Text',
+                      child: TextFormField(
+                        controller: _headerTextController,
+                        style: _inputTextStyle,
+                        decoration: _inputDecoration('Header text'),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                    ),
+                  ],
+
+                  if (_headerType == 'IMAGE') ...[
+                    const SizedBox(height: 14),
+                    _buildImageUploadZone(),
+                  ],
+
+                  const SizedBox(height: 14),
+
+                  // Body
+                  _buildField(
+                    label: 'Body *',
+                    helper:
+                        'Use {{1}}, {{2}} etc. for variables. Meta requires example values.',
+                    child: Stack(
+                      children: [
+                        TextFormField(
+                          controller: _bodyController,
+                          style: _inputTextStyle,
+                          decoration: _inputDecoration(
+                                  'Enter your message body...')
+                              .copyWith(
+                            contentPadding: const EdgeInsets.fromLTRB(
+                                14, 14, 14, 32),
+                          ),
+                          maxLines: 6,
+                          maxLength: 1024,
+                          buildCounter: (_, {required currentLength,
+                                  required isFocused,
+                                  maxLength}) =>
+                              null,
+                          validator: (v) {
+                            if (v == null || v.trim().isEmpty) {
+                              return 'Body text is required';
+                            }
+                            return null;
+                          },
+                          onChanged: (v) {
+                            _syncVarControllers(v);
+                            setState(() {});
+                          },
+                        ),
+                        Positioned(
+                          bottom: 8,
+                          right: 12,
+                          child: Text(
+                            '${_bodyController.text.length}/1024',
+                            style: const TextStyle(
+                                color: VividColors.textMuted,
+                                fontSize: 10),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Variable examples (shown when body has {{n}})
+                  if (_varControllers.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    _buildField(
+                      label: 'Variable Examples *',
+                      helper:
+                          'Meta requires sample values for each {{n}} variable',
+                      child: Column(
+                        children: (_varControllers.keys.toList()..sort())
+                            .map((n) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 8),
+                                  child: TextFormField(
+                                    controller: _varControllers[n],
+                                    style: _inputTextStyle,
+                                    decoration: _inputDecoration('Value for {{$n}}'),
+                                    validator: (v) => (v == null ||
+                                            v.trim().isEmpty)
+                                        ? 'Example for {{$n}} is required'
+                                        : null,
+                                    onChanged: (_) => setState(() {}),
+                                  ),
+                                ))
+                            .toList(),
+                      ),
+                    ),
+                  ],
+
+                  const SizedBox(height: 14),
+
+                  // Footer
+                  _buildField(
+                    label: 'Footer (optional)',
+                    helper: 'Footer note or unsubscribe text',
+                    child: TextFormField(
+                      controller: _footerController,
+                      style: _inputTextStyle,
+                      decoration:
+                          _inputDecoration('e.g. Reply STOP to unsubscribe'),
+                      onChanged: (_) => setState(() {}),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Buttons section
+            _buildSection(
+              title: 'Buttons (optional)',
+              titleTrailing: _buttons.length < 3
+                  ? TextButton.icon(
+                      onPressed: () => setState(() =>
+                          _buttons.add(_ButtonEntry('QUICK_REPLY'))),
+                      icon: const Icon(Icons.add_rounded, size: 14),
+                      label: const Text('Add'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: VividColors.cyan,
+                        textStyle: const TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.w500),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    )
+                  : null,
+              child: Column(
+                children: [
+                  if (_buttons.isEmpty)
+                    const Text(
+                      'No buttons. Click "+ Add" to add up to 3 buttons.',
+                      style: TextStyle(
+                          color: VividColors.textMuted, fontSize: 12),
+                    ),
+                  ..._buttons.asMap().entries.map((e) =>
+                      _buildButtonEntry(e.key, e.value)),
+                  if (_buttons.length >= 3)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 8),
+                      child: Text(
+                        'Maximum 3 buttons allowed per Meta\'s requirements',
+                        style: TextStyle(
+                            color: VividColors.textMuted, fontSize: 11),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 28),
+
+            // Action buttons
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton(
+                    onPressed: isSubmitting ? null : _submit,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: VividColors.cyan,
+                      foregroundColor: VividColors.darkNavy,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      textStyle: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w600),
+                    ),
+                    child: isSubmitting
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: VividColors.darkNavy))
+                        : const Text('Submit for Approval'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                OutlinedButton(
+                  onPressed:
+                      isSubmitting ? null : () => Navigator.pop(context),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: VividColors.textMuted,
+                    side: BorderSide(
+                        color:
+                            VividColors.tealBlue.withValues(alpha: 0.4)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 14),
+                    textStyle: const TextStyle(fontSize: 14),
+                  ),
+                  child: const Text('Cancel'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ─── Preview column ────────────────────────────────────────────────────────
+
+  Widget _buildPreviewColumn() {
+    return Container(
+      color: VividColors.darkNavy,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(24, 24, 24, 16),
+            child: Text('LIVE PREVIEW',
+                style: TextStyle(
+                    color: VividColors.textMuted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1.2)),
+          ),
+          Expanded(
+            child: Container(
+              color: const Color(0xFFEAE0D5),
+              padding: const EdgeInsets.all(20),
+              child: _previewBody.isEmpty &&
+                      _previewHeaderText.isEmpty &&
+                      _imageBytes == null
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.chat_bubble_outline_rounded,
+                              size: 48,
+                              color: const Color(0xFF90A4AE)
+                                  .withValues(alpha: 0.5)),
+                          const SizedBox(height: 12),
+                          const Text('Add components to see preview',
+                              style: TextStyle(
+                                  color: Color(0xFF9E9E9E),
+                                  fontSize: 13)),
+                        ],
+                      ),
+                    )
+                  : Align(
+                      alignment: Alignment.topLeft,
+                      child: _buildPreviewBubble(),
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPreviewBubble() {
+    // Use Material for proper clipping + shadow, then clip children to bubble shape
+    return Material(
+      color: Colors.white,
+      borderRadius: const BorderRadius.only(
+        topRight: Radius.circular(10),
+        bottomLeft: Radius.circular(10),
+        bottomRight: Radius.circular(10),
+      ),
+      elevation: 3,
+      shadowColor: Colors.black.withValues(alpha: 0.15),
+      clipBehavior: Clip.antiAlias, // clips image/content to bubble corners
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 300),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // WhatsApp-style teal header bar — centered, compact
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              color: const Color(0xFF25D366),
+              child: Text(
+                _previewName,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.3),
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+
+            // Header content
+            if (_headerType == 'TEXT' && _previewHeaderText.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+                child: Text(_previewHeaderText,
+                    style: const TextStyle(
+                        color: Color(0xFF111111),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700)),
+              ),
+            if (_headerType == 'IMAGE')
+              _imageBytes != null
+                  ? Image.memory(
+                      _imageBytes!,
+                      width: double.infinity,
+                      fit: BoxFit.contain, // full image visible, no cropping
+                    )
+                  : Container(
+                      height: 100,
+                      color: const Color(0xFFDDE3EA),
+                      child: const Center(
+                        child: Icon(Icons.image_outlined,
+                            size: 36, color: Color(0xFF90A4AE)),
+                      ),
+                    ),
+
+            // Body
+            if (_previewBody.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+                child: _buildBodyRichText(_previewBody),
+              ),
+
+            // Footer
+            if (_previewFooter.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 2, 12, 0),
+                child: Text(_previewFooter,
+                    style: const TextStyle(
+                        color: Color(0xFF9E9E9E),
+                        fontSize: 10,
+                        height: 1.4)),
+              ),
+
+            // Timestamp — always shown at bottom-right
+            const Padding(
+              padding: EdgeInsets.fromLTRB(0, 4, 10, 6),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Text('9:41',
+                    style: TextStyle(color: Color(0xFF9E9E9E), fontSize: 10)),
+              ),
+            ),
+
+            // Buttons — full-width, WhatsApp-style
+            if (_buttons.isNotEmpty) ...[
+              const Divider(height: 1, thickness: 1, color: Color(0xFFEEEEEE)),
+              ..._buttons.asMap().entries.map((e) {
+                final i = e.key;
+                final b = e.value;
+                final icon = switch (b.type) {
+                  'URL' => Icons.open_in_new_rounded,
+                  'PHONE_NUMBER' => Icons.phone_rounded,
+                  _ => Icons.reply_rounded,
+                };
+                final label = b.textController.text.isEmpty
+                    ? b.type
+                    : b.textController.text;
+                return Column(
+                  children: [
+                    if (i > 0)
+                      const Divider(
+                          height: 1,
+                          thickness: 1,
+                          color: Color(0xFFEEEEEE)),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(icon,
+                              size: 14, color: const Color(0xFF0088CC)),
+                          const SizedBox(width: 6),
+                          Text(label,
+                              style: const TextStyle(
+                                  color: Color(0xFF0088CC),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500)),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              }),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBodyRichText(String text) {
+    final spans = <TextSpan>[];
+    final re = RegExp(r'\{\{(\d+)\}\}');
+    int last = 0;
+    for (final match in re.allMatches(text)) {
+      if (match.start > last) {
+        spans.add(TextSpan(
+          text: text.substring(last, match.start),
+          style: const TextStyle(color: Color(0xFF111111), fontSize: 13),
+        ));
+      }
+      final n = int.parse(match.group(1)!);
+      final exampleVal = _varControllers[n]?.text.trim() ?? '';
+      if (exampleVal.isNotEmpty) {
+        // Show the filled-in value as normal text
+        spans.add(TextSpan(
+          text: exampleVal,
+          style: const TextStyle(color: Color(0xFF111111), fontSize: 13),
+        ));
+      } else {
+        // Unfilled variable: highlight in cyan
+        spans.add(TextSpan(
+          text: match.group(0),
+          style: const TextStyle(
+            color: VividColors.cyan,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+        ));
+      }
+      last = match.end;
+    }
+    if (last < text.length) {
+      spans.add(TextSpan(
+        text: text.substring(last),
+        style: const TextStyle(color: Color(0xFF111111), fontSize: 13),
+      ));
+    }
+    return RichText(
+        text: TextSpan(
+            children: spans,
+            style: const TextStyle(height: 1.5)));
+  }
+
+  // ─── Image upload zone ─────────────────────────────────────────────────────
+
+  Widget _buildImageUploadZone() {
+    if (_imageBytes != null) {
+      final kb = (_imageSize ?? 0) / 1024;
+      final sizeStr =
+          kb > 1024 ? '${(kb / 1024).toStringAsFixed(1)} MB' : '${kb.toStringAsFixed(0)} KB';
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: VividColors.darkNavy,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+              color: VividColors.statusSuccess.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Image.memory(_imageBytes!,
+                  width: 60, height: 60, fit: BoxFit.cover),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(_imageName ?? '',
+                      style: const TextStyle(
+                          color: VividColors.textPrimary, fontSize: 12),
+                      overflow: TextOverflow.ellipsis),
+                  Text(sizeStr,
+                      style: const TextStyle(
+                          color: VividColors.textMuted, fontSize: 11)),
+                ],
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close_rounded,
+                  color: VividColors.textMuted, size: 18),
+              onPressed: () => setState(() {
+                _imageBytes = null;
+                _imageName = null;
+                _imageMimeType = null;
+                _imageSize = null;
+              }),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return GestureDetector(
+      onTap: _pickImage,
+      child: CustomPaint(
+        painter: _DashedBorderPainter(),
+        child: Container(
+          height: 100,
+          color: Colors.transparent,
+          child: const Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.cloud_upload_outlined,
+                  color: VividColors.textMuted, size: 28),
+              SizedBox(height: 6),
+              Text('Click to upload image',
+                  style: TextStyle(
+                      color: VividColors.textMuted, fontSize: 12)),
+              SizedBox(height: 2),
+              Text('JPEG or PNG, max 5 MB · Recommended: 1200 × 630 px',
+                  style: TextStyle(
+                      color: VividColors.textMuted, fontSize: 10)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ─── Button entry row ──────────────────────────────────────────────────────
+
+  Widget _buildButtonEntry(int index, _ButtonEntry entry) {
+    const types = [
+      ('QUICK_REPLY', 'Quick Reply'),
+      ('URL', 'Visit Website'),
+      ('PHONE_NUMBER', 'Call Phone'),
+    ];
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: VividColors.darkNavy,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+              color: VividColors.tealBlue.withValues(alpha: 0.2)),
+        ),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: _buildDropdown(
+                    value: entry.type,
+                    items: types
+                        .map((t) => DropdownMenuItem(
+                            value: t.$1,
+                            child: Text(t.$2, style: _inputTextStyle)))
+                        .toList(),
+                    onChanged: (v) {
+                      if (v == null) return;
+                      setState(() => entry.type = v);
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded,
+                      color: VividColors.textMuted, size: 16),
+                  onPressed: () => setState(() => _buttons.removeAt(index)),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            TextFormField(
+              controller: entry.textController,
+              style: _inputTextStyle,
+              decoration: _inputDecoration('Button label'),
+              validator: (v) =>
+                  v == null || v.trim().isEmpty ? 'Label required' : null,
+              onChanged: (_) => setState(() {}),
+            ),
+            if (entry.type == 'URL' || entry.type == 'PHONE_NUMBER') ...[
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: entry.extraController,
+                style: _inputTextStyle,
+                decoration: _inputDecoration(
+                    entry.type == 'URL' ? 'https://example.com' : '+1234567890'),
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty) {
+                    return entry.type == 'URL' ? 'URL required' : 'Phone required';
+                  }
+                  return null;
+                },
+                onChanged: (_) => setState(() {}),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ─── Shared UI helpers ─────────────────────────────────────────────────────
+
+  Widget _buildSection({
+    required String title,
+    required Widget child,
+    Widget? titleTrailing,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.02),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+            child: Row(
+              children: [
+                Text(
+                  title.toUpperCase(),
+                  style: const TextStyle(
+                    color: VividColors.textSecondary,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+                if (titleTrailing != null) ...[
+                  const Spacer(),
+                  titleTrailing,
+                ],
+              ],
+            ),
+          ),
+          Container(
+            height: 1,
+            color: Colors.white.withValues(alpha: 0.05),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: child,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildField({
+    required String label,
+    required Widget child,
+    String? helper,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label,
+            style: const TextStyle(
+                color: Color(0xFFE2E8F0),
+                fontSize: 12,
+                fontWeight: FontWeight.w500)),
+        const SizedBox(height: 6),
+        child,
+        if (helper != null) ...[
+          const SizedBox(height: 5),
+          Text(helper,
+              style: const TextStyle(
+                  color: Color(0xFF6B7280), fontSize: 11)),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildDropdown<T>({
+    required T value,
+    required List<DropdownMenuItem<T>> items,
+    required void Function(T?) onChanged,
+  }) {
+    return DropdownButtonFormField<T>(
+      value: value,
+      items: items,
+      onChanged: onChanged,
+      style: _inputTextStyle,
+      dropdownColor: VividColors.deepBlue,
+      decoration: _inputDecoration(null),
+      icon: const Icon(Icons.keyboard_arrow_down_rounded,
+          color: VividColors.textMuted, size: 18),
+    );
+  }
+
+  static const TextStyle _inputTextStyle = TextStyle(
+    color: VividColors.textPrimary,
+    fontSize: 13,
+  );
+
+  InputDecoration _inputDecoration(String? hint) => InputDecoration(
+        hintText: hint,
+        hintStyle: const TextStyle(
+            color: VividColors.textMuted, fontSize: 13),
+        filled: true,
+        fillColor: VividColors.darkNavy,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(
+              color: VividColors.tealBlue.withValues(alpha: 0.25)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(
+              color: VividColors.tealBlue.withValues(alpha: 0.25)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide:
+              const BorderSide(color: VividColors.cyan, width: 1.5),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: VividColors.statusUrgent),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide:
+              const BorderSide(color: VividColors.statusUrgent, width: 1.5),
+        ),
+        errorStyle: const TextStyle(
+            color: VividColors.statusUrgent, fontSize: 11),
+      );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Button entry model
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ButtonEntry {
+  String type;
+  final TextEditingController textController = TextEditingController();
+  final TextEditingController extraController = TextEditingController();
+
+  _ButtonEntry(this.type);
+
+  void dispose() {
+    textController.dispose();
+    extraController.dispose();
+  }
+}
+
+class _TemplateNameFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    final text = newValue.text
+        .toLowerCase()
+        .replaceAll(' ', '_')
+        .replaceAll(RegExp(r'[^a-z0-9_]'), '');
+    return newValue.copyWith(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+  }
+}
+
+class _DashedBorderPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = VividColors.tealBlue.withValues(alpha: 0.5)
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
+
+    const radius = Radius.circular(8);
+    final rrect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(0, 0, size.width, size.height),
+      radius,
+    );
+    final path = Path()..addRRect(rrect);
+
+    const dashLen = 6.0;
+    const gapLen = 5.0;
+    for (final metric in path.computeMetrics()) {
+      double dist = 0;
+      while (dist < metric.length) {
+        canvas.drawPath(metric.extractPath(dist, dist + dashLen), paint);
+        dist += dashLen + gapLen;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DashedBorderPainter _) => false;
+}
