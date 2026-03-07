@@ -620,7 +620,10 @@ class _ConversationCard extends StatelessWidget {
           spacing: 6,
           runSpacing: 4,
           children: [
-            _buildStatusBadge(),
+            if (conversation.broadcastLifecycleLabel != null)
+              _buildBroadcastLifecycleBadge(conversation.broadcastLifecycleLabel!)
+            else
+              _buildStatusBadge(),
             if (ClientConfig.hasAiConversations)
               _buildAiBadge(aiEnabled),
             if (ClientConfig.enabledFeatures.contains('labels') &&
@@ -664,6 +667,48 @@ class _ConversationCard extends StatelessWidget {
           const SizedBox(width: 4),
           Text(
             label,
+            style: TextStyle(
+              color: color,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBroadcastLifecycleBadge(String lifecycleLabel) {
+    final Color color;
+    final IconData icon;
+    switch (lifecycleLabel) {
+      case 'Sent':
+        color = const Color(0xFFF59E0B);
+        icon = Icons.send;
+        break;
+      case 'Needs Reply':
+        color = const Color(0xFFEF4444);
+        icon = Icons.reply;
+        break;
+      case 'Replied':
+      default:
+        color = const Color(0xFF10B981);
+        icon = Icons.done_all;
+        break;
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: color),
+          const SizedBox(width: 4),
+          Text(
+            lifecycleLabel,
             style: TextStyle(
               color: color,
               fontSize: 10,

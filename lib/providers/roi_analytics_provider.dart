@@ -315,7 +315,7 @@ class RoiAnalyticsProvider extends ChangeNotifier {
     double totalRevenue = 0;
     int appointmentsBooked = 0;
     int paymentsDone = 0;
-    final revenueLabels = {'appointment booked', 'payment done'};
+    final revenueLabels = {'payment done'};
     // First customer_message per phone (for campaign attribution)
     final Map<String, DateTime> phoneFirstMsg = {};
     for (final entry in byPhone.entries) {
@@ -666,7 +666,7 @@ class RoiAnalyticsProvider extends ChangeNotifier {
       msgByPhone.putIfAbsent(phone, () => []).add(m);
     }
 
-    final revenueLabels = {'appointment booked', 'payment done'};
+    final revenueLabels = {'payment done'};
     final List<CampaignPerformance> result = [];
 
     for (final c in campaigns) {

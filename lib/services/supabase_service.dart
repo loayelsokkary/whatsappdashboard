@@ -28,9 +28,9 @@ class SupabaseService {
   // META API CONFIG
   // ============================================
 
-  static String metaApiVersion = 'v18.0';
-  static String metaAccessToken = '';
-  static String metaWabaId = '';
+  static String metaApiVersion = 'v21.0';
+  static String metaAccessToken = 'EAAbZB1YmaTZBgBQ9VyQAhCOumHulultZAfCeC7srDnVTFH7VpPDmywE50zYi6Eq5uOVnVSjAL24ZASRNYZARFdH429CKEhcafZBhS5o4gAZCAF5YRoMWIV0kfwZBScUp7au1TDji2fSVvUMifGQqmjgxlxjYIpiRainEV1gSCO7EYeuY1PFcAtfB1fzsiP0eiwZDZD';
+  static String metaWabaId = '699577226572846';
   static String metaAppId = '';
 
   // ============================================

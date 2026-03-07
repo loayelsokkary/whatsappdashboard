@@ -13,6 +13,7 @@ import 'user_management_dialog.dart';
 enum NavDestination {
   conversations,
   broadcasts,
+  templates,
   analytics,
   managerChat,
   bookingReminders,
@@ -105,7 +106,15 @@ class Sidebar extends StatelessWidget {
               // Show read-only indicator for viewers
               isReadOnly: !ClientConfig.canPerformAction('send_broadcast'),
             ),
-          
+
+          if (ClientConfig.hasFeature('broadcasts'))
+            _NavItem(
+              icon: Icons.article_outlined,
+              label: 'Templates',
+              isSelected: currentDestination == NavDestination.templates,
+              onTap: () => onDestinationChanged(NavDestination.templates),
+            ),
+
           if (ClientConfig.hasFeature('booking_reminders'))
             _NavItem(
               icon: Icons.calendar_month,

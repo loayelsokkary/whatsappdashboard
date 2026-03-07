@@ -20,6 +20,7 @@ import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/analytics_screen.dart';
 import 'screens/broadcast_analytics_screen.dart';
+import 'screens/templates_screen.dart';
 import 'screens/admin_panel.dart';
 import 'widgets/sidebar.dart';
 import 'widgets/broadcasts_panel.dart';
@@ -227,6 +228,7 @@ class _MainScaffoldState extends State<MainScaffold> {
     final destinations = <NavDestination>[];
     if (ClientConfig.hasFeature('conversations')) destinations.add(NavDestination.conversations);
     if (ClientConfig.hasFeature('broadcasts')) destinations.add(NavDestination.broadcasts);
+    if (ClientConfig.hasFeature('broadcasts')) destinations.add(NavDestination.templates);
     if (ClientConfig.hasFeature('booking_reminders')) destinations.add(NavDestination.bookingReminders);
     if (ClientConfig.hasFeature('analytics')) destinations.add(NavDestination.analytics);
     if (ClientConfig.hasFeature('manager_chat')) destinations.add(NavDestination.managerChat);
@@ -238,6 +240,7 @@ class _MainScaffoldState extends State<MainScaffold> {
     switch (dest) {
       case NavDestination.conversations: return Icons.forum;
       case NavDestination.broadcasts: return Icons.campaign;
+      case NavDestination.templates: return Icons.article_outlined;
       case NavDestination.bookingReminders: return Icons.calendar_month;
       case NavDestination.analytics: return Icons.analytics;
       case NavDestination.managerChat: return Icons.chat_bubble_rounded;
@@ -249,6 +252,7 @@ class _MainScaffoldState extends State<MainScaffold> {
     switch (dest) {
       case NavDestination.conversations: return 'Chats';
       case NavDestination.broadcasts: return 'Broadcasts';
+      case NavDestination.templates: return 'Templates';
       case NavDestination.bookingReminders: return 'Bookings';
       case NavDestination.analytics: return 'Analytics';
       case NavDestination.managerChat: return 'Vivid AI';
@@ -345,6 +349,8 @@ class _MainScaffoldState extends State<MainScaffold> {
         return _buildConversationsContent();
       case NavDestination.broadcasts:
         return _buildBroadcastsContent();
+      case NavDestination.templates:
+        return _buildTemplatesContent();
       case NavDestination.bookingReminders:
         return _buildBookingRemindersContent();
       case NavDestination.managerChat:
@@ -386,6 +392,10 @@ class _MainScaffoldState extends State<MainScaffold> {
       );
     }
     return const DashboardScreen();
+  }
+
+  Widget _buildTemplatesContent() {
+    return const TemplatesScreen();
   }
 
   /// Build broadcasts content with read-only handling and configuration check

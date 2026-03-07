@@ -351,6 +351,45 @@ class ConversationsProvider extends ChangeNotifier {
         }
       }
 
+      // Compute broadcast lifecycle label
+      // Only applies when the most recent session was initiated by a broadcast
+      // and the customer has no revenue label (appointment booked / payment done)
+      String? broadcastLifecycleLabel;
+      final revenueLabels = {'appointment booked', 'payment done'};
+      final hasRevenueLabel = label != null && revenueLabels.contains(label);
+      if (!hasRevenueLabel) {
+        // Find the index of the last broadcast exchange
+        int lastBroadcastIdx = -1;
+        for (int i = exchanges.length - 1; i >= 0; i--) {
+          if ((exchanges[i].sentBy ?? '').toLowerCase().trim() == 'broadcast') {
+            lastBroadcastIdx = i;
+            break;
+          }
+        }
+        if (lastBroadcastIdx >= 0) {
+          // Check what happened after the broadcast
+          bool customerReplied = false;
+          bool agentReplied = false;
+          for (int i = lastBroadcastIdx + 1; i < exchanges.length; i++) {
+            final ex = exchanges[i];
+            if (ex.customerMessage.trim().isNotEmpty || ex.isVoiceMessage) {
+              customerReplied = true;
+            }
+            if ((ex.managerResponse != null && ex.managerResponse!.trim().isNotEmpty) ||
+                (ex.aiResponse.trim().isNotEmpty && !_isHandoffMessage(ex.aiResponse))) {
+              agentReplied = true;
+            }
+          }
+          if (!customerReplied) {
+            broadcastLifecycleLabel = 'Sent';
+          } else if (!agentReplied) {
+            broadcastLifecycleLabel = 'Needs Reply';
+          } else {
+            broadcastLifecycleLabel = 'Replied';
+          }
+        }
+      }
+
       // Count consecutive unread exchanges from the end (skip broadcast rows)
       int unread = 0;
       if (status == ConversationStatus.needsReply) {
@@ -377,6 +416,7 @@ class ConversationsProvider extends ChangeNotifier {
         unreadCount: unread,
         startedAt: firstEx.createdAt,
         label: label,
+        broadcastLifecycleLabel: broadcastLifecycleLabel,
       );
     }).toList();
 

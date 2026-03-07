@@ -252,6 +252,8 @@ class Conversation {
   final int unreadCount;
   final DateTime startedAt;
   final String? label;
+  // Broadcast lifecycle: 'Sent', 'Needs Reply', or 'Replied' — null when not broadcast-driven
+  final String? broadcastLifecycleLabel;
 
   const Conversation({
     required this.customerPhone,
@@ -262,6 +264,7 @@ class Conversation {
     this.unreadCount = 0,
     required this.startedAt,
     this.label,
+    this.broadcastLifecycleLabel,
   });
 
   String get displayName => customerName ?? customerPhone;
@@ -277,6 +280,8 @@ class Conversation {
     DateTime? startedAt,
     String? label,
     bool clearLabel = false,
+    String? broadcastLifecycleLabel,
+    bool clearBroadcastLifecycleLabel = false,
   }) {
     return Conversation(
       customerPhone: customerPhone ?? this.customerPhone,
@@ -287,6 +292,9 @@ class Conversation {
       unreadCount: unreadCount ?? this.unreadCount,
       startedAt: startedAt ?? this.startedAt,
       label: clearLabel ? null : (label ?? this.label),
+      broadcastLifecycleLabel: clearBroadcastLifecycleLabel
+          ? null
+          : (broadcastLifecycleLabel ?? this.broadcastLifecycleLabel),
     );
   }
 }
