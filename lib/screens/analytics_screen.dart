@@ -342,8 +342,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             _buildDateFilter(),
-            _buildCompareToggle(),
-            if (_compareEnabled) _buildCompareDateFilter(),
+            if (!_showBroadcasts) _buildCompareToggle(),
+            if (!_showBroadcasts && _compareEnabled) _buildCompareDateFilter(),
             if (_hasBothFeatures) _buildViewToggle(),
           ],
         ),
@@ -383,7 +383,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             isSelected: _showBroadcasts,
             onTap: () {
               if (!_showBroadcasts) {
-                setState(() => _showBroadcasts = true);
+                setState(() {
+                  _showBroadcasts = true;
+                  _compareEnabled = false;
+                });
                 _loadAnalytics();
               }
             },
@@ -677,9 +680,23 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         final clientName = ClientConfig.businessName;
         final dateRange = _dateFilter.label;
         if (format == 'csv') {
-          AnalyticsExporter.exportAnalyticsCsv(data: data, clientName: clientName, dateRange: dateRange);
+          try {
+            AnalyticsExporter.exportAnalyticsCsv(data: data, clientName: clientName, dateRange: dateRange);
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('CSV export failed: $e'), backgroundColor: Colors.red),
+              );
+            }
+          }
         } else {
-          AnalyticsExporter.exportAnalyticsPdf(data: data, clientName: clientName, dateRange: dateRange);
+          AnalyticsExporter.exportAnalyticsPdf(data: data, clientName: clientName, dateRange: dateRange).catchError((e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('PDF export failed: $e'), backgroundColor: Colors.red),
+              );
+            }
+          });
         }
       },
       child: Container(
@@ -2005,7 +2022,7 @@ class _MetricCard extends StatelessWidget {
     final labelColor = isDark ? VividColors.textMuted : const Color(0xFF64748B);
     final descColor = isDark ? Colors.white70 : const Color(0xFF64748B);
     final card = Container(
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 28),
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
       decoration: BoxDecoration(
         color: cardBg,
         borderRadius: BorderRadius.circular(20),
