@@ -1349,3 +1349,125 @@ class BookingReminderStats {
     );
   }
 }
+
+// ============================================
+// WHATSAPP TEMPLATE MODELS
+// ============================================
+
+class TemplateButton {
+  final String type;
+  final String text;
+
+  const TemplateButton({required this.type, required this.text});
+
+  factory TemplateButton.fromJson(Map<String, dynamic> json) {
+    return TemplateButton(
+      type: json['type'] as String? ?? '',
+      text: json['text'] as String? ?? '',
+    );
+  }
+}
+
+class WhatsAppTemplate {
+  final String id;
+  final String name;
+  final String status;
+  final String language;
+  final String category;
+  final String headerType;
+  final String? headerText;
+  final String? headerMediaUrl;
+  final String body;
+  final String? footer;
+  final List<TemplateButton> buttons;
+
+  const WhatsAppTemplate({
+    required this.id,
+    required this.name,
+    required this.status,
+    required this.language,
+    required this.category,
+    required this.headerType,
+    this.headerText,
+    this.headerMediaUrl,
+    required this.body,
+    this.footer,
+    required this.buttons,
+  });
+
+  factory WhatsAppTemplate.fromJson(Map<String, dynamic> json) {
+    final components = json['components'] as List<dynamic>? ?? [];
+    String headerType = '';
+    String? headerText;
+    String? headerMediaUrl;
+    String body = '';
+    String? footer;
+    List<TemplateButton> buttons = [];
+
+    for (final component in components) {
+      final comp = component as Map<String, dynamic>;
+      final type = (comp['type'] as String? ?? '').toUpperCase();
+      if (type == 'HEADER') {
+        headerType = (comp['format'] as String? ?? '').toUpperCase();
+        if (headerType == 'TEXT') {
+          headerText = comp['text'] as String?;
+        } else if (headerType == 'IMAGE' || headerType == 'VIDEO') {
+          final example = comp['example'] as Map<String, dynamic>?;
+          final handles = example?['header_handle'] as List<dynamic>?;
+          headerMediaUrl = handles?.firstOrNull as String?;
+        }
+      } else if (type == 'BODY') {
+        body = comp['text'] as String? ?? '';
+      } else if (type == 'FOOTER') {
+        footer = comp['text'] as String?;
+      } else if (type == 'BUTTONS') {
+        final btns = comp['buttons'] as List<dynamic>? ?? [];
+        buttons = btns
+            .map((b) => TemplateButton.fromJson(b as Map<String, dynamic>))
+            .toList();
+      }
+    }
+
+    return WhatsAppTemplate(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      status: json['status'] as String? ?? '',
+      language: json['language'] as String? ?? '',
+      category: json['category'] as String? ?? '',
+      headerType: headerType,
+      headerText: headerText,
+      headerMediaUrl: headerMediaUrl,
+      body: body,
+      footer: footer,
+      buttons: buttons,
+    );
+  }
+}
+
+// ============================================
+// CUSTOMER PROFILE STATS
+// ============================================
+
+class CustomerProfileStats {
+  final int totalExchanges;
+  final int customerMessageCount;
+  final int agentMessageCount;
+  final int broadcastCount;
+  final double broadcastResponseRate;
+  final DateTime? lastContactedAt;
+  final DateTime? lastCampaignAt;
+  final List<String> labelsHistory;
+  final String? lastHandledBy;
+
+  const CustomerProfileStats({
+    required this.totalExchanges,
+    required this.customerMessageCount,
+    required this.agentMessageCount,
+    required this.broadcastCount,
+    required this.broadcastResponseRate,
+    this.lastContactedAt,
+    this.lastCampaignAt,
+    this.labelsHistory = const [],
+    this.lastHandledBy,
+  });
+}

@@ -19,10 +19,19 @@ class SupabaseService {
   // ============================================
   // CONFIG - UPDATE THESE!
   // ============================================
-  
+
   static const String _supabaseUrl = 'https://zxvjzaowvzvfgrzdimbm.supabase.co';
   static const String _supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp4dmp6YW93dnp2ZmdyemRpbWJtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU1NjM2MjUsImV4cCI6MjA4MTEzOTYyNX0.NkVPCRTLcQOdkzIhfsnvPBWJ1vcfeMQOysAuq6Erryg';
   // Webhook URL is now loaded from ClientConfig
+
+  // ============================================
+  // META API CONFIG (set after login from client config)
+  // ============================================
+
+  static String metaApiVersion = 'v18.0';
+  static String metaAccessToken = '';
+  static String metaWabaId = '';
+  static String metaAppId = '';
 
   // ============================================
   // SINGLETON
@@ -1328,6 +1337,68 @@ class SupabaseService {
     } catch (e) {
       print('Get booking stats error: $e');
       return BookingReminderStats.empty();
+    }
+  }
+
+  // ============================================
+  // CUSTOMER PROFILE STATS
+  // ============================================
+
+  Future<CustomerProfileStats> fetchCustomerProfileStats(String customerPhone) async {
+    try {
+      final table = ClientConfig.messagesTable;
+      if (table == null || table.isEmpty) {
+        return const CustomerProfileStats(
+          totalExchanges: 0,
+          customerMessageCount: 0,
+          agentMessageCount: 0,
+          broadcastCount: 0,
+          broadcastResponseRate: 0,
+        );
+      }
+
+      final rows = await client
+          .from(table)
+          .select()
+          .eq('customer_phone', customerPhone)
+          .order('created_at', ascending: false);
+
+      int totalExchanges = rows.length;
+      int customerMsgs = 0;
+      int agentMsgs = 0;
+      DateTime? lastContactedAt;
+
+      for (final row in rows) {
+        final sender = row['sender_type'] as String? ?? '';
+        if (sender == 'customer') {
+          customerMsgs++;
+        } else {
+          agentMsgs++;
+        }
+      }
+
+      if (rows.isNotEmpty) {
+        final ts = rows.first['created_at'] as String?;
+        if (ts != null) lastContactedAt = DateTime.tryParse(ts);
+      }
+
+      return CustomerProfileStats(
+        totalExchanges: totalExchanges,
+        customerMessageCount: customerMsgs,
+        agentMessageCount: agentMsgs,
+        broadcastCount: 0,
+        broadcastResponseRate: 0,
+        lastContactedAt: lastContactedAt,
+      );
+    } catch (e) {
+      print('fetchCustomerProfileStats error: $e');
+      return const CustomerProfileStats(
+        totalExchanges: 0,
+        customerMessageCount: 0,
+        agentMessageCount: 0,
+        broadcastCount: 0,
+        broadcastResponseRate: 0,
+      );
     }
   }
 

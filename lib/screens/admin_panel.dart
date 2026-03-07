@@ -1588,7 +1588,6 @@ class _ClientDialogState extends State<_ClientDialog> {
                     value: _hasAiConversations,
                     onChanged: (val) => setState(() => _hasAiConversations = val),
                     activeTrackColor: VividColors.cyan.withOpacity(0.3),
-                    activeThumbColor: VividColors.cyan,
                     contentPadding: EdgeInsets.zero,
                     secondary: Icon(
                       Icons.smart_toy,
