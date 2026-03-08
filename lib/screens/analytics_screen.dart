@@ -342,8 +342,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             _buildDateFilter(),
-            if (!_showBroadcasts) _buildCompareToggle(),
-            if (!_showBroadcasts && _compareEnabled) _buildCompareDateFilter(),
+            _buildCompareToggle(),
+            if (_compareEnabled) _buildCompareDateFilter(),
             if (_hasBothFeatures) _buildViewToggle(),
           ],
         ),
@@ -385,7 +385,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               if (!_showBroadcasts) {
                 setState(() {
                   _showBroadcasts = true;
-                  _compareEnabled = false;
                 });
                 _loadAnalytics();
               }
@@ -408,9 +407,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
-          color: isSelected
-              ? (label == 'Broadcasts' ? VividColors.brightBlue : VividColors.cyan)
-              : Colors.transparent,
+          color: isSelected ? VividColors.cyan : Colors.transparent,
           borderRadius: BorderRadius.circular(10),
         ),
         child: Row(
@@ -690,19 +687,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             }
           }
         } else {
-          AnalyticsExporter.exportAnalyticsPdf(data: data, clientName: clientName, dateRange: dateRange).then((_) {
-            if (mounted) {
-              final usedFallback = AnalyticsExporter.fontLoadFailed;
-              if (usedFallback) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('PDF exported (Arabic font unavailable, using default font)'),
-                    backgroundColor: Colors.orange,
-                  ),
-                );
-              }
-            }
-          }).catchError((e) {
+          AnalyticsExporter.exportAnalyticsPdf(data: data, clientName: clientName, dateRange: dateRange).catchError((e) {
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(content: Text('PDF export failed: $e'), backgroundColor: Colors.red),
@@ -1568,6 +1553,8 @@ class _BroadcastsView extends StatelessWidget {
         ? data.campaigns.fold<double>(0, (s, c) => s + c.engagementRate) / data.campaigns.length
         : 0.0;
     final totalResponded = data.campaigns.fold<int>(0, (s, c) => s + c.responded);
+    final totalSent = data.campaigns.fold<int>(0, (s, c) => s + c.sent);
+    final avgConvRate = totalSent > 0 ? (totalLeads / totalSent) * 100 : 0.0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1575,48 +1562,49 @@ class _BroadcastsView extends StatelessWidget {
         Text('Overview', style: TextStyle(
           color: isDark ? VividColors.textPrimary : const Color(0xFF1E293B), fontSize: 20, fontWeight: FontWeight.bold)),
         const SizedBox(height: 20),
-        // Row 1
+        // Row 1: two wide cards
         _cardRow(isWide, [
           _MetricCard(icon: Icons.people_alt, label: 'Total Leads', value: '$totalLeads',
-              color: VividColors.cyan, description: 'From campaigns', isHighlight: true,
-              onTap: data.campaigns.any((c) => c.leadContributors.isNotEmpty)
-                  ? () => showDialog(context: context, builder: (_) =>
-                      _AllCampaignsLeadsDialog(campaigns: data.campaigns))
-                  : null),
+              color: VividColors.cyan, description: 'New conversations attributed to broadcasts',
+              isHighlight: totalLeads > 0,
+              onTap: () => showDialog(context: context, builder: (_) =>
+                  _AllCampaignsLeadsDialog(campaigns: data.campaigns))),
           _MetricCard(icon: Icons.attach_money, label: 'Total Revenue',
               value: totalRevenue > 0 ? '${totalRevenue.toStringAsFixed(0)} BHD' : '0 BHD',
-              color: Colors.green, description: 'Campaign conversions',
-              onTap: totalRevenue > 0
-                  ? () => showDialog(context: context, builder: (_) =>
-                      _AllCampaignsRevenueDialog(campaigns: data.campaigns))
-                  : null),
+              color: Colors.green, description: 'Revenue from campaign conversions',
+              isHighlight: totalRevenue > 0,
+              onTap: () => showDialog(context: context, builder: (_) =>
+                  _AllCampaignsRevenueDialog(campaigns: data.campaigns))),
+        ]),
+        const SizedBox(height: 20),
+        // Row 2: three cards
+        _cardRow(isWide, [
           _MetricCard(icon: Icons.trending_up, label: 'Avg Engagement',
               value: '${avgEngagement.toStringAsFixed(1)}%',
               color: VividColors.brightBlue,
-              description: 'Campaign recipients who replied (scoped to broadcasts only)',
+              description: 'Unique respondents / unique recipients',
               isHighlight: avgEngagement > 20,
-              onTap: data.campaigns.isNotEmpty
-                  ? () => showDialog(context: context, builder: (_) =>
-                      _AllCampaignsEngagementDialog(campaigns: data.campaigns))
-                  : null),
-        ]),
-        const SizedBox(height: 20),
-        // Row 2
-        _cardRow(isWide, [
+              onTap: () => showDialog(context: context, builder: (_) =>
+                  _AllCampaignsEngagementDialog(campaigns: data.campaigns))),
+          _MetricCard(icon: Icons.filter_alt, label: 'Conversion Rate',
+              value: '${avgConvRate.toStringAsFixed(1)}%',
+              color: VividColors.brightBlue,
+              description: 'Leads generated per unique recipient',
+              isHighlight: avgConvRate > 0,
+              onTap: () => showDialog(context: context, builder: (_) =>
+                  _AllCampaignsLeadsDialog(campaigns: data.campaigns))),
           _MetricCard(icon: Icons.campaign, label: 'Campaigns Sent',
               value: '${data.campaigns.length}',
-              color: VividColors.brightBlue, description: 'Total broadcasts',
-              onTap: data.campaigns.isNotEmpty
-                  ? () => showDialog(context: context, builder: (_) =>
-                      _AllCampaignsListDialog(campaigns: data.campaigns))
-                  : null),
+              color: VividColors.brightBlue, description: 'Total broadcast campaigns',
+              isHighlight: data.campaigns.isNotEmpty,
+              onTap: () => showDialog(context: context, builder: (_) =>
+                  _AllCampaignsListDialog(campaigns: data.campaigns))),
           _MetricCard(icon: Icons.reply, label: 'Responded',
               value: '$totalResponded',
-              color: VividColors.cyan, description: 'Unique replies',
-              onTap: data.campaigns.any((c) => c.respondedCustomers.isNotEmpty)
-                  ? () => showDialog(context: context, builder: (_) =>
-                      _AllRespondedDialog(campaigns: data.campaigns))
-                  : null),
+              color: VividColors.cyan, description: 'Unique customer replies across all campaigns',
+              isHighlight: totalResponded > 0,
+              onTap: () => showDialog(context: context, builder: (_) =>
+                  _AllRespondedDialog(campaigns: data.campaigns))),
         ]),
         const SizedBox(height: 32),
         Text('Campaign Performance', style: TextStyle(
@@ -1654,6 +1642,7 @@ class _BroadcastsView extends StatelessWidget {
             Expanded(flex: 1, child: _TableHeader('LEADS', center: true)),
             Expanded(flex: 1, child: _TableHeader('REVENUE', center: true)),
             Expanded(flex: 1, child: _TableHeader('ENG. RATE', center: true)),
+            Expanded(flex: 1, child: _TableHeader('CONV. RATE', center: true)),
           ]),
         ),
         // Rows
@@ -1686,6 +1675,8 @@ class _BroadcastsView extends StatelessWidget {
                   c.revenue > 0 ? '${c.revenue.toStringAsFixed(0)} BHD' : '-')),
               Expanded(flex: 1, child: _tableCell(
                   '${c.engagementRate.toStringAsFixed(1)}%')),
+              Expanded(flex: 1, child: _tableCell(
+                  c.sent > 0 ? '${(c.leads / c.sent * 100).toStringAsFixed(1)}%' : '-')),
             ]),
           );
         }),
@@ -1704,53 +1695,52 @@ class _BroadcastsView extends StatelessWidget {
         Text('Campaign Details', style: TextStyle(
           color: isDark ? VividColors.textPrimary : const Color(0xFF1E293B), fontSize: 20, fontWeight: FontWeight.bold)),
         const SizedBox(height: 20),
+        // Row 1: two wide primary metrics
         _cardRow(isWide, [
           _MetricCard(icon: Icons.send, label: 'Sent', value: '${campaign.sent}',
-              color: VividColors.brightBlue, description: 'Recipients',
-              onTap: campaign.recipients.isNotEmpty
-                  ? () => showDialog(context: context, builder: (_) =>
-                      _CampaignRecipientsDialog(
-                        recipients: campaign.recipients,
-                        campaignName: campaign.name,
-                      ))
-                  : null),
+              color: VividColors.brightBlue, description: 'Total recipients in this campaign',
+              isHighlight: campaign.sent > 0,
+              onTap: () => showDialog(context: context, builder: (_) =>
+                  _CampaignRecipientsDialog(
+                    recipients: campaign.recipients,
+                    campaignName: campaign.name,
+                  ))),
           _MetricCard(icon: Icons.reply, label: 'Responded', value: '${campaign.responded}',
-              color: VividColors.statusSuccess, description: 'Unique replies',
-              onTap: campaign.respondedCustomers.isNotEmpty
-                  ? () => showDialog(context: context, builder: (_) =>
-                      _CampaignRespondedDialog(
-                        customers: campaign.respondedCustomers,
-                        campaignName: campaign.name,
-                      ))
-                  : null),
-          _MetricCard(icon: Icons.people_alt, label: 'Leads', value: '${campaign.leads}',
-              color: VividColors.cyan, description: 'From this campaign',
-              onTap: campaign.leadContributors.isNotEmpty
-                  ? () => showDialog(
-                      context: context,
-                      builder: (_) => _LeadsDialog(
-                        title: '${campaign.name} — Leads',
-                        leads: campaign.leadContributors,
-                      ))
-                  : null),
+              color: VividColors.statusSuccess, description: 'Unique customer replies',
+              isHighlight: campaign.responded > 0,
+              onTap: () => showDialog(context: context, builder: (_) =>
+                  _CampaignRespondedDialog(
+                    customers: campaign.respondedCustomers,
+                    campaignName: campaign.name,
+                  ))),
         ]),
         const SizedBox(height: 20),
+        // Row 2: Leads + pipeline milestones
         _cardRow(isWide, [
+          _MetricCard(icon: Icons.people_alt, label: 'Leads', value: '${campaign.leads}',
+              color: VividColors.cyan, description: 'Conversations from this campaign',
+              isHighlight: campaign.leads > 0,
+              onTap: () => showDialog(
+                  context: context,
+                  builder: (_) => _LeadsDialog(
+                    title: '${campaign.name} — Leads',
+                    leads: campaign.leadContributors,
+                  ))),
           _MetricCard(
             icon: Icons.event_available,
             label: 'Appointments Booked',
             value: '${campaign.appointmentCustomers.length}',
             color: Colors.green,
             description: 'From this campaign',
-            onTap: campaign.appointmentCustomers.isNotEmpty
-                ? () => showDialog(
-                    context: context,
-                    builder: (_) => _CampaignLabeledDialog(
-                      title: 'Appointments Booked',
-                      customers: campaign.appointmentCustomers,
-                      color: Colors.green,
-                    ))
-                : null,
+            isHighlight: campaign.appointmentCustomers.isNotEmpty,
+            onTap: () => showDialog(
+                context: context,
+                builder: (_) => _CampaignLabeledDialog(
+                  title: 'Appointments Booked',
+                  customers: campaign.appointmentCustomers,
+                  color: Colors.green,
+                  canEdit: true,
+                )),
           ),
           _MetricCard(
             icon: Icons.payments,
@@ -1760,18 +1750,19 @@ class _BroadcastsView extends StatelessWidget {
             description: campaign.revenue > 0
                 ? '${campaign.revenue.toStringAsFixed(0)} BHD revenue'
                 : 'No revenue yet',
-            onTap: campaign.paymentCustomers.isNotEmpty
-                ? () => showDialog(
-                    context: context,
-                    builder: (_) => _CampaignLabeledDialog(
-                      title: 'Payment Done',
-                      customers: campaign.paymentCustomers,
-                      color: VividColors.cyan,
-                    ))
-                : null,
+            isHighlight: campaign.paymentCustomers.isNotEmpty,
+            onTap: () => showDialog(
+                context: context,
+                builder: (_) => _CampaignLabeledDialog(
+                  title: 'Payment Done',
+                  customers: campaign.paymentCustomers,
+                  color: VividColors.cyan,
+                  canEdit: true,
+                )),
           ),
         ]),
         const SizedBox(height: 20),
+        // Row 3: Revenue + Engagement
         _cardRow(isWide, [
           _MetricCard(
             icon: Icons.attach_money,
@@ -1779,16 +1770,15 @@ class _BroadcastsView extends StatelessWidget {
             value: campaign.revenue > 0 ? '${campaign.revenue.toStringAsFixed(0)} BHD' : '0 BHD',
             color: Colors.green,
             description: 'Offer: ${campaign.offerAmount.toStringAsFixed(0)} BHD × ${campaign.paymentCustomers.length}',
-            onTap: campaign.paymentCustomers.isNotEmpty
-                ? () => showDialog(
-                    context: context,
-                    builder: (_) => _CampaignLabeledDialog(
-                      title: 'Revenue Breakdown',
-                      customers: campaign.paymentCustomers,
-                      color: Colors.green,
-                      showRevenue: true,
-                    ))
-                : null,
+            isHighlight: campaign.revenue > 0,
+            onTap: () => showDialog(
+                context: context,
+                builder: (_) => _CampaignLabeledDialog(
+                  title: 'Revenue Breakdown',
+                  customers: campaign.paymentCustomers,
+                  color: Colors.green,
+                  showRevenue: true,
+                )),
           ),
           _MetricCard(
             icon: Icons.trending_up, label: 'Engagement Rate',
@@ -1796,13 +1786,12 @@ class _BroadcastsView extends StatelessWidget {
             color: campaign.engagementRate >= 10 ? VividColors.statusSuccess
                 : campaign.engagementRate >= 5 ? VividColors.statusWarning : VividColors.brightBlue,
             description: '${campaign.responded}/${campaign.sent} responded',
-            onTap: campaign.respondedCustomers.isNotEmpty
-                ? () => showDialog(context: context, builder: (_) =>
-                    _CampaignRespondedDialog(
-                      customers: campaign.respondedCustomers,
-                      campaignName: campaign.name,
-                    ))
-                : null,
+            isHighlight: campaign.engagementRate >= 10,
+            onTap: () => showDialog(context: context, builder: (_) =>
+                _CampaignRespondedDialog(
+                  customers: campaign.respondedCustomers,
+                  campaignName: campaign.name,
+                )),
           ),
         ]),
         if (data.dailyBreakdown.isNotEmpty) ...[
@@ -1873,7 +1862,7 @@ Widget _cardRow(bool isWide, List<Widget> cards) {
       children.add(Expanded(child: cards[i]));
       if (i < cards.length - 1) children.add(const SizedBox(width: 20));
     }
-    return IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: children));
+    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: children);
   }
   return Column(
     children: cards.expand((c) => [c, const SizedBox(height: 12)]).toList()..removeLast(),
@@ -2617,15 +2606,6 @@ class _LeadsDialogState extends State<_LeadsDialog> {
                                           style: TextStyle(color: textMuted, fontSize: 10)),
                                   ],
                                 ),
-                                const SizedBox(width: 8),
-                                GestureDetector(
-                                  onTap: () => setState(() => _leads.removeAt(i)),
-                                  child: Tooltip(
-                                    message: 'Hide from this view',
-                                    child: Icon(Icons.close, size: 15,
-                                        color: VividColors.statusUrgent.withValues(alpha: 0.7)),
-                                  ),
-                                ),
                               ],
                             ),
                           );
@@ -2649,12 +2629,14 @@ class _CampaignLabeledDialog extends StatefulWidget {
   final List<LabeledCustomer> customers;
   final Color color;
   final bool showRevenue;
+  final bool canEdit;
 
   const _CampaignLabeledDialog({
     required this.title,
     required this.customers,
     required this.color,
     this.showRevenue = false,
+    this.canEdit = false,
   });
 
   @override
@@ -2677,10 +2659,10 @@ class _CampaignLabeledDialogState extends State<_CampaignLabeledDialog> {
       builder: (_) => AlertDialog(
         backgroundColor: isDark ? VividColors.navy : Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('Remove label?',
+        title: Text('Remove this entry?',
             style: TextStyle(color: isDark ? VividColors.textPrimary : const Color(0xFF1E293B), fontSize: 16, fontWeight: FontWeight.w600)),
         content: Text(
-          'This will clear the label for ${customer.displayName} in Supabase.',
+          'Remove this entry from analytics?',
           style: TextStyle(color: isDark ? VividColors.textSecondary : const Color(0xFF475569), fontSize: 13),
         ),
         actions: [
@@ -2695,15 +2677,28 @@ class _CampaignLabeledDialogState extends State<_CampaignLabeledDialog> {
         ],
       ),
     );
-    if (confirmed != true) return;
+    if (confirmed != true || !mounted) return;
     setState(() => _customers.removeWhere((c) => c.phone == customer.phone));
     try {
       await SupabaseService.instance.updateConversationLabel(
         customerPhone: customer.phone,
         label: '',
       );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Entry removed from analytics'),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
     } catch (_) {
-      setState(() => _customers = List.of(widget.customers));
+      if (mounted) {
+        setState(() => _customers = List.of(widget.customers));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Failed to remove entry'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: VividColors.statusUrgent,
+        ));
+      }
     }
   }
 
@@ -2826,15 +2821,17 @@ class _CampaignLabeledDialogState extends State<_CampaignLabeledDialog> {
                                         style: const TextStyle(color: Colors.green, fontSize: 11, fontWeight: FontWeight.w500)),
                                   ],
                                 ),
-                                const SizedBox(width: 8),
-                                GestureDetector(
-                                  onTap: () => _handleRemove(c),
-                                  child: Tooltip(
-                                    message: 'Clear label in Supabase',
-                                    child: Icon(Icons.close, size: 15,
-                                        color: VividColors.statusUrgent.withValues(alpha: 0.7)),
+                                if (widget.canEdit) ...[
+                                  const SizedBox(width: 8),
+                                  GestureDetector(
+                                    onTap: () => _handleRemove(c),
+                                    child: Tooltip(
+                                      message: 'Remove entry from analytics',
+                                      child: Icon(Icons.close, size: 15,
+                                          color: VividColors.statusUrgent.withValues(alpha: 0.7)),
+                                    ),
                                   ),
-                                ),
+                                ],
                               ],
                             ),
                           );

@@ -2,7 +2,6 @@ import 'dart:convert';
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 import 'dart:typed_data';
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../models/models.dart';
@@ -13,22 +12,6 @@ import 'initials_helper.dart';
 /// Works with the v4 ROI analytics data models.
 class AnalyticsExporter {
   static final _pdfColors = _PdfBrandColors();
-  static pw.Font? _arabicFont;
-  static bool _fontLoadFailed = false;
-  static bool get fontLoadFailed => _fontLoadFailed;
-
-  static Future<pw.Font?> _loadArabicFont() async {
-    if (_arabicFont != null) return _arabicFont!;
-    if (_fontLoadFailed) return null;
-    try {
-      final fontData = await rootBundle.load('assets/fonts/NotoSansArabic-Regular.ttf');
-      _arabicFont = pw.Font.ttf(fontData);
-      return _arabicFont!;
-    } catch (_) {
-      _fontLoadFailed = true;
-      return null;
-    }
-  }
 
   // ============================================
   // ANALYTICS - CSV (Change 9: Organized export)
@@ -163,7 +146,6 @@ class AnalyticsExporter {
     required String clientName,
     required String dateRange,
   }) async {
-    final arabicFont = await _loadArabicFont();
     final pdf = pw.Document();
     final timestamp = _formatDateIso(DateTime.now());
     final m = data.current;
@@ -172,9 +154,7 @@ class AnalyticsExporter {
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(40),
-        theme: arabicFont != null
-            ? pw.ThemeData.withFont(fontFallback: [arabicFont])
-            : pw.ThemeData(),
+        theme: pw.ThemeData(),
         header: (context) => _buildBrandedHeader(clientName, '$dateRange  |  $timestamp'),
         footer: (context) => _buildPdfFooter(context),
         build: (context) => [
@@ -260,16 +240,17 @@ class AnalyticsExporter {
       columnWidths: {
         0: const pw.FlexColumnWidth(2.5),
         1: const pw.FixedColumnWidth(50),
-        2: const pw.FixedColumnWidth(45),
-        3: const pw.FixedColumnWidth(55),
-        4: const pw.FixedColumnWidth(40),
-        5: const pw.FixedColumnWidth(50),
-        6: const pw.FixedColumnWidth(50),
+        2: const pw.FixedColumnWidth(40),
+        3: const pw.FixedColumnWidth(45),
+        4: const pw.FixedColumnWidth(35),
+        5: const pw.FixedColumnWidth(45),
+        6: const pw.FixedColumnWidth(40),
+        7: const pw.FixedColumnWidth(45),
       },
       children: [
         pw.TableRow(
           decoration: pw.BoxDecoration(color: _pdfColors.navy),
-          children: ['Campaign', 'Date', 'Sent', 'Responded', 'Leads', 'Revenue', 'Eng. %'].map((h) => pw.Padding(
+          children: ['Campaign', 'Date', 'Sent', 'Responded', 'Leads', 'Revenue', 'Eng. %', 'Conv. %'].map((h) => pw.Padding(
             padding: const pw.EdgeInsets.all(8),
             child: pw.Text(h, style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: PdfColors.white)),
           )).toList(),
@@ -277,6 +258,7 @@ class AnalyticsExporter {
         ...List.generate(campaigns.length, (i) {
           final c = campaigns[i];
           final bg = i % 2 == 0 ? PdfColors.white : PdfColor.fromHex('#F8F9FA');
+          final convRate = c.sent > 0 ? '${(c.leads / c.sent * 100).toStringAsFixed(0)}%' : '-';
 
           return pw.TableRow(
             decoration: pw.BoxDecoration(color: bg),
@@ -299,6 +281,7 @@ class AnalyticsExporter {
                 textAlign: pw.TextAlign.center,
               )),
               pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text('${c.engagementRate.toStringAsFixed(0)}%', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: _pdfColors.blue), textAlign: pw.TextAlign.center)),
+              pw.Padding(padding: const pw.EdgeInsets.all(6), child: pw.Text(convRate, style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: _pdfColors.blue), textAlign: pw.TextAlign.center)),
             ],
           );
         }),
@@ -605,7 +588,6 @@ class AnalyticsExporter {
   }
 
   static Future<void> exportBroadcastAnalyticsToPdf({required dynamic data}) async {
-    final arabicFont = await _loadArabicFont();
     final pdf = pw.Document();
     final timestamp = _formatDateIso(DateTime.now());
 
@@ -613,9 +595,7 @@ class AnalyticsExporter {
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(40),
-        theme: arabicFont != null
-            ? pw.ThemeData.withFont(fontFallback: [arabicFont])
-            : pw.ThemeData(),
+        theme: pw.ThemeData(),
         header: (context) => _buildPdfHeader('Broadcast Analytics', ClientConfig.businessName, timestamp),
         footer: (context) => _buildPdfFooter(context),
         build: (context) => [

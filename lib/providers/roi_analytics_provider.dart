@@ -407,17 +407,24 @@ class RoiAnalyticsProvider extends ChangeNotifier {
       }
     }
 
-    // ---- ENGAGEMENT RATE (inbound messages / total broadcasts sent) ----
-    int inboundMessageCount = 0;
-    int totalBroadcastsSent = 0;
+    // ---- ENGAGEMENT RATE (unique respondents / unique recipients) ----
+    final Set<String> allRecipientPhones = {};
     for (final phones in campaignPhones.values) {
-      totalBroadcastsSent += phones.length;
+      allRecipientPhones.addAll(phones);
     }
-    for (final m in messages) {
-      if (_hasCustomerMessage(m)) inboundMessageCount++;
+    final Set<String> respondedPhones = {};
+    for (final phone in allRecipientPhones) {
+      final msgs = byPhone[phone];
+      if (msgs == null) continue;
+      for (final m in msgs) {
+        if (_hasCustomerMessage(m)) {
+          respondedPhones.add(phone);
+          break;
+        }
+      }
     }
-    final engagementRate = totalBroadcastsSent > 0
-        ? (inboundMessageCount / totalBroadcastsSent) * 100
+    final engagementRate = allRecipientPhones.isNotEmpty
+        ? (respondedPhones.length / allRecipientPhones.length) * 100
         : 0.0;
 
     // ---- AVG RESPONSE TIME (capped at 24h / 86400s) ----
@@ -665,8 +672,8 @@ class RoiAnalyticsProvider extends ChangeNotifier {
       final avgRT = a.responseTimes.isNotEmpty
           ? a.responseTimes.reduce((x, y) => x + y) / a.responseTimes.length
           : 0.0;
-      final er = totalBroadcastsSent > 0
-          ? (a.received / totalBroadcastsSent) * 100
+      final er = allRecipientPhones.isNotEmpty
+          ? (a.received / allRecipientPhones.length) * 100
           : 0.0;
       return DailyBreakdown(
         date: e.key,
@@ -696,9 +703,9 @@ class RoiAnalyticsProvider extends ChangeNotifier {
       daily: dailyBreakdown,
       open: openConvs,
       overdue: overdueConvs,
-      uniqueRepliers: inboundMessageCount,
-      outboundCount: totalBroadcastsSent,
-      inboundCustomerCount: inboundMessageCount,
+      uniqueRepliers: respondedPhones.length,
+      outboundCount: allRecipientPhones.length,
+      inboundCustomerCount: respondedPhones.length,
       labeledCustomers: labeledCustomers,
       leadContributors: leadContributors,
       organicLeadContributors: organicLeadContributors,
@@ -790,7 +797,6 @@ class RoiAnalyticsProvider extends ChangeNotifier {
       msgByPhone.putIfAbsent(phone, () => []).add(m);
     }
 
-    final revenueLabels = {'payment done'};
     final List<CampaignPerformance> result = [];
 
     for (final c in campaigns) {
@@ -805,12 +811,25 @@ class RoiAnalyticsProvider extends ChangeNotifier {
       int leads = 0;
       double revenue = 0;
 
+      final List<LeadContributor> campLeads = [];
+      final List<InboundCustomer> campResponded = [];
+      final List<LabeledCustomer> campAppointments = [];
+      final List<LabeledCustomer> campPayments = [];
+
       for (final phone in phones) {
         final phoneMsgs = msgByPhone[phone];
         if (phoneMsgs == null) continue;
 
+        // Extract name from any message for this phone
+        String? nameAttr;
+        for (final m in phoneMsgs) {
+          nameAttr ??= m['customer_name']?.toString();
+          if (nameAttr != null) break;
+        }
+
         bool hasReplied = false;
         DateTime? lastCM;
+        DateTime? firstReplyDate;
         int phoneLeads = 0;
 
         for (final m in phoneMsgs) {
@@ -820,6 +839,7 @@ class RoiAnalyticsProvider extends ChangeNotifier {
           if (sentAt != null && createdAt.isBefore(sentAt)) continue;
 
           hasReplied = true;
+          firstReplyDate ??= createdAt;
           if (lastCM == null ||
               createdAt.difference(lastCM).inHours >= 24) {
             phoneLeads++;
@@ -827,17 +847,55 @@ class RoiAnalyticsProvider extends ChangeNotifier {
           lastCM = createdAt;
         }
 
-        if (hasReplied) responded++;
+        if (hasReplied) {
+          responded++;
+          campResponded.add(InboundCustomer(
+            phone: phone,
+            name: nameAttr,
+            displayName: nameAttr ?? phone,
+            messageCount: phoneLeads,
+            lastMessageAt: lastCM,
+          ));
+        }
+        if (phoneLeads > 0 && firstReplyDate != null) {
+          for (int i = 0; i < phoneLeads; i++) {
+            campLeads.add(LeadContributor(
+              phone: phone,
+              name: nameAttr,
+              displayName: nameAttr ?? phone,
+              date: firstReplyDate,
+            ));
+          }
+        }
         leads += phoneLeads;
 
         for (final m in phoneMsgs) {
           final label =
               (m['label']?.toString() ?? '').toLowerCase().trim();
-          if (!revenueLabels.contains(label)) continue;
           final createdAt = _parseDate(m);
           if (createdAt == null) continue;
           if (sentAt != null && createdAt.isBefore(sentAt)) continue;
-          revenue += offerAmount;
+
+          if (label == 'payment done') {
+            revenue += offerAmount;
+            campPayments.add(LabeledCustomer(
+              phone: phone,
+              name: nameAttr,
+              label: label,
+              date: createdAt,
+              offerAmount: offerAmount,
+              campaignName: name,
+            ));
+          } else if (label == 'appointment booked') {
+            campAppointments.add(LabeledCustomer(
+              phone: phone,
+              name: nameAttr,
+              label: label,
+              date: createdAt,
+              offerAmount: offerAmount,
+              campaignName: name,
+            ));
+          }
         }
       }
 
@@ -854,6 +912,10 @@ class RoiAnalyticsProvider extends ChangeNotifier {
         leads: leads,
         revenue: revenue,
         engagementRate: engRate,
+        leadContributors: campLeads,
+        respondedCustomers: campResponded,
+        appointmentCustomers: campAppointments,
+        paymentCustomers: campPayments,
       ));
     }
 

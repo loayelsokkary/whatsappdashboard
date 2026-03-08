@@ -122,8 +122,9 @@ class TemplatesProvider extends ChangeNotifier {
   // DELETE TEMPLATE
   // ============================================
 
-  /// Deletes a template by name. Returns null on success, error string on failure.
-  Future<String?> deleteTemplate(String name) async {
+  /// Deletes a template by name via the WABA endpoint.
+  /// Returns null on success, error string on failure.
+  Future<String?> deleteTemplate(String name, String id) async {
     _isSubmitting = true;
     notifyListeners();
 
@@ -131,7 +132,10 @@ class TemplatesProvider extends ChangeNotifier {
       final uri = Uri.parse(
         '$_baseUrl/${SupabaseService.metaWabaId}/message_templates?name=$name',
       );
+      debugPrint('[TemplatesProvider] DELETE $uri');
+
       final response = await http.delete(uri, headers: _headers);
+      debugPrint('[TemplatesProvider] Status: ${response.statusCode} Body: ${response.body}');
 
       _isSubmitting = false;
 

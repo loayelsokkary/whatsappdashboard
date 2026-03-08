@@ -230,7 +230,7 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
         itemBuilder: (context, index) {
           return _TemplateCard(
             template: provider.templates[index],
-            onDelete: (name) => _confirmDelete(context, provider, name),
+            onDelete: (name, id) => _confirmDelete(context, provider, name, id),
             onPreview: (t) => _showPreview(context, t),
           );
         },
@@ -261,7 +261,7 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
   }
 
   Future<void> _confirmDelete(
-      BuildContext context, TemplatesProvider provider, String name) async {
+      BuildContext context, TemplatesProvider provider, String name, String id) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -295,7 +295,7 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
 
     if (confirmed != true || !context.mounted) return;
 
-    final err = await provider.deleteTemplate(name);
+    final err = await provider.deleteTemplate(name, id);
     if (!context.mounted) return;
     if (err != null) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -306,7 +306,7 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
       ));
     } else {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Template deleted'),
+        content: Text('Template deleted successfully'),
         behavior: SnackBarBehavior.floating,
       ));
     }
@@ -319,7 +319,7 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
 
 class _TemplateCard extends StatelessWidget {
   final WhatsAppTemplate template;
-  final void Function(String name) onDelete;
+  final void Function(String name, String id) onDelete;
   final void Function(WhatsAppTemplate t) onPreview;
 
   const _TemplateCard({
@@ -485,7 +485,7 @@ class _TemplateCard extends StatelessWidget {
                   children: [
                     // Delete — stop propagation so it doesn't trigger card tap
                     TextButton.icon(
-                      onPressed: () => onDelete(template.name),
+                      onPressed: () => onDelete(template.name, template.id),
                       icon: const Icon(Icons.delete_outline_rounded, size: 14),
                       label: const Text('Delete'),
                       style: TextButton.styleFrom(
