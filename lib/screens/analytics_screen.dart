@@ -690,7 +690,19 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             }
           }
         } else {
-          AnalyticsExporter.exportAnalyticsPdf(data: data, clientName: clientName, dateRange: dateRange).catchError((e) {
+          AnalyticsExporter.exportAnalyticsPdf(data: data, clientName: clientName, dateRange: dateRange).then((_) {
+            if (mounted) {
+              final usedFallback = AnalyticsExporter.fontLoadFailed;
+              if (usedFallback) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('PDF exported (Arabic font unavailable, using default font)'),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+              }
+            }
+          }).catchError((e) {
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(content: Text('PDF export failed: $e'), backgroundColor: Colors.red),
@@ -796,9 +808,7 @@ class _ConversationsView extends StatelessWidget {
             isHighlight: m.leads > 0,
             change: c != null ? _calcChange(m.leads.toDouble(), c.leads.toDouble()) : null,
             compareLabel: _compareLabel,
-            onTap: data.leadContributors.isNotEmpty
-                ? () => _showLeadsDialog(context, 'All Leads', data.leadContributors)
-                : null,
+            onTap: () => _showLeadsDialog(context, 'All Leads', data.leadContributors),
           ),
           _MetricCard(
             icon: Icons.nature_people,
@@ -809,9 +819,7 @@ class _ConversationsView extends StatelessWidget {
             isHighlight: m.organicLeads > 0,
             change: c != null ? _calcChange(m.organicLeads.toDouble(), c.organicLeads.toDouble()) : null,
             compareLabel: _compareLabel,
-            onTap: data.organicLeadContributors.isNotEmpty
-                ? () => _showLeadsDialog(context, 'Organic Leads', data.organicLeadContributors)
-                : null,
+            onTap: () => _showLeadsDialog(context, 'Organic Leads', data.organicLeadContributors),
           ),
         ]),
         const SizedBox(height: 20),
@@ -827,7 +835,7 @@ class _ConversationsView extends StatelessWidget {
             isHighlight: m.appointmentsBooked > 0,
             change: c != null ? _calcChange(m.appointmentsBooked.toDouble(), c.appointmentsBooked.toDouble()) : null,
             compareLabel: _compareLabel,
-            onTap: data.labeledCustomers.isNotEmpty ? () => _showPipelineDialog(context) : null,
+            onTap: () => _showPipelineDialog(context),
           ),
           _MetricCard(
             icon: Icons.payments,
@@ -838,7 +846,7 @@ class _ConversationsView extends StatelessWidget {
             isHighlight: m.paymentsDone > 0,
             change: c != null ? _calcChange(m.revenue, c.revenue) : null,
             compareLabel: _compareLabel,
-            onTap: data.labeledCustomers.isNotEmpty ? () => _showPipelineDialog(context) : null,
+            onTap: () => _showPipelineDialog(context),
           ),
         ]),
         const SizedBox(height: 20),
@@ -853,10 +861,8 @@ class _ConversationsView extends StatelessWidget {
             description: 'Percentage of inbound messages relative to broadcasts sent',
             change: c != null ? _calcChange(m.engagementRate, c.engagementRate) : null,
             compareLabel: _compareLabel,
-            onTap: data.engagedCustomers.isNotEmpty
-                ? () => showDialog(context: context, builder: (_) =>
-                    _EngagedCustomersDialog(customers: data.engagedCustomers))
-                : null,
+            onTap: () => showDialog(context: context, builder: (_) =>
+                _EngagedCustomersDialog(customers: data.engagedCustomers)),
           ),
           _MetricCard(
             icon: Icons.timer,
@@ -867,10 +873,8 @@ class _ConversationsView extends StatelessWidget {
             change: c != null ? _calcChange(m.avgResponseTimeSeconds, c.avgResponseTimeSeconds) : null,
             invertChange: true,
             compareLabel: _compareLabel,
-            onTap: data.responseTimeEntries.isNotEmpty
-                ? () => showDialog(context: context, builder: (_) =>
-                    _ResponseTimesDialog(entries: data.responseTimeEntries))
-                : null,
+            onTap: () => showDialog(context: context, builder: (_) =>
+                _ResponseTimesDialog(entries: data.responseTimeEntries)),
           ),
           _MetricCard(
             icon: Icons.send,
@@ -880,13 +884,11 @@ class _ConversationsView extends StatelessWidget {
             description: 'Total outbound messages sent by agents and automations',
             change: c != null ? _calcChange(m.messagesSent.toDouble(), c.messagesSent.toDouble()) : null,
             compareLabel: _compareLabel,
-            onTap: data.agentMessageCounts.isNotEmpty
-                ? () => showDialog(context: context, builder: (_) =>
-                    _MessagesSentDialog(
-                      agentCounts: data.agentMessageCounts,
-                      automatedCount: data.automatedMessageCount,
-                    ))
-                : null,
+            onTap: () => showDialog(context: context, builder: (_) =>
+                _MessagesSentDialog(
+                  agentCounts: data.agentMessageCounts,
+                  automatedCount: data.automatedMessageCount,
+                )),
           ),
         ]),
         const SizedBox(height: 20),
@@ -901,10 +903,8 @@ class _ConversationsView extends StatelessWidget {
             description: 'Total inbound messages received from customers',
             change: c != null ? _calcChange(m.messagesReceived.toDouble(), c.messagesReceived.toDouble()) : null,
             compareLabel: _compareLabel,
-            onTap: data.inboundCustomers.isNotEmpty
-                ? () => showDialog(context: context, builder: (_) =>
-                    _InboundCustomersDialog(customers: data.inboundCustomers))
-                : null,
+            onTap: () => showDialog(context: context, builder: (_) =>
+                _InboundCustomersDialog(customers: data.inboundCustomers)),
           ),
           _MetricCard(
             icon: Icons.chat_bubble_outline,
@@ -914,14 +914,12 @@ class _ConversationsView extends StatelessWidget {
             description: 'Conversations currently awaiting a reply from your team',
             isHighlight: m.openConversationCount > 0,
             pulse: m.openConversationCount > 0,
-            onTap: data.openConversations.isNotEmpty
-                ? () => showDialog(context: context, builder: (_) =>
-                    _OpenConversationsDialog(
-                      conversations: data.openConversations,
-                      title: 'Open Conversations',
-                      color: Colors.orange,
-                    ))
-                : null,
+            onTap: () => showDialog(context: context, builder: (_) =>
+                _OpenConversationsDialog(
+                  conversations: data.openConversations,
+                  title: 'Open Conversations',
+                  color: Colors.orange,
+                )),
           ),
           _MetricCard(
             icon: Icons.warning_amber,
@@ -931,14 +929,12 @@ class _ConversationsView extends StatelessWidget {
             description: 'Conversations where response time exceeded ${_overdueOptions[overdueIndex].label}',
             isHighlight: m.overdueConversationCount > 0,
             pulse: m.overdueConversationCount > 0,
-            onTap: data.overdueConversations.isNotEmpty
-                ? () => showDialog(context: context, builder: (_) =>
-                    _OpenConversationsDialog(
-                      conversations: data.overdueConversations,
-                      title: 'Overdue Conversations',
-                      color: Colors.red,
-                    ))
-                : null,
+            onTap: () => showDialog(context: context, builder: (_) =>
+                _OpenConversationsDialog(
+                  conversations: data.overdueConversations,
+                  title: 'Overdue Conversations',
+                  color: Colors.red,
+                )),
           ),
         ]),
 
@@ -2022,6 +2018,7 @@ class _MetricCard extends StatelessWidget {
     final labelColor = isDark ? VividColors.textMuted : const Color(0xFF64748B);
     final descColor = isDark ? Colors.white70 : const Color(0xFF64748B);
     final card = Container(
+      clipBehavior: Clip.hardEdge,
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
       decoration: BoxDecoration(
         color: cardBg,
@@ -2035,6 +2032,7 @@ class _MetricCard extends StatelessWidget {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Row(children: [
             Container(

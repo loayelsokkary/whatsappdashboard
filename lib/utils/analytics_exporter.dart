@@ -14,12 +14,20 @@ import 'initials_helper.dart';
 class AnalyticsExporter {
   static final _pdfColors = _PdfBrandColors();
   static pw.Font? _arabicFont;
+  static bool _fontLoadFailed = false;
+  static bool get fontLoadFailed => _fontLoadFailed;
 
-  static Future<pw.Font> _loadArabicFont() async {
+  static Future<pw.Font?> _loadArabicFont() async {
     if (_arabicFont != null) return _arabicFont!;
-    final fontData = await rootBundle.load('assets/fonts/NotoSansArabic-Regular.ttf');
-    _arabicFont = pw.Font.ttf(fontData);
-    return _arabicFont!;
+    if (_fontLoadFailed) return null;
+    try {
+      final fontData = await rootBundle.load('assets/fonts/NotoSansArabic-Regular.ttf');
+      _arabicFont = pw.Font.ttf(fontData);
+      return _arabicFont!;
+    } catch (_) {
+      _fontLoadFailed = true;
+      return null;
+    }
   }
 
   // ============================================
@@ -164,7 +172,9 @@ class AnalyticsExporter {
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(40),
-        theme: pw.ThemeData.withFont(fontFallback: [arabicFont]),
+        theme: arabicFont != null
+            ? pw.ThemeData.withFont(fontFallback: [arabicFont])
+            : pw.ThemeData(),
         header: (context) => _buildBrandedHeader(clientName, '$dateRange  |  $timestamp'),
         footer: (context) => _buildPdfFooter(context),
         build: (context) => [
@@ -603,7 +613,9 @@ class AnalyticsExporter {
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(40),
-        theme: pw.ThemeData.withFont(fontFallback: [arabicFont]),
+        theme: arabicFont != null
+            ? pw.ThemeData.withFont(fontFallback: [arabicFont])
+            : pw.ThemeData(),
         header: (context) => _buildPdfHeader('Broadcast Analytics', ClientConfig.businessName, timestamp),
         footer: (context) => _buildPdfFooter(context),
         build: (context) => [

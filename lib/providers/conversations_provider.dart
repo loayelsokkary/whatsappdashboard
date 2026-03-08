@@ -367,25 +367,29 @@ class ConversationsProvider extends ChangeNotifier {
           }
         }
         if (lastBroadcastIdx >= 0) {
-          // Check what happened after the broadcast
+          // Track the last index of each party to detect who spoke last
           bool customerReplied = false;
-          bool agentReplied = false;
+          int lastCustomerIdx = -1;
+          int lastAgentIdx = -1;
           for (int i = lastBroadcastIdx + 1; i < exchanges.length; i++) {
             final ex = exchanges[i];
             if (ex.customerMessage.trim().isNotEmpty || ex.isVoiceMessage) {
               customerReplied = true;
+              lastCustomerIdx = i;
             }
             if ((ex.managerResponse != null && ex.managerResponse!.trim().isNotEmpty) ||
                 (ex.aiResponse.trim().isNotEmpty && !_isHandoffMessage(ex.aiResponse))) {
-              agentReplied = true;
+              lastAgentIdx = i;
             }
           }
           if (!customerReplied) {
             broadcastLifecycleLabel = 'Sent';
-          } else if (!agentReplied) {
-            broadcastLifecycleLabel = 'Needs Reply';
-          } else {
+          } else if (lastAgentIdx > lastCustomerIdx) {
+            // Agent's last message is after customer's last message → agent replied
             broadcastLifecycleLabel = 'Replied';
+          } else {
+            // Customer's last message is after any agent reply → needs reply
+            broadcastLifecycleLabel = 'Needs Reply';
           }
         }
       }
