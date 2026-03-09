@@ -23,11 +23,11 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     final provider = context.watch<TemplatesProvider>();
 
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
-      color: isDark ? VividColors.darkNavy : const Color(0xFFF8FAFC),
+      color: vc.background,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -43,16 +43,13 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
   // ─────────────────────────────────────────
 
   Widget _buildHeader(BuildContext context, TemplatesProvider provider) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final vc = context.vividColors;
     return Container(
       padding: const EdgeInsets.fromLTRB(28, 24, 28, 20),
       decoration: BoxDecoration(
-        color: isDark ? VividColors.navy : Colors.white,
+        color: vc.surface,
         border: Border(
-          bottom: BorderSide(
-              color: isDark
-                  ? VividColors.tealBlue.withValues(alpha: 0.2)
-                  : const Color(0xFFE2E8F0)),
+          bottom: BorderSide(color: vc.border),
         ),
       ),
       child: Row(
@@ -64,9 +61,7 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
                 Text(
                   'Message Templates',
                   style: TextStyle(
-                    color: isDark
-                        ? VividColors.textPrimary
-                        : const Color(0xFF1E293B),
+                    color: vc.textPrimary,
                     fontSize: 22,
                     fontWeight: FontWeight.w700,
                     letterSpacing: -0.3,
@@ -76,9 +71,7 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
                 Text(
                   'Manage your approved WhatsApp message templates',
                   style: TextStyle(
-                    color: isDark
-                        ? VividColors.textSecondary
-                        : const Color(0xFF64748B),
+                    color: vc.textSecondary,
                     fontSize: 13,
                   ),
                 ),
@@ -91,16 +84,16 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
             onPressed:
                 provider.isLoading ? null : () => provider.fetchTemplates(),
             icon: provider.isLoading
-                ? const SizedBox(
+                ? SizedBox(
                     width: 14,
                     height: 14,
                     child: CircularProgressIndicator(
-                        strokeWidth: 2, color: VividColors.textMuted),
+                        strokeWidth: 2, color: vc.textMuted),
                   )
                 : const Icon(Icons.sync_rounded, size: 16),
             label: const Text('Refresh'),
             style: OutlinedButton.styleFrom(
-              foregroundColor: VividColors.textSecondary,
+              foregroundColor: vc.textSecondary,
               side: BorderSide(
                   color: VividColors.tealBlue.withValues(alpha: 0.4)),
               padding:
@@ -117,7 +110,7 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
             label: const Text('New Template'),
             style: FilledButton.styleFrom(
               backgroundColor: VividColors.cyan,
-              foregroundColor: VividColors.darkNavy,
+              foregroundColor: vc.background,
               padding:
                   const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               textStyle:
@@ -134,6 +127,7 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
   // ─────────────────────────────────────────
 
   Widget _buildBody(BuildContext context, TemplatesProvider provider) {
+    final vc = context.vividColors;
     if (provider.isLoading && provider.templates.isEmpty) {
       return const Center(
         child: CircularProgressIndicator(
@@ -151,16 +145,16 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
             const SizedBox(height: 16),
             Text(
               'Failed to load templates',
-              style: const TextStyle(
-                  color: VividColors.textPrimary,
+              style: TextStyle(
+                  color: vc.textPrimary,
                   fontSize: 16,
                   fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 6),
             Text(
               provider.error!,
-              style: const TextStyle(
-                  color: VividColors.textMuted, fontSize: 12),
+              style: TextStyle(
+                  color: vc.textMuted, fontSize: 12),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 20),
@@ -183,17 +177,17 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
           children: [
             Icon(Icons.article_outlined,
                 size: 56,
-                color: VividColors.textMuted.withValues(alpha: 0.4)),
+                color: vc.textMuted.withValues(alpha: 0.4)),
             const SizedBox(height: 16),
-            const Text('No templates yet',
+            Text('No templates yet',
                 style: TextStyle(
-                    color: VividColors.textPrimary,
+                    color: vc.textPrimary,
                     fontSize: 18,
                     fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
-            const Text('Create your first WhatsApp message template',
+            Text('Create your first WhatsApp message template',
                 style:
-                    TextStyle(color: VividColors.textMuted, fontSize: 13)),
+                    TextStyle(color: vc.textMuted, fontSize: 13)),
             const SizedBox(height: 20),
             FilledButton.icon(
               onPressed: () => _openNewTemplate(context),
@@ -201,7 +195,7 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
               label: const Text('New Template'),
               style: FilledButton.styleFrom(
                   backgroundColor: VividColors.cyan,
-                  foregroundColor: VividColors.darkNavy),
+                  foregroundColor: vc.background),
             ),
           ],
         ),
@@ -262,26 +256,27 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
 
   Future<void> _confirmDelete(
       BuildContext context, TemplatesProvider provider, String name, String id) async {
+    final vc = context.vividColors;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: VividColors.navy,
+        backgroundColor: vc.surface,
         shape:
             RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Delete Template',
+        title: Text('Delete Template',
             style: TextStyle(
-                color: VividColors.textPrimary,
+                color: vc.textPrimary,
                 fontWeight: FontWeight.w600)),
         content: Text(
           'Delete "$name"? This action cannot be undone and will remove it from your Meta account.',
           style:
-              const TextStyle(color: VividColors.textSecondary, fontSize: 14),
+              TextStyle(color: vc.textSecondary, fontSize: 14),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel',
-                style: TextStyle(color: VividColors.textMuted)),
+            child: Text('Cancel',
+                style: TextStyle(color: vc.textMuted)),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -330,16 +325,13 @@ class _TemplateCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     final hasImage = template.headerType == 'IMAGE' &&
         template.headerMediaUrl != null &&
         template.headerMediaUrl!.isNotEmpty;
 
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return Material(
-      color: isDark
-          ? Colors.white.withValues(alpha: 0.03)
-          : Colors.white,
+      color: vc.surface,
       borderRadius: BorderRadius.circular(12),
       clipBehavior: Clip.antiAlias, // clips image to card border-radius
       child: InkWell(
@@ -348,19 +340,15 @@ class _TemplateCard extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.06)
-                  : const Color(0xFFE2E8F0),
+              color: vc.border,
             ),
-            boxShadow: isDark
-                ? null
-                : [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.05),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.05),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -378,21 +366,21 @@ class _TemplateCard extends StatelessWidget {
                         template.headerMediaUrl!,
                         fit: BoxFit.contain,
                         errorBuilder: (_, __, ___) => Container(
-                          color: isDark ? const Color(0xFF1A2540) : const Color(0xFFF1F5F9),
+                          color: vc.surfaceAlt,
                           child: const Icon(Icons.broken_image_outlined,
                               color: Color(0xFF4A5568), size: 32),
                         ),
                         loadingBuilder: (_, child, progress) => progress == null
                             ? child
                             : Container(
-                                color: isDark ? const Color(0xFF1A2540) : const Color(0xFFF1F5F9),
-                                child: const Center(
+                                color: vc.surfaceAlt,
+                                child: Center(
                                   child: SizedBox(
                                     width: 20,
                                     height: 20,
                                     child: CircularProgressIndicator(
                                         strokeWidth: 2,
-                                        color: VividColors.textMuted),
+                                        color: vc.textMuted),
                                   ),
                                 ),
                               ),
@@ -416,8 +404,8 @@ class _TemplateCard extends StatelessWidget {
                           Expanded(
                             child: Text(
                               template.name,
-                              style: const TextStyle(
-                                color: VividColors.textPrimary,
+                              style: TextStyle(
+                                color: vc.textPrimary,
                                 fontSize: 13,
                                 fontWeight: FontWeight.w700,
                                 fontFamily: 'monospace',
@@ -428,7 +416,7 @@ class _TemplateCard extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          _statusBadge(template.status),
+                          _statusBadge(context, template.status),
                         ],
                       ),
                       const SizedBox(height: 8),
@@ -439,13 +427,11 @@ class _TemplateCard extends StatelessWidget {
                           Text(
                             '${template.language} · ${_capitalize(template.category)}',
                             style: TextStyle(
-                                color: isDark
-                                    ? VividColors.textSecondary
-                                    : const Color(0xFF64748B),
+                                color: vc.textSecondary,
                                 fontSize: 11),
                           ),
                           const Spacer(),
-                          if (!hasImage) _headerBadge(template.headerType),
+                          if (!hasImage) _headerBadge(context, template.headerType),
                         ],
                       ),
                       const SizedBox(height: 10),
@@ -455,9 +441,7 @@ class _TemplateCard extends StatelessWidget {
                         child: Text(
                           template.body,
                           style: TextStyle(
-                            color: isDark
-                                ? VividColors.textSecondary
-                                : const Color(0xFF334155),
+                            color: vc.textSecondary,
                             fontSize: 12,
                             height: 1.5,
                           ),
@@ -473,9 +457,7 @@ class _TemplateCard extends StatelessWidget {
               // Divider + action row (Delete only — card tap opens preview)
               Container(
                 height: 1,
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.06)
-                    : const Color(0xFFE2E8F0),
+                color: vc.border,
               ),
               Padding(
                 padding:
@@ -508,12 +490,13 @@ class _TemplateCard extends StatelessWidget {
     );
   }
 
-  Widget _statusBadge(String status) {
+  Widget _statusBadge(BuildContext context, String status) {
+    final vc = context.vividColors;
     final (color, label) = switch (status.toUpperCase()) {
       'APPROVED' => (VividColors.statusSuccess, 'Approved'),
       'PENDING' || 'PENDING_DELETION' => (VividColors.statusWarning, 'Pending'),
       'REJECTED' => (VividColors.statusUrgent, 'Rejected'),
-      _ => (VividColors.textMuted, status),
+      _ => (vc.textMuted, status),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
@@ -530,7 +513,8 @@ class _TemplateCard extends StatelessWidget {
     );
   }
 
-  Widget _headerBadge(String? headerType) {
+  Widget _headerBadge(BuildContext context, String? headerType) {
+    final vc = context.vividColors;
     if (headerType == null || headerType.isEmpty) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -551,7 +535,7 @@ class _TemplateCard extends StatelessWidget {
     final color = switch (headerType.toUpperCase()) {
       'IMAGE' || 'VIDEO' => VividColors.brightBlue,
       'DOCUMENT' => const Color(0xFFEF4444),
-      _ => VividColors.textMuted,
+      _ => vc.textMuted,
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -584,8 +568,9 @@ class _TemplatePreviewDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return Dialog(
-      backgroundColor: VividColors.navy,
+      backgroundColor: vc.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
         width: 400,
@@ -599,7 +584,7 @@ class _TemplatePreviewDialog extends StatelessWidget {
               decoration: BoxDecoration(
                 border: Border(
                   bottom: BorderSide(
-                      color: VividColors.tealBlue.withValues(alpha: 0.2)),
+                      color: vc.border),
                 ),
               ),
               child: Row(
@@ -607,16 +592,16 @@ class _TemplatePreviewDialog extends StatelessWidget {
                   const Icon(Icons.phone_android_rounded,
                       color: VividColors.cyan, size: 18),
                   const SizedBox(width: 10),
-                  const Expanded(
+                  Expanded(
                     child: Text('Preview',
                         style: TextStyle(
-                            color: VividColors.textPrimary,
+                            color: vc.textPrimary,
                             fontWeight: FontWeight.w600,
                             fontSize: 15)),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close_rounded,
-                        color: VividColors.textMuted, size: 20),
+                    icon: Icon(Icons.close_rounded,
+                        color: vc.textMuted, size: 20),
                     onPressed: () => Navigator.pop(context),
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),

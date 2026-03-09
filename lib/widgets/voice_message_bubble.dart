@@ -70,6 +70,7 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     final hasUrl = _audioUrl != null && _audioUrl!.isNotEmpty;
     final progress = _isActive ? _audio.progress : 0.0;
     final duration = _isActive ? _audio.duration : Duration.zero;
@@ -91,12 +92,12 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: hasUrl
-                      ? VividColors.cyan.withOpacity(0.2)
-                      : VividColors.textMuted.withOpacity(0.2),
+                      ? VividColors.cyan.withValues(alpha: 0.2)
+                      : vc.textMuted.withValues(alpha: 0.2),
                 ),
                 child: Icon(
                   _isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                  color: hasUrl ? VividColors.cyan : VividColors.textMuted,
+                  color: hasUrl ? VividColors.cyan : vc.textMuted,
                   size: 22,
                 ),
               ),
@@ -122,9 +123,9 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
                         ),
                         activeTrackColor: VividColors.cyan,
                         inactiveTrackColor:
-                            VividColors.textMuted.withOpacity(0.3),
+                            vc.textMuted.withValues(alpha: 0.3),
                         thumbColor: VividColors.cyan,
-                        overlayColor: VividColors.cyan.withOpacity(0.2),
+                        overlayColor: VividColors.cyan.withValues(alpha: 0.2),
                       ),
                       child: Slider(
                         value: progress,
@@ -143,7 +144,7 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
                               ? 'Voice message'
                               : 'No audio',
                       style: TextStyle(
-                        color: VividColors.textPrimary.withOpacity(0.5),
+                        color: vc.textPrimary.withValues(alpha: 0.5),
                         fontSize: 10,
                       ),
                     ),
@@ -157,7 +158,7 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
             Icon(
               Icons.mic,
               size: 16,
-              color: VividColors.cyan.withOpacity(0.5),
+              color: VividColors.cyan.withValues(alpha: 0.5),
             ),
           ],
         ),
@@ -175,13 +176,13 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
                       ? Icons.keyboard_arrow_up
                       : Icons.keyboard_arrow_down,
                   size: 14,
-                  color: VividColors.cyan.withOpacity(0.7),
+                  color: VividColors.cyan.withValues(alpha: 0.7),
                 ),
                 const SizedBox(width: 4),
                 Text(
                   _showTranscription ? 'Hide transcription' : 'Show transcription',
                   style: TextStyle(
-                    color: VividColors.cyan.withOpacity(0.7),
+                    color: VividColors.cyan.withValues(alpha: 0.7),
                     fontSize: 11,
                     fontWeight: FontWeight.w500,
                   ),
@@ -195,13 +196,13 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: VividColors.darkNavy.withOpacity(0.4),
+                color: vc.background.withValues(alpha: 0.4),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
                 _transcription,
                 style: TextStyle(
-                  color: VividColors.textPrimary.withOpacity(0.8),
+                  color: vc.textPrimary.withValues(alpha: 0.8),
                   fontSize: 13,
                   fontStyle: FontStyle.italic,
                   height: 1.4,

@@ -69,8 +69,9 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return Container(
-      color: VividColors.darkNavy,
+      color: vc.background,
       child: Column(
         children: [
           _buildHeader(),
@@ -82,12 +83,13 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
   }
 
   Widget _buildHeader() {
+    final vc = context.vividColors;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       decoration: BoxDecoration(
-        color: VividColors.navy,
+        color: vc.surface,
         border: Border(
-          bottom: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+          bottom: BorderSide(color: vc.border),
         ),
       ),
       child: Row(
@@ -100,13 +102,14 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
           Expanded(
             child: Consumer<ManagerChatProvider>(
               builder: (context, provider, _) {
+                final vc = context.vividColors;
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Vivid AI',
                       style: TextStyle(
-                        color: VividColors.textPrimary,
+                        color: vc.textPrimary,
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
                       ),
@@ -118,19 +121,19 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
                           width: 8,
                           height: 8,
                           decoration: BoxDecoration(
-                            color: provider.isWaitingForResponse 
-                                ? Colors.orange 
+                            color: provider.isWaitingForResponse
+                                ? Colors.orange
                                 : VividColors.statusSuccess,
                             borderRadius: BorderRadius.circular(4),
                           ),
                         ),
                         const SizedBox(width: 6),
                         Text(
-                          provider.isWaitingForResponse 
-                              ? 'Thinking...' 
+                          provider.isWaitingForResponse
+                              ? 'Thinking...'
                               : 'Online',
-                          style: const TextStyle(
-                            color: VividColors.textMuted,
+                          style: TextStyle(
+                            color: vc.textMuted,
                             fontSize: 13,
                           ),
                         ),
@@ -150,7 +153,7 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
     return Consumer<ManagerChatProvider>(
       builder: (context, provider, _) {
         final messages = provider.messages;
-        
+
         // Build display items: each message can have user + AI response
         final displayItems = <_ChatDisplayItem>[];
         for (final msg in messages) {
@@ -169,7 +172,7 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
             ));
           }
         }
-        
+
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _scrollToBottom();
         });
@@ -177,8 +180,8 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
         return ListView.builder(
           controller: _scrollController,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          itemCount: displayItems.isEmpty 
-              ? 1 
+          itemCount: displayItems.isEmpty
+              ? 1
               : displayItems.length + (provider.isWaitingForResponse ? 1 : 0),
           itemBuilder: (context, index) {
             if (displayItems.isEmpty && index == 0) {
@@ -209,31 +212,32 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
   }
 
   Widget _buildDateDivider(String label) {
+    final vc = context.vividColors;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Row(
         children: [
-          Expanded(child: Divider(color: VividColors.tealBlue.withOpacity(0.2), height: 1)),
+          Expanded(child: Divider(color: vc.border, height: 1)),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
-                color: VividColors.navy,
+                color: vc.surface,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: VividColors.tealBlue.withOpacity(0.2)),
+                border: Border.all(color: vc.border),
               ),
               child: Text(
                 label,
-                style: const TextStyle(
-                  color: VividColors.textMuted,
+                style: TextStyle(
+                  color: vc.textMuted,
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
                 ),
               ),
             ),
           ),
-          Expanded(child: Divider(color: VividColors.tealBlue.withOpacity(0.2), height: 1)),
+          Expanded(child: Divider(color: vc.border, height: 1)),
         ],
       ),
     );
@@ -247,6 +251,7 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
   }
 
   Widget _buildAiBubble(String text, DateTime time) {
+    final vc = context.vividColors;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -283,22 +288,22 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
-                    color: VividColors.deepBlue,
+                    color: vc.surfaceAlt,
                     borderRadius: const BorderRadius.only(
                       topLeft: Radius.circular(16),
                       topRight: Radius.circular(16),
                       bottomLeft: Radius.circular(4),
                       bottomRight: Radius.circular(16),
                     ),
-                    border: Border.all(color: VividColors.tealBlue.withOpacity(0.2)),
+                    border: Border.all(color: vc.border),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         text,
-                        style: const TextStyle(
-                          color: VividColors.textPrimary,
+                        style: TextStyle(
+                          color: vc.textPrimary,
                           fontSize: 15,
                           height: 1.4,
                         ),
@@ -307,7 +312,7 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
                       Text(
                         _formatTime(time),
                         style: TextStyle(
-                          color: VividColors.textPrimary.withOpacity(0.5),
+                          color: vc.textPrimary.withValues(alpha: 0.5),
                           fontSize: 10,
                         ),
                       ),
@@ -324,6 +329,7 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
   }
 
   Widget _buildTypingIndicator() {
+    final vc = context.vividColors;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -357,9 +363,9 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
-                  color: VividColors.deepBlue,
+                  color: vc.surfaceAlt,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: VividColors.tealBlue.withOpacity(0.2)),
+                  border: Border.all(color: vc.border),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -382,14 +388,15 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
   Widget _buildInput() {
     return Consumer<ManagerChatProvider>(
       builder: (context, provider, _) {
+        final vc = context.vividColors;
         final isSending = provider.isWaitingForResponse;
-        
+
         return Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: VividColors.navy,
+            color: vc.surface,
             border: Border(
-              top: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+              top: BorderSide(color: vc.border),
             ),
           ),
           child: Row(
@@ -398,9 +405,9 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
                 child: Container(
                   constraints: const BoxConstraints(maxHeight: 120),
                   decoration: BoxDecoration(
-                    color: VividColors.darkNavy,
+                    color: vc.background,
                     borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: VividColors.tealBlue.withOpacity(0.3)),
+                    border: Border.all(color: vc.popupBorder),
                   ),
                   child: TextField(
                     controller: _messageController,
@@ -409,10 +416,10 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
                     maxLines: null,
                     textInputAction: TextInputAction.send,
                     onSubmitted: (_) => _sendMessage(),
-                    style: const TextStyle(color: VividColors.textPrimary, fontSize: 15),
+                    style: TextStyle(color: vc.textPrimary, fontSize: 15),
                     decoration: InputDecoration(
                       hintText: isSending ? 'Waiting for response...' : 'Type a message...',
-                      hintStyle: const TextStyle(color: VividColors.textMuted),
+                      hintStyle: TextStyle(color: vc.textMuted),
                       border: InputBorder.none,
                       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     ),
@@ -428,11 +435,11 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
                   height: 46,
                   decoration: BoxDecoration(
                     gradient: isSending ? null : VividColors.primaryGradient,
-                    color: isSending ? VividColors.deepBlue : null,
+                    color: isSending ? vc.surfaceAlt : null,
                     borderRadius: BorderRadius.circular(23),
                     boxShadow: isSending ? null : [
                       BoxShadow(
-                        color: VividColors.brightBlue.withOpacity(0.3),
+                        color: VividColors.brightBlue.withValues(alpha: 0.3),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -448,9 +455,9 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
                               color: VividColors.cyan,
                             ),
                           )
-                        : const Icon(
+                        : Icon(
                             Icons.send_rounded,
-                            color: VividColors.darkNavy,
+                            color: vc.background,
                             size: 20,
                           ),
                   ),
@@ -498,6 +505,7 @@ class _MessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     final isUser = item.isUser;
 
     return Padding(
@@ -507,7 +515,7 @@ class _MessageBubble extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (isUser) const Spacer(flex: 1),
-          
+
           Flexible(
             flex: 3,
             child: Column(
@@ -536,7 +544,7 @@ class _MessageBubble extends StatelessWidget {
                       ],
                     ),
                   ),
-                
+
                 if (isUser)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 4, right: 4),
@@ -564,9 +572,9 @@ class _MessageBubble extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
-                    color: isUser 
+                    color: isUser
                         ? VividColors.brightBlue
-                        : VividColors.deepBlue,
+                        : vc.surfaceAlt,
                     borderRadius: BorderRadius.only(
                       topLeft: const Radius.circular(16),
                       topRight: const Radius.circular(16),
@@ -574,11 +582,11 @@ class _MessageBubble extends StatelessWidget {
                       bottomRight: Radius.circular(isUser ? 4 : 16),
                     ),
                     border: isUser ? null : Border.all(
-                      color: VividColors.tealBlue.withOpacity(0.2),
+                      color: vc.border,
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.12),
+                        color: Colors.black.withValues(alpha: 0.12),
                         blurRadius: 4,
                         offset: const Offset(0, 2),
                       ),
@@ -589,8 +597,8 @@ class _MessageBubble extends StatelessWidget {
                     children: [
                       SelectableText(
                         item.text,
-                        style: const TextStyle(
-                          color: VividColors.textPrimary,
+                        style: TextStyle(
+                          color: vc.textPrimary,
                           fontSize: 15,
                           height: 1.4,
                         ),
@@ -599,7 +607,7 @@ class _MessageBubble extends StatelessWidget {
                       Text(
                         _formatTime(item.createdAt),
                         style: TextStyle(
-                          color: VividColors.textPrimary.withOpacity(0.5),
+                          color: vc.textPrimary.withValues(alpha: 0.5),
                           fontSize: 10,
                         ),
                       ),
@@ -609,7 +617,7 @@ class _MessageBubble extends StatelessWidget {
               ],
             ),
           ),
-          
+
           if (!isUser) const Spacer(flex: 1),
         ],
       ),
@@ -674,7 +682,7 @@ class _TypingDotState extends State<_TypingDot> with SingleTickerProviderStateMi
             width: 8,
             height: 8,
             decoration: BoxDecoration(
-              color: VividColors.cyan.withOpacity(0.6 + 0.4 * _animation.value),
+              color: VividColors.cyan.withValues(alpha: 0.6 + 0.4 * _animation.value),
               borderRadius: BorderRadius.circular(4),
             ),
           ),

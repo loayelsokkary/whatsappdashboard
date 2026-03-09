@@ -27,25 +27,27 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            VividColors.darkNavy,
-            VividColors.navy,
-            VividColors.deepBlue.withOpacity(0.5),
+            vc.background,
+            vc.surface,
+            vc.surfaceAlt.withOpacity(0.5),
           ],
         ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildHeader(),
+          _buildHeader(context),
           Expanded(
             child: Consumer<AdminAnalyticsProvider>(
               builder: (context, provider, _) {
+                final vc = context.vividColors;
                 final analytics = provider.companyAnalytics;
                 if (analytics == null) {
                   return Center(
@@ -55,12 +57,12 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                         Icon(
                           Icons.analytics_outlined,
                           size: 64,
-                          color: VividColors.textMuted.withOpacity(0.3),
+                          color: vc.textMuted.withOpacity(0.3),
                         ),
                         const SizedBox(height: 16),
-                        const Text(
+                        Text(
                           'No analytics data available',
-                          style: TextStyle(color: VividColors.textMuted),
+                          style: TextStyle(color: vc.textMuted),
                         ),
                         const SizedBox(height: 24),
                         ElevatedButton.icon(
@@ -73,7 +75,7 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                   );
                 }
 
-                return _buildAnalyticsContent(analytics);
+                return _buildAnalyticsContent(context, analytics);
               },
             ),
           ),
@@ -82,7 +84,8 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader(BuildContext context) {
+    final vc = context.vividColors;
     return Container(
       padding: const EdgeInsets.all(32),
       child: Row(
@@ -111,10 +114,10 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Vivid Company Analytics',
                   style: TextStyle(
-                    color: VividColors.textPrimary,
+                    color: vc.textPrimary,
                     fontSize: 28,
                     fontWeight: FontWeight.bold,
                   ),
@@ -148,7 +151,7 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                     Text(
                       'Aggregate metrics across all clients',
                       style: TextStyle(
-                        color: VividColors.textMuted.withOpacity(0.7),
+                        color: vc.textMuted.withOpacity(0.7),
                         fontSize: 14,
                       ),
                     ),
@@ -176,7 +179,8 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
     return Row(children: children);
   }
 
-  Widget _buildAnalyticsContent(VividCompanyAnalytics analytics) {
+  Widget _buildAnalyticsContent(BuildContext context, VividCompanyAnalytics analytics) {
+    final vc = context.vividColors;
     return LayoutBuilder(
       builder: (context, constraints) {
         final isMobile = constraints.maxWidth < 600;
@@ -260,22 +264,22 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                   icon: Icons.access_time,
                   label: 'Last Activity',
                   value: _formatLastActivity(analytics.lastActivityAcrossAll),
-                  color: VividColors.textMuted,
+                  color: vc.textMuted,
                   description: 'Most recent message',
                 ),
               ], isMobile: isMobile),
               const SizedBox(height: 32),
 
               // Most active clients section
-              _buildMostActiveClients(analytics.mostActiveClients),
+              _buildMostActiveClients(context, analytics.mostActiveClients),
               const SizedBox(height: 32),
 
               // Activity chart (last 7 days)
-              _buildActivityChart(analytics.messagesByDay),
+              _buildActivityChart(context, analytics.messagesByDay),
               const SizedBox(height: 32),
 
               // Time period stats
-              _buildSectionHeader(Icons.date_range, 'Message Volume by Period'),
+              _buildSectionHeader(context, Icons.date_range, 'Message Volume by Period'),
               const SizedBox(height: 16),
               _buildResponsiveCardRow([
                 _MetricCard(
@@ -303,12 +307,12 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
               const SizedBox(height: 32),
 
               // Client breakdown table
-              _buildClientBreakdownTable(analytics.allClientActivities, isMobile: isMobile),
+              _buildClientBreakdownTable(context, analytics.allClientActivities, isMobile: isMobile),
 
               // Broadcast performance
               if (analytics.broadcastTotalRecipients > 0) ...[
                 const SizedBox(height: 32),
-                _buildSectionHeader(Icons.campaign, 'Broadcast Performance'),
+                _buildSectionHeader(context, Icons.campaign, 'Broadcast Performance'),
                 const SizedBox(height: 16),
                 _buildResponsiveCardRow([
                   _MetricCard(
@@ -337,15 +341,15 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
               const SizedBox(height: 32),
 
               // Busiest hours
-              _buildBusiestHoursChart(analytics.messagesByHour, isMobile: isMobile),
+              _buildBusiestHoursChart(context, analytics.messagesByHour, isMobile: isMobile),
               const SizedBox(height: 32),
 
               // Top customers
-              _buildTopCustomers(analytics.topCustomers),
+              _buildTopCustomers(context, analytics.topCustomers),
               const SizedBox(height: 32),
 
               // AI performance
-              _buildAiPerformanceSection(analytics, isMobile: isMobile),
+              _buildAiPerformanceSection(context, analytics, isMobile: isMobile),
             ],
           ),
         );
@@ -353,13 +357,14 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
     );
   }
 
-  Widget _buildMostActiveClients(List<ClientActivity> clients) {
+  Widget _buildMostActiveClients(BuildContext context, List<ClientActivity> clients) {
+    final vc = context.vividColors;
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: VividColors.navy,
+        color: vc.surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: VividColors.tealBlue.withOpacity(0.2)),
+        border: Border.all(color: vc.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -375,10 +380,10 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                 child: const Icon(Icons.leaderboard, color: VividColors.brightBlue, size: 22),
               ),
               const SizedBox(width: 12),
-              const Text(
+              Text(
                 'Most Active Clients',
                 style: TextStyle(
-                  color: VividColors.textPrimary,
+                  color: vc.textPrimary,
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),
@@ -387,12 +392,12 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
           ),
           const SizedBox(height: 20),
           if (clients.isEmpty)
-            const Center(
+            Center(
               child: Padding(
-                padding: EdgeInsets.all(20),
+                padding: const EdgeInsets.all(20),
                 child: Text(
                   'No activity data yet',
-                  style: TextStyle(color: VividColors.textMuted),
+                  style: TextStyle(color: vc.textMuted),
                 ),
               ),
             )
@@ -400,27 +405,28 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
             ...clients.asMap().entries.map((entry) {
               final index = entry.key;
               final client = entry.value;
-              return _buildClientActivityRow(index + 1, client);
+              return _buildClientActivityRow(context, index + 1, client);
             }),
         ],
       ),
     );
   }
 
-  Widget _buildClientActivityRow(int rank, ClientActivity client) {
+  Widget _buildClientActivityRow(BuildContext context, int rank, ClientActivity client) {
+    final vc = context.vividColors;
     final rankColor = rank == 1
         ? Colors.amber
         : rank == 2
             ? Colors.grey[400]
             : rank == 3
                 ? Colors.orange[700]
-                : VividColors.textMuted;
+                : vc.textMuted;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: VividColors.deepBlue,
+        color: vc.surfaceAlt,
         borderRadius: BorderRadius.circular(12),
         border: rank <= 3
             ? Border.all(color: rankColor!.withOpacity(0.3))
@@ -452,8 +458,8 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
               children: [
                 Text(
                   client.clientName,
-                  style: const TextStyle(
-                    color: VividColors.textPrimary,
+                  style: TextStyle(
+                    color: vc.textPrimary,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -463,7 +469,7 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                       ? 'Last active: ${_formatLastActivity(client.lastActivity)}'
                       : 'No recent activity',
                   style: TextStyle(
-                    color: VividColors.textMuted.withOpacity(0.7),
+                    color: vc.textMuted.withOpacity(0.7),
                     fontSize: 12,
                   ),
                 ),
@@ -511,7 +517,8 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
     );
   }
 
-  Widget _buildActivityChart(Map<String, int> messagesByDay) {
+  Widget _buildActivityChart(BuildContext context, Map<String, int> messagesByDay) {
+    final vc = context.vividColors;
     // Get last 7 days
     final now = DateTime.now();
     final days = List.generate(7, (i) {
@@ -526,9 +533,9 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: VividColors.navy,
+        color: vc.surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: VividColors.tealBlue.withOpacity(0.2)),
+        border: Border.all(color: vc.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -544,10 +551,10 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                 child: const Icon(Icons.show_chart, color: VividColors.cyan, size: 22),
               ),
               const SizedBox(width: 12),
-              const Text(
+              Text(
                 'Message Volume (Last 7 Days)',
                 style: TextStyle(
-                  color: VividColors.textPrimary,
+                  color: vc.textPrimary,
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),
@@ -598,7 +605,7 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                         Text(
                           dayLabel,
                           style: TextStyle(
-                            color: VividColors.textMuted.withOpacity(0.7),
+                            color: vc.textMuted.withOpacity(0.7),
                             fontSize: 10,
                           ),
                         ),
@@ -614,15 +621,16 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
     );
   }
 
-  Widget _buildSectionHeader(IconData icon, String title) {
+  Widget _buildSectionHeader(BuildContext context, IconData icon, String title) {
+    final vc = context.vividColors;
     return Row(
       children: [
-        Icon(icon, color: VividColors.textMuted, size: 20),
+        Icon(icon, color: vc.textMuted, size: 20),
         const SizedBox(width: 8),
         Text(
           title,
-          style: const TextStyle(
-            color: VividColors.textPrimary,
+          style: TextStyle(
+            color: vc.textPrimary,
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
@@ -631,15 +639,16 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
     );
   }
 
-  Widget _buildClientBreakdownTable(List<ClientActivity> clients, {bool isMobile = false}) {
+  Widget _buildClientBreakdownTable(BuildContext context, List<ClientActivity> clients, {bool isMobile = false}) {
+    final vc = context.vividColors;
     if (clients.isEmpty) return const SizedBox.shrink();
 
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: VividColors.navy,
+        color: vc.surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: VividColors.tealBlue.withOpacity(0.2)),
+        border: Border.all(color: vc.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -655,10 +664,10 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                 child: const Icon(Icons.table_chart, color: Colors.purple, size: 22),
               ),
               const SizedBox(width: 12),
-              const Text(
+              Text(
                 'Client Breakdown',
                 style: TextStyle(
-                  color: VividColors.textPrimary,
+                  color: vc.textPrimary,
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),
@@ -668,23 +677,23 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
           const SizedBox(height: 20),
           if (isMobile)
             // Mobile: card-based list
-            ...clients.map((client) => _buildMobileClientCard(client))
+            ...clients.map((client) => _buildMobileClientCard(context, client))
           else ...[
             // Desktop: Header row
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               decoration: BoxDecoration(
-                color: VividColors.deepBlue,
+                color: vc.surfaceAlt,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Row(
+              child: Row(
                 children: [
-                  Expanded(flex: 3, child: Text('Client', style: TextStyle(color: VividColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600))),
-                  Expanded(flex: 2, child: Text('Messages', style: TextStyle(color: VividColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600), textAlign: TextAlign.center)),
-                  Expanded(flex: 2, child: Text('AI', style: TextStyle(color: VividColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600), textAlign: TextAlign.center)),
-                  Expanded(flex: 2, child: Text('Manager', style: TextStyle(color: VividColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600), textAlign: TextAlign.center)),
-                  Expanded(flex: 2, child: Text('Customers', style: TextStyle(color: VividColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600), textAlign: TextAlign.center)),
-                  Expanded(flex: 2, child: Text('Auto Rate', style: TextStyle(color: VividColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600), textAlign: TextAlign.center)),
+                  Expanded(flex: 3, child: Text('Client', style: TextStyle(color: vc.textMuted, fontSize: 12, fontWeight: FontWeight.w600))),
+                  Expanded(flex: 2, child: Text('Messages', style: TextStyle(color: vc.textMuted, fontSize: 12, fontWeight: FontWeight.w600), textAlign: TextAlign.center)),
+                  Expanded(flex: 2, child: Text('AI', style: TextStyle(color: vc.textMuted, fontSize: 12, fontWeight: FontWeight.w600), textAlign: TextAlign.center)),
+                  Expanded(flex: 2, child: Text('Manager', style: TextStyle(color: vc.textMuted, fontSize: 12, fontWeight: FontWeight.w600), textAlign: TextAlign.center)),
+                  Expanded(flex: 2, child: Text('Customers', style: TextStyle(color: vc.textMuted, fontSize: 12, fontWeight: FontWeight.w600), textAlign: TextAlign.center)),
+                  Expanded(flex: 2, child: Text('Auto Rate', style: TextStyle(color: vc.textMuted, fontSize: 12, fontWeight: FontWeight.w600), textAlign: TextAlign.center)),
                 ],
               ),
             ),
@@ -694,12 +703,12 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
               margin: const EdgeInsets.only(bottom: 4),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                color: VividColors.deepBlue.withOpacity(0.5),
+                color: vc.surfaceAlt.withOpacity(0.5),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Row(
                 children: [
-                  Expanded(flex: 3, child: Text(client.clientName, style: const TextStyle(color: VividColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis)),
+                  Expanded(flex: 3, child: Text(client.clientName, style: TextStyle(color: vc.textPrimary, fontSize: 13, fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis)),
                   Expanded(flex: 2, child: Text(_formatNumber(client.messageCount), style: const TextStyle(color: VividColors.cyan, fontSize: 13, fontWeight: FontWeight.bold), textAlign: TextAlign.center)),
                   Expanded(flex: 2, child: Text(_formatNumber(client.aiMessages), style: const TextStyle(color: VividColors.cyan, fontSize: 13), textAlign: TextAlign.center)),
                   Expanded(flex: 2, child: Text(_formatNumber(client.managerMessages), style: const TextStyle(color: VividColors.brightBlue, fontSize: 13), textAlign: TextAlign.center)),
@@ -714,14 +723,15 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
     );
   }
 
-  Widget _buildMobileClientCard(ClientActivity client) {
+  Widget _buildMobileClientCard(BuildContext context, ClientActivity client) {
+    final vc = context.vividColors;
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: VividColors.deepBlue.withOpacity(0.5),
+        color: vc.surfaceAlt.withOpacity(0.5),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: VividColors.tealBlue.withOpacity(0.1)),
+        border: Border.all(color: vc.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -731,7 +741,7 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
               Expanded(
                 child: Text(
                   client.clientName,
-                  style: const TextStyle(color: VividColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w600),
+                  style: TextStyle(color: vc.textPrimary, fontSize: 14, fontWeight: FontWeight.w600),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -755,10 +765,10 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
           const SizedBox(height: 12),
           Row(
             children: [
-              Expanded(child: _buildMobileStatItem('Messages', _formatNumber(client.messageCount), VividColors.cyan)),
-              Expanded(child: _buildMobileStatItem('AI', _formatNumber(client.aiMessages), VividColors.cyan)),
-              Expanded(child: _buildMobileStatItem('Manager', _formatNumber(client.managerMessages), VividColors.brightBlue)),
-              Expanded(child: _buildMobileStatItem('Customers', client.uniqueCustomers.toString(), Colors.purple)),
+              Expanded(child: _buildMobileStatItem(context, 'Messages', _formatNumber(client.messageCount), VividColors.cyan)),
+              Expanded(child: _buildMobileStatItem(context, 'AI', _formatNumber(client.aiMessages), VividColors.cyan)),
+              Expanded(child: _buildMobileStatItem(context, 'Manager', _formatNumber(client.managerMessages), VividColors.brightBlue)),
+              Expanded(child: _buildMobileStatItem(context, 'Customers', client.uniqueCustomers.toString(), Colors.purple)),
             ],
           ),
         ],
@@ -766,18 +776,20 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
     );
   }
 
-  Widget _buildMobileStatItem(String label, String value, Color color) {
+  Widget _buildMobileStatItem(BuildContext context, String label, String value, Color color) {
+    final vc = context.vividColors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(color: VividColors.textMuted, fontSize: 10)),
+        Text(label, style: TextStyle(color: vc.textMuted, fontSize: 10)),
         const SizedBox(height: 2),
         Text(value, style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.w600)),
       ],
     );
   }
 
-  Widget _buildBusiestHoursChart(Map<int, int> messagesByHour, {bool isMobile = false}) {
+  Widget _buildBusiestHoursChart(BuildContext context, Map<int, int> messagesByHour, {bool isMobile = false}) {
+    final vc = context.vividColors;
     if (messagesByHour.isEmpty) return const SizedBox.shrink();
 
     final maxCount = messagesByHour.values.reduce((a, b) => a > b ? a : b);
@@ -820,7 +832,7 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                   Text(
                     hour % 3 == 0 ? '${hour}h' : '',
                     style: TextStyle(
-                      color: VividColors.textMuted.withOpacity(0.7),
+                      color: vc.textMuted.withOpacity(0.7),
                       fontSize: 9,
                     ),
                   ),
@@ -835,9 +847,9 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: VividColors.navy,
+        color: vc.surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: VividColors.tealBlue.withOpacity(0.2)),
+        border: Border.all(color: vc.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -853,10 +865,10 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                 child: const Icon(Icons.schedule, color: Colors.orange, size: 22),
               ),
               const SizedBox(width: 12),
-              const Text(
+              Text(
                 'Busiest Hours',
                 style: TextStyle(
-                  color: VividColors.textPrimary,
+                  color: vc.textPrimary,
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),
@@ -876,15 +888,16 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
     );
   }
 
-  Widget _buildTopCustomers(List<TopCustomerInfo> customers) {
+  Widget _buildTopCustomers(BuildContext context, List<TopCustomerInfo> customers) {
+    final vc = context.vividColors;
     if (customers.isEmpty) return const SizedBox.shrink();
 
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: VividColors.navy,
+        color: vc.surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: VividColors.tealBlue.withOpacity(0.2)),
+        border: Border.all(color: vc.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -900,10 +913,10 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                 child: const Icon(Icons.people, color: Colors.teal, size: 22),
               ),
               const SizedBox(width: 12),
-              const Text(
+              Text(
                 'Most Active Customers',
                 style: TextStyle(
-                  color: VividColors.textPrimary,
+                  color: vc.textPrimary,
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),
@@ -920,13 +933,13 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                     ? Colors.grey[400]
                     : index == 2
                         ? Colors.orange[700]
-                        : VividColors.textMuted;
+                        : vc.textMuted;
 
             return Container(
               margin: const EdgeInsets.only(bottom: 8),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: VividColors.deepBlue,
+                color: vc.surfaceAlt,
                 borderRadius: BorderRadius.circular(10),
                 border: index < 3 ? Border.all(color: rankColor!.withOpacity(0.3)) : null,
               ),
@@ -949,11 +962,11 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                       children: [
                         Text(
                           customer.name ?? customer.phone,
-                          style: const TextStyle(color: VividColors.textPrimary, fontWeight: FontWeight.w500, fontSize: 13),
+                          style: TextStyle(color: vc.textPrimary, fontWeight: FontWeight.w500, fontSize: 13),
                         ),
                         Text(
                           customer.clientName,
-                          style: TextStyle(color: VividColors.textMuted.withOpacity(0.7), fontSize: 11),
+                          style: TextStyle(color: vc.textMuted.withOpacity(0.7), fontSize: 11),
                         ),
                       ],
                     ),
@@ -978,7 +991,8 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
     );
   }
 
-  Widget _buildAiPerformanceSection(VividCompanyAnalytics analytics, {bool isMobile = false}) {
+  Widget _buildAiPerformanceSection(BuildContext context, VividCompanyAnalytics analytics, {bool isMobile = false}) {
+    final vc = context.vividColors;
     final total = analytics.totalAiMessages + analytics.totalManagerMessages;
     final aiPercent = total > 0 ? (analytics.totalAiMessages / total * 100) : 0.0;
     final managerPercent = total > 0 ? (analytics.totalManagerMessages / total * 100) : 0.0;
@@ -986,9 +1000,9 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: VividColors.navy,
+        color: vc.surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: VividColors.tealBlue.withOpacity(0.2)),
+        border: Border.all(color: vc.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1004,10 +1018,10 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                 child: const Icon(Icons.psychology, color: VividColors.cyan, size: 22),
               ),
               const SizedBox(width: 12),
-              const Text(
+              Text(
                 'AI Performance',
                 style: TextStyle(
-                  color: VividColors.textPrimary,
+                  color: vc.textPrimary,
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),
@@ -1030,7 +1044,7 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                         alignment: Alignment.center,
                         child: aiPercent > 10
                             ? Text('AI ${aiPercent.toStringAsFixed(0)}%',
-                                style: const TextStyle(color: VividColors.darkNavy, fontSize: 12, fontWeight: FontWeight.bold))
+                                style: TextStyle(color: vc.background, fontSize: 12, fontWeight: FontWeight.bold))
                             : null,
                       ),
                     ),
@@ -1125,13 +1139,14 @@ class _MetricCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: VividColors.navy,
+        color: vc.surface,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: isHighlight ? color.withOpacity(0.5) : VividColors.tealBlue.withOpacity(0.2),
+          color: isHighlight ? color.withOpacity(0.5) : vc.border,
           width: isHighlight ? 2 : 1,
         ),
         boxShadow: isHighlight
@@ -1161,8 +1176,8 @@ class _MetricCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   label,
-                  style: const TextStyle(
-                    color: VividColors.textMuted,
+                  style: TextStyle(
+                    color: vc.textMuted,
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
                   ),
@@ -1186,7 +1201,7 @@ class _MetricCard extends StatelessWidget {
             Text(
               description!,
               style: TextStyle(
-                color: VividColors.textMuted.withOpacity(0.7),
+                color: vc.textMuted.withOpacity(0.7),
                 fontSize: 12,
               ),
             ),

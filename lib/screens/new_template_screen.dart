@@ -197,19 +197,20 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
   }
 
   void _showError(String msg) {
+    final vc = context.vividColors;
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: VividColors.navy,
+        backgroundColor: vc.surface,
         shape:
             RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Submission Failed',
+        title: Text('Submission Failed',
             style: TextStyle(
-                color: VividColors.textPrimary,
+                color: vc.textPrimary,
                 fontWeight: FontWeight.w600)),
         content: Text(msg,
-            style: const TextStyle(
-                color: VividColors.textSecondary, fontSize: 14)),
+            style: TextStyle(
+                color: vc.textSecondary, fontSize: 14)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -252,6 +253,7 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     final provider = context.watch<TemplatesProvider>();
     final isSubmitting = provider.isSubmitting;
 
@@ -268,20 +270,20 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
                   children: [
                     Expanded(
                       flex: 3,
-                      child: _buildForm(isSubmitting),
+                      child: _buildForm(context, isSubmitting),
                     ),
                     Container(
                       width: 1,
-                      color: VividColors.tealBlue.withValues(alpha: 0.2),
+                      color: vc.border,
                     ),
                     Expanded(
                       flex: 2,
-                      child: _buildPreviewColumn(),
+                      child: _buildPreviewColumn(context),
                     ),
                   ],
                 );
               }
-              return _buildForm(isSubmitting);
+              return _buildForm(context, isSubmitting);
             }),
           ),
         ],
@@ -292,15 +294,16 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
   // ─── Top bar ───────────────────────────────────────────────────────────────
 
   Widget _buildTopBar(BuildContext context, bool isSubmitting) {
+    final vc = context.vividColors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 16, 24, 16),
       decoration: BoxDecoration(
-        color: isDark ? VividColors.navy : Colors.white,
+        color: isDark ? vc.surface : Colors.white,
         border: Border(
           bottom: BorderSide(
               color: isDark
-                  ? VividColors.tealBlue.withValues(alpha: 0.2)
+                  ? vc.border
                   : const Color(0xFFE2E8F0)),
         ),
       ),
@@ -317,18 +320,18 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
             ),
           ),
           const SizedBox(width: 12),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('New Template',
                     style: TextStyle(
-                        color: VividColors.textPrimary,
+                        color: vc.textPrimary,
                         fontSize: 18,
                         fontWeight: FontWeight.w700)),
                 Text('Submit a new WhatsApp message template for Meta approval',
                     style: TextStyle(
-                        color: VividColors.textMuted, fontSize: 12)),
+                        color: vc.textMuted, fontSize: 12)),
               ],
             ),
           ),
@@ -339,7 +342,8 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
 
   // ─── Form column ───────────────────────────────────────────────────────────
 
-  Widget _buildForm(bool isSubmitting) {
+  Widget _buildForm(BuildContext context, bool isSubmitting) {
+    final vc = context.vividColors;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Form(
@@ -348,6 +352,7 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildSection(
+              context,
               title: 'Template Info',
               child: Column(
                 children: [
@@ -357,8 +362,8 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
                         'Type naturally — spaces become underscores, text auto-lowercased',
                     child: TextFormField(
                       controller: _nameController,
-                      style: _inputTextStyle,
-                      decoration: _inputDecoration('e.g. Summer Sale 2025'),
+                      style: _inputTextStyle(context),
+                      decoration: _inputDecoration(context, 'e.g. Summer Sale 2025'),
                       inputFormatters: [
                         _TemplateNameFormatter(),
                       ],
@@ -381,13 +386,14 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
                         child: _buildField(
                           label: 'Language',
                           child: _buildDropdown(
+                            context,
                             value: _language,
                             items: _languages
                                 .map((e) =>
                                     DropdownMenuItem(
                                         value: e.$1,
                                         child: Text(e.$2,
-                                            style: _inputTextStyle)))
+                                            style: _inputTextStyle(context))))
                                 .toList(),
                             onChanged: (v) =>
                                 setState(() => _language = v ?? _language),
@@ -399,13 +405,14 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
                         child: _buildField(
                           label: 'Category',
                           child: _buildDropdown(
+                            context,
                             value: _category,
                             items: _categories
                                 .map((e) =>
                                     DropdownMenuItem(
                                         value: e.$1,
                                         child: Text(e.$2,
-                                            style: _inputTextStyle)))
+                                            style: _inputTextStyle(context))))
                                 .toList(),
                             onChanged: (v) =>
                                 setState(() => _category = v ?? _category),
@@ -420,6 +427,7 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
             const SizedBox(height: 20),
 
             _buildSection(
+              context,
               title: 'Content',
               child: Column(
                 children: [
@@ -427,25 +435,26 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
                   _buildField(
                     label: 'Header (optional)',
                     child: _buildDropdown(
+                      context,
                       value: _headerType,
-                      items: const [
+                      items: [
                         DropdownMenuItem(
                             value: 'NONE',
                             child: Text('None',
                                 style: TextStyle(
-                                    color: VividColors.textPrimary,
+                                    color: vc.textPrimary,
                                     fontSize: 13))),
                         DropdownMenuItem(
                             value: 'TEXT',
                             child: Text('Text',
                                 style: TextStyle(
-                                    color: VividColors.textPrimary,
+                                    color: vc.textPrimary,
                                     fontSize: 13))),
                         DropdownMenuItem(
                             value: 'IMAGE',
                             child: Text('Image',
                                 style: TextStyle(
-                                    color: VividColors.textPrimary,
+                                    color: vc.textPrimary,
                                     fontSize: 13))),
                       ],
                       onChanged: (v) {
@@ -463,8 +472,8 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
                       label: 'Header Text',
                       child: TextFormField(
                         controller: _headerTextController,
-                        style: _inputTextStyle,
-                        decoration: _inputDecoration('Header text'),
+                        style: _inputTextStyle(context),
+                        decoration: _inputDecoration(context, 'Header text'),
                         onChanged: (_) => setState(() {}),
                       ),
                     ),
@@ -472,7 +481,7 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
 
                   if (_headerType == 'IMAGE') ...[
                     const SizedBox(height: 14),
-                    _buildImageUploadZone(),
+                    _buildImageUploadZone(context),
                   ],
 
                   const SizedBox(height: 14),
@@ -486,9 +495,9 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
                       children: [
                         TextFormField(
                           controller: _bodyController,
-                          style: _inputTextStyle,
+                          style: _inputTextStyle(context),
                           decoration: _inputDecoration(
-                                  'Enter your message body...')
+                                  context, 'Enter your message body...')
                               .copyWith(
                             contentPadding: const EdgeInsets.fromLTRB(
                                 14, 14, 14, 32),
@@ -515,8 +524,8 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
                           right: 12,
                           child: Text(
                             '${_bodyController.text.length}/1024',
-                            style: const TextStyle(
-                                color: VividColors.textMuted,
+                            style: TextStyle(
+                                color: vc.textMuted,
                                 fontSize: 10),
                           ),
                         ),
@@ -537,8 +546,8 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
                                   padding: const EdgeInsets.only(bottom: 8),
                                   child: TextFormField(
                                     controller: _varControllers[n],
-                                    style: _inputTextStyle,
-                                    decoration: _inputDecoration('Value for {{$n}}'),
+                                    style: _inputTextStyle(context),
+                                    decoration: _inputDecoration(context, 'Value for {{$n}}'),
                                     validator: (v) => (v == null ||
                                             v.trim().isEmpty)
                                         ? 'Example for {{$n}} is required'
@@ -559,9 +568,9 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
                     helper: 'Footer note or unsubscribe text',
                     child: TextFormField(
                       controller: _footerController,
-                      style: _inputTextStyle,
+                      style: _inputTextStyle(context),
                       decoration:
-                          _inputDecoration('e.g. Reply STOP to unsubscribe'),
+                          _inputDecoration(context, 'e.g. Reply STOP to unsubscribe'),
                       onChanged: (_) => setState(() {}),
                     ),
                   ),
@@ -572,6 +581,7 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
 
             // Buttons section
             _buildSection(
+              context,
               title: 'Buttons (optional)',
               titleTrailing: _buttons.length < 3
                   ? TextButton.icon(
@@ -593,20 +603,20 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
               child: Column(
                 children: [
                   if (_buttons.isEmpty)
-                    const Text(
+                    Text(
                       'No buttons. Click "+ Add" to add up to 3 buttons.',
                       style: TextStyle(
-                          color: VividColors.textMuted, fontSize: 12),
+                          color: vc.textMuted, fontSize: 12),
                     ),
                   ..._buttons.asMap().entries.map((e) =>
-                      _buildButtonEntry(e.key, e.value)),
+                      _buildButtonEntry(context, e.key, e.value)),
                   if (_buttons.length >= 3)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 8),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
                       child: Text(
                         'Maximum 3 buttons allowed per Meta\'s requirements',
                         style: TextStyle(
-                            color: VividColors.textMuted, fontSize: 11),
+                            color: vc.textMuted, fontSize: 11),
                       ),
                     ),
                 ],
@@ -622,18 +632,18 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
                     onPressed: isSubmitting ? null : _submit,
                     style: FilledButton.styleFrom(
                       backgroundColor: VividColors.cyan,
-                      foregroundColor: VividColors.darkNavy,
+                      foregroundColor: vc.background,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       textStyle: const TextStyle(
                           fontSize: 14, fontWeight: FontWeight.w600),
                     ),
                     child: isSubmitting
-                        ? const SizedBox(
+                        ? SizedBox(
                             width: 18,
                             height: 18,
                             child: CircularProgressIndicator(
                                 strokeWidth: 2,
-                                color: VividColors.darkNavy))
+                                color: vc.background))
                         : const Text('Submit for Approval'),
                   ),
                 ),
@@ -642,7 +652,7 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
                   onPressed:
                       isSubmitting ? null : () => Navigator.pop(context),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: VividColors.textMuted,
+                    foregroundColor: vc.textMuted,
                     side: BorderSide(
                         color:
                             VividColors.tealBlue.withValues(alpha: 0.4)),
@@ -663,17 +673,18 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
 
   // ─── Preview column ────────────────────────────────────────────────────────
 
-  Widget _buildPreviewColumn() {
+  Widget _buildPreviewColumn(BuildContext context) {
+    final vc = context.vividColors;
     return Container(
-      color: VividColors.darkNavy,
+      color: vc.background,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(24, 24, 24, 16),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
             child: Text('LIVE PREVIEW',
                 style: TextStyle(
-                    color: VividColors.textMuted,
+                    color: vc.textMuted,
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
                     letterSpacing: 1.2)),
@@ -894,7 +905,8 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
 
   // ─── Image upload zone ─────────────────────────────────────────────────────
 
-  Widget _buildImageUploadZone() {
+  Widget _buildImageUploadZone(BuildContext context) {
+    final vc = context.vividColors;
     if (_imageBytes != null) {
       final kb = (_imageSize ?? 0) / 1024;
       final sizeStr =
@@ -902,7 +914,7 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
       return Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: VividColors.darkNavy,
+          color: vc.background,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
               color: VividColors.statusSuccess.withValues(alpha: 0.3)),
@@ -920,18 +932,18 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(_imageName ?? '',
-                      style: const TextStyle(
-                          color: VividColors.textPrimary, fontSize: 12),
+                      style: TextStyle(
+                          color: vc.textPrimary, fontSize: 12),
                       overflow: TextOverflow.ellipsis),
                   Text(sizeStr,
-                      style: const TextStyle(
-                          color: VividColors.textMuted, fontSize: 11)),
+                      style: TextStyle(
+                          color: vc.textMuted, fontSize: 11)),
                 ],
               ),
             ),
             IconButton(
-              icon: const Icon(Icons.close_rounded,
-                  color: VividColors.textMuted, size: 18),
+              icon: Icon(Icons.close_rounded,
+                  color: vc.textMuted, size: 18),
               onPressed: () => setState(() {
                 _imageBytes = null;
                 _imageName = null;
@@ -949,23 +961,23 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
     return GestureDetector(
       onTap: _pickImage,
       child: CustomPaint(
-        painter: _DashedBorderPainter(),
+        painter: _DashedBorderPainter(color: vc.popupBorder),
         child: Container(
           height: 100,
           color: Colors.transparent,
-          child: const Column(
+          child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(Icons.cloud_upload_outlined,
-                  color: VividColors.textMuted, size: 28),
-              SizedBox(height: 6),
+                  color: vc.textMuted, size: 28),
+              const SizedBox(height: 6),
               Text('Click to upload image',
                   style: TextStyle(
-                      color: VividColors.textMuted, fontSize: 12)),
-              SizedBox(height: 2),
+                      color: vc.textMuted, fontSize: 12)),
+              const SizedBox(height: 2),
               Text('JPEG or PNG, max 5 MB · Recommended: 1200 × 630 px',
                   style: TextStyle(
-                      color: VividColors.textMuted, fontSize: 10)),
+                      color: vc.textMuted, fontSize: 10)),
             ],
           ),
         ),
@@ -975,7 +987,8 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
 
   // ─── Button entry row ──────────────────────────────────────────────────────
 
-  Widget _buildButtonEntry(int index, _ButtonEntry entry) {
+  Widget _buildButtonEntry(BuildContext context, int index, _ButtonEntry entry) {
+    final vc = context.vividColors;
     const types = [
       ('QUICK_REPLY', 'Quick Reply'),
       ('URL', 'Visit Website'),
@@ -986,10 +999,10 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: VividColors.darkNavy,
+          color: vc.background,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-              color: VividColors.tealBlue.withValues(alpha: 0.2)),
+              color: vc.border),
         ),
         child: Column(
           children: [
@@ -997,11 +1010,12 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
               children: [
                 Expanded(
                   child: _buildDropdown(
+                    context,
                     value: entry.type,
                     items: types
                         .map((t) => DropdownMenuItem(
                             value: t.$1,
-                            child: Text(t.$2, style: _inputTextStyle)))
+                            child: Text(t.$2, style: _inputTextStyle(context))))
                         .toList(),
                     onChanged: (v) {
                       if (v == null) return;
@@ -1011,8 +1025,8 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
                 ),
                 const SizedBox(width: 8),
                 IconButton(
-                  icon: const Icon(Icons.close_rounded,
-                      color: VividColors.textMuted, size: 16),
+                  icon: Icon(Icons.close_rounded,
+                      color: vc.textMuted, size: 16),
                   onPressed: () => setState(() => _buttons.removeAt(index)),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
@@ -1022,8 +1036,8 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
             const SizedBox(height: 8),
             TextFormField(
               controller: entry.textController,
-              style: _inputTextStyle,
-              decoration: _inputDecoration('Button label'),
+              style: _inputTextStyle(context),
+              decoration: _inputDecoration(context, 'Button label'),
               validator: (v) =>
                   v == null || v.trim().isEmpty ? 'Label required' : null,
               onChanged: (_) => setState(() {}),
@@ -1032,9 +1046,9 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
               const SizedBox(height: 8),
               TextFormField(
                 controller: entry.extraController,
-                style: _inputTextStyle,
+                style: _inputTextStyle(context),
                 decoration: _inputDecoration(
-                    entry.type == 'URL' ? 'https://example.com' : '+1234567890'),
+                    context, entry.type == 'URL' ? 'https://example.com' : '+1234567890'),
                 validator: (v) {
                   if (v == null || v.trim().isEmpty) {
                     return entry.type == 'URL' ? 'URL required' : 'Phone required';
@@ -1052,11 +1066,13 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
 
   // ─── Shared UI helpers ─────────────────────────────────────────────────────
 
-  Widget _buildSection({
+  Widget _buildSection(
+    BuildContext context, {
     required String title,
     required Widget child,
     Widget? titleTrailing,
   }) {
+    final vc = context.vividColors;
     return Container(
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.02),
@@ -1072,8 +1088,8 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
               children: [
                 Text(
                   title.toUpperCase(),
-                  style: const TextStyle(
-                    color: VividColors.textSecondary,
+                  style: TextStyle(
+                    color: vc.textSecondary,
                     fontSize: 10,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0.8,
@@ -1124,34 +1140,41 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
     );
   }
 
-  Widget _buildDropdown<T>({
+  Widget _buildDropdown<T>(
+    BuildContext context, {
     required T value,
     required List<DropdownMenuItem<T>> items,
     required void Function(T?) onChanged,
   }) {
+    final vc = context.vividColors;
     return DropdownButtonFormField<T>(
       value: value,
       items: items,
       onChanged: onChanged,
-      style: _inputTextStyle,
-      dropdownColor: VividColors.deepBlue,
-      decoration: _inputDecoration(null),
-      icon: const Icon(Icons.keyboard_arrow_down_rounded,
-          color: VividColors.textMuted, size: 18),
+      style: _inputTextStyle(context),
+      dropdownColor: vc.surfaceAlt,
+      decoration: _inputDecoration(context, null),
+      icon: Icon(Icons.keyboard_arrow_down_rounded,
+          color: vc.textMuted, size: 18),
     );
   }
 
-  static const TextStyle _inputTextStyle = TextStyle(
-    color: VividColors.textPrimary,
-    fontSize: 13,
-  );
+  TextStyle _inputTextStyle(BuildContext context) {
+    final vc = context.vividColors;
+    return TextStyle(
+      color: vc.textPrimary,
+      fontSize: 13,
+    );
+  }
 
-  InputDecoration _inputDecoration(String? hint) => InputDecoration(
+  InputDecoration _inputDecoration(BuildContext context, String? hint) {
+    final vc = context.vividColors;
+    return InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(
-            color: VividColors.textMuted, fontSize: 13),
+        hintStyle: TextStyle(
+            color: vc.textMuted, fontSize: 13),
         filled: true,
-        fillColor: VividColors.darkNavy,
+        fillColor: vc.background,
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
         border: OutlineInputBorder(
@@ -1181,6 +1204,7 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
         errorStyle: const TextStyle(
             color: VividColors.statusUrgent, fontSize: 11),
       );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1216,10 +1240,14 @@ class _TemplateNameFormatter extends TextInputFormatter {
 }
 
 class _DashedBorderPainter extends CustomPainter {
+  final Color color;
+
+  _DashedBorderPainter({required this.color});
+
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = VividColors.tealBlue.withValues(alpha: 0.5)
+      ..color = color
       ..strokeWidth = 1.5
       ..style = PaintingStyle.stroke;
 
@@ -1242,5 +1270,5 @@ class _DashedBorderPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_DashedBorderPainter _) => false;
+  bool shouldRepaint(_DashedBorderPainter old) => old.color != color;
 }

@@ -15,6 +15,7 @@ import 'providers/user_management_provider.dart';
 import 'providers/booking_reminders_provider.dart';
 import 'providers/activity_logs_provider.dart';
 import 'providers/templates_provider.dart';
+import 'providers/theme_provider.dart';
 import 'models/models.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
@@ -57,12 +58,17 @@ class VividDashboardApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => BookingRemindersProvider()),
         ChangeNotifierProvider(create: (_) => ActivityLogsProvider()),
         ChangeNotifierProvider(create: (_) => TemplatesProvider()),
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
       ],
-      child: MaterialApp(
-        title: 'Vivid Dashboard',
-        debugShowCheckedModeBanner: false,
-        theme: VividTheme.darkTheme,
-        home: const AuthWrapper(),
+      child: Consumer<ThemeProvider>(
+        builder: (context, themeProvider, _) => MaterialApp(
+          title: 'Vivid Dashboard',
+          debugShowCheckedModeBanner: false,
+          theme: VividTheme.lightTheme,
+          darkTheme: VividTheme.darkTheme,
+          themeMode: themeProvider.themeMode,
+          home: const AuthWrapper(),
+        ),
       ),
     );
   }
@@ -91,10 +97,10 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
     // Show loading indicator while checking session
     if (agentProvider.isRestoringSession) {
-      return const Scaffold(
-        backgroundColor: VividColors.darkNavy,
+      return Scaffold(
+        backgroundColor: context.vividColors.background,
         body: Center(
-          child: CircularProgressIndicator(color: VividColors.tealBlue),
+          child: CircularProgressIndicator(color: VividColors.cyan),
         ),
       );
     }
@@ -269,14 +275,14 @@ class _MainScaffoldState extends State<MainScaffold> {
 
         if (isMobile) {
           return Scaffold(
-            backgroundColor: VividColors.darkNavy,
+            backgroundColor: context.vividColors.background,
             body: _buildContent(),
             bottomNavigationBar: _buildBottomNav(),
           );
         }
 
         return Scaffold(
-          backgroundColor: VividColors.darkNavy,
+          backgroundColor: context.vividColors.background,
           body: Row(
             children: [
               Sidebar(
@@ -300,11 +306,12 @@ class _MainScaffoldState extends State<MainScaffold> {
     final currentIndex = destinations.indexOf(current).clamp(0, destinations.length - 1);
     final conversationsProvider = context.watch<ConversationsProvider>();
 
+    final vc = context.vividColors;
     return Container(
       decoration: BoxDecoration(
-        color: VividColors.navy,
+        color: vc.surface,
         border: Border(
-          top: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+          top: BorderSide(color: vc.border),
         ),
       ),
       child: SafeArea(
@@ -315,9 +322,9 @@ class _MainScaffoldState extends State<MainScaffold> {
             setState(() => _currentDestination = destinations[index]);
           },
           type: BottomNavigationBarType.fixed,
-          backgroundColor: VividColors.navy,
+          backgroundColor: vc.surface,
           selectedItemColor: VividColors.cyan,
-          unselectedItemColor: VividColors.textMuted,
+          unselectedItemColor: vc.textMuted,
           selectedFontSize: 11,
           unselectedFontSize: 10,
           iconSize: 22,
@@ -373,10 +380,10 @@ class _MainScaffoldState extends State<MainScaffold> {
       case NavDestination.activityLogs:
         return _buildActivityLogsContent();
       default:
-        return const Center(
+        return Center(
           child: Text(
             'No features enabled',
-            style: TextStyle(color: VividColors.textMuted),
+            style: TextStyle(color: context.vividColors.textMuted),
           ),
         );
     }
@@ -472,6 +479,7 @@ class _MainScaffoldState extends State<MainScaffold> {
     required String title,
     required String description,
   }) {
+    final vc = context.vividColors;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -479,13 +487,13 @@ class _MainScaffoldState extends State<MainScaffold> {
           Icon(
             icon,
             size: 64,
-            color: VividColors.textMuted.withOpacity(0.5),
+            color: vc.textMuted.withValues(alpha: 0.5),
           ),
           const SizedBox(height: 16),
           Text(
             title,
-            style: const TextStyle(
-              color: VividColors.textPrimary,
+            style: TextStyle(
+              color: vc.textPrimary,
               fontSize: 18,
               fontWeight: FontWeight.w600,
             ),
@@ -493,7 +501,7 @@ class _MainScaffoldState extends State<MainScaffold> {
           const SizedBox(height: 8),
           Text(
             description,
-            style: const TextStyle(color: VividColors.textMuted),
+            style: TextStyle(color: vc.textMuted),
             textAlign: TextAlign.center,
           ),
         ],
@@ -506,6 +514,7 @@ class _MainScaffoldState extends State<MainScaffold> {
     required Widget child,
     required String featureName,
   }) {
+    final vc = context.vividColors;
     return Stack(
       children: [
         child,
@@ -517,9 +526,9 @@ class _MainScaffoldState extends State<MainScaffold> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: BoxDecoration(
-              color: VividColors.navy,
+              color: vc.surface,
               border: Border(
-                bottom: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+                bottom: BorderSide(color: vc.border),
               ),
             ),
             child: Row(
@@ -528,13 +537,13 @@ class _MainScaffoldState extends State<MainScaffold> {
                 Icon(
                   Icons.visibility,
                   size: 16,
-                  color: VividColors.textMuted,
+                  color: vc.textMuted,
                 ),
                 const SizedBox(width: 8),
                 Text(
                   'Viewing $featureName in read-only mode',
-                  style: const TextStyle(
-                    color: VividColors.textMuted,
+                  style: TextStyle(
+                    color: vc.textMuted,
                     fontSize: 12,
                   ),
                 ),

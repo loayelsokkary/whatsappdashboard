@@ -24,6 +24,7 @@ class _BroadcastsPanelState extends State<BroadcastsPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return LayoutBuilder(
       builder: (context, constraints) {
         final isMobile = constraints.maxWidth < 600;
@@ -45,7 +46,7 @@ class _BroadcastsPanelState extends State<BroadcastsPanel> {
             ),
             Container(
               width: 1,
-              color: VividColors.tealBlue.withOpacity(0.2),
+              color: vc.border,
             ),
             Expanded(
               child: _RecipientDetails(),
@@ -57,6 +58,7 @@ class _BroadcastsPanelState extends State<BroadcastsPanel> {
   }
 
   Widget _buildMobileLayout() {
+    final vc = context.vividColors;
     final provider = context.watch<BroadcastsProvider>();
 
     if (provider.selectedBroadcast != null) {
@@ -65,23 +67,23 @@ class _BroadcastsPanelState extends State<BroadcastsPanel> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             decoration: BoxDecoration(
-              color: VividColors.navy,
+              color: vc.surface,
               border: Border(
-                bottom: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+                bottom: BorderSide(color: vc.border),
               ),
             ),
             child: Row(
               children: [
                 IconButton(
-                  icon: const Icon(Icons.arrow_back, color: VividColors.textPrimary),
+                  icon: Icon(Icons.arrow_back, color: vc.textPrimary),
                   onPressed: () => provider.clearSelection(),
                 ),
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
                     provider.selectedBroadcast!.campaignName ?? 'Broadcast',
-                    style: const TextStyle(
-                      color: VividColors.textPrimary,
+                    style: TextStyle(
+                      color: vc.textPrimary,
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
                     ),
@@ -103,10 +105,11 @@ class _BroadcastsPanelState extends State<BroadcastsPanel> {
 class _BroadcastsList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     final provider = context.watch<BroadcastsProvider>();
 
     return Container(
-      color: VividColors.darkNavy,
+      color: vc.background,
       child: Column(
         children: [
           Container(
@@ -114,7 +117,7 @@ class _BroadcastsList extends StatelessWidget {
             decoration: BoxDecoration(
               border: Border(
                 bottom: BorderSide(
-                  color: VividColors.tealBlue.withOpacity(0.2),
+                  color: vc.border,
                 ),
               ),
             ),
@@ -122,10 +125,10 @@ class _BroadcastsList extends StatelessWidget {
               children: [
                 const Icon(Icons.campaign, color: VividColors.cyan, size: 24),
                 const SizedBox(width: 12),
-                const Text(
+                Text(
                   'Broadcasts',
                   style: TextStyle(
-                    color: VividColors.textPrimary,
+                    color: vc.textPrimary,
                     fontSize: 20,
                     fontWeight: FontWeight.w600,
                   ),
@@ -134,7 +137,7 @@ class _BroadcastsList extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: VividColors.brightBlue.withOpacity(0.2),
+                    color: VividColors.brightBlue.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Text(
@@ -154,11 +157,11 @@ class _BroadcastsList extends StatelessWidget {
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
                       gradient: provider.isAtLimit ? null : VividColors.primaryGradient,
-                      color: provider.isAtLimit ? VividColors.deepBlue : null,
+                      color: provider.isAtLimit ? vc.surfaceAlt : null,
                       borderRadius: BorderRadius.circular(10),
                       boxShadow: provider.isAtLimit ? null : [
                         BoxShadow(
-                          color: VividColors.brightBlue.withOpacity(0.3),
+                          color: VividColors.brightBlue.withValues(alpha: 0.3),
                           blurRadius: 8,
                           offset: const Offset(0, 2),
                         ),
@@ -166,7 +169,7 @@ class _BroadcastsList extends StatelessWidget {
                     ),
                     child: Icon(
                       Icons.add,
-                      color: provider.isAtLimit ? VividColors.textMuted : Colors.white,
+                      color: provider.isAtLimit ? vc.textMuted : Colors.white,
                       size: 20,
                     ),
                   ),
@@ -174,7 +177,7 @@ class _BroadcastsList extends StatelessWidget {
               ],
             ),
           ),
-          if (provider.hasLimit) _buildMonthlyCounter(provider),
+          if (provider.hasLimit) _buildMonthlyCounter(context, provider),
           Expanded(
             child: provider.broadcasts.isEmpty
                     ? _buildEmptyState()
@@ -204,7 +207,8 @@ class _BroadcastsList extends StatelessWidget {
     );
   }
 
-  Widget _buildMonthlyCounter(BroadcastsProvider provider) {
+  Widget _buildMonthlyCounter(BuildContext context, BroadcastsProvider provider) {
+    final vc = context.vividColors;
     final sent = provider.monthlySentCount;
     final limit = provider.monthlyLimit;
     final progress = limit > 0 ? (sent / limit).clamp(0.0, 1.0) : 0.0;
@@ -223,11 +227,11 @@ class _BroadcastsList extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       decoration: BoxDecoration(
         color: isAtLimit
-            ? VividColors.statusUrgent.withOpacity(0.05)
+            ? VividColors.statusUrgent.withValues(alpha: 0.05)
             : Colors.transparent,
         border: Border(
           bottom: BorderSide(
-            color: VividColors.tealBlue.withOpacity(0.2),
+            color: vc.border,
           ),
         ),
       ),
@@ -267,13 +271,13 @@ class _BroadcastsList extends StatelessWidget {
             child: LinearProgressIndicator(
               value: progress,
               minHeight: 6,
-              backgroundColor: VividColors.deepBlue,
+              backgroundColor: vc.surfaceAlt,
               valueColor: AlwaysStoppedAnimation<Color>(barColor),
             ),
           ),
           if (isAtLimit) ...[
             const SizedBox(height: 6),
-            Text(
+            const Text(
               'Monthly limit reached',
               style: TextStyle(
                 color: VividColors.statusUrgent,
@@ -288,33 +292,38 @@ class _BroadcastsList extends StatelessWidget {
   }
 
   Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.campaign_outlined,
-            size: 64,
-            color: VividColors.textMuted.withOpacity(0.5),
+    return Builder(
+      builder: (context) {
+        final vc = context.vividColors;
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.campaign_outlined,
+                size: 64,
+                color: vc.textMuted.withValues(alpha: 0.5),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'No broadcasts yet',
+                style: TextStyle(
+                  color: vc.textMuted,
+                  fontSize: 16,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Campaigns will appear here',
+                style: TextStyle(
+                  color: vc.textMuted,
+                  fontSize: 13,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 16),
-          const Text(
-            'No broadcasts yet',
-            style: TextStyle(
-              color: VividColors.textMuted,
-              fontSize: 16,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Campaigns will appear here',
-            style: TextStyle(
-              color: VividColors.textMuted,
-              fontSize: 13,
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -332,13 +341,14 @@ class _BroadcastCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return InkWell(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: isSelected
-              ? VividColors.brightBlue.withOpacity(0.1)
+              ? VividColors.brightBlue.withValues(alpha: 0.1)
               : Colors.transparent,
           border: Border(
             left: BorderSide(
@@ -346,7 +356,7 @@ class _BroadcastCard extends StatelessWidget {
               width: 3,
             ),
             bottom: BorderSide(
-              color: VividColors.tealBlue.withOpacity(0.1),
+              color: vc.borderSubtle,
             ),
           ),
         ),
@@ -356,7 +366,7 @@ class _BroadcastCard extends StatelessWidget {
             Text(
               broadcast.campaignName ?? 'Unnamed Campaign',
               style: TextStyle(
-                color: VividColors.textPrimary,
+                color: vc.textPrimary,
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
                 fontSize: 15,
               ),
@@ -367,8 +377,8 @@ class _BroadcastCard extends StatelessWidget {
             if (broadcast.messageContent != null)
               Text(
                 broadcast.messageContent!,
-                style: const TextStyle(
-                  color: VividColors.textMuted,
+                style: TextStyle(
+                  color: vc.textMuted,
                   fontSize: 13,
                 ),
                 maxLines: 2,
@@ -380,21 +390,21 @@ class _BroadcastCard extends StatelessWidget {
                 Icon(
                   Icons.people,
                   size: 14,
-                  color: VividColors.textMuted,
+                  color: vc.textMuted,
                 ),
                 const SizedBox(width: 4),
                 Text(
                   '${broadcast.totalRecipients} recipients',
-                  style: const TextStyle(
-                    color: VividColors.textMuted,
+                  style: TextStyle(
+                    color: vc.textMuted,
                     fontSize: 12,
                   ),
                 ),
                 const Spacer(),
                 Text(
                   _formatDate(broadcast.sentAt),
-                  style: const TextStyle(
-                    color: VividColors.textMuted,
+                  style: TextStyle(
+                    color: vc.textMuted,
                     fontSize: 12,
                   ),
                 ),
@@ -497,17 +507,18 @@ class _RecipientDetailsState extends State<_RecipientDetails> {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     final provider = context.watch<BroadcastsProvider>();
     final broadcast = provider.selectedBroadcast;
 
     if (broadcast == null) {
-      return _buildEmptyState();
+      return _buildEmptyState(vc);
     }
 
     final campaignName = broadcast.campaignName ?? 'Campaign Details';
 
     return Container(
-      color: VividColors.navy,
+      color: vc.surface,
       child: Column(
         children: [
           Container(
@@ -515,7 +526,7 @@ class _RecipientDetailsState extends State<_RecipientDetails> {
             decoration: BoxDecoration(
               border: Border(
                 bottom: BorderSide(
-                  color: VividColors.tealBlue.withOpacity(0.2),
+                  color: vc.border,
                 ),
               ),
             ),
@@ -529,8 +540,8 @@ class _RecipientDetailsState extends State<_RecipientDetails> {
                         child: TextField(
                           controller: _nameController,
                           autofocus: true,
-                          style: const TextStyle(
-                            color: VividColors.textPrimary,
+                          style: TextStyle(
+                            color: vc.textPrimary,
                             fontSize: 18,
                             fontWeight: FontWeight.w600,
                           ),
@@ -539,18 +550,18 @@ class _RecipientDetailsState extends State<_RecipientDetails> {
                             contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide(color: VividColors.tealBlue.withValues(alpha: 0.3)),
+                              borderSide: BorderSide(color: vc.popupBorder),
                             ),
                             enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide(color: VividColors.tealBlue.withValues(alpha: 0.3)),
+                              borderSide: BorderSide(color: vc.popupBorder),
                             ),
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
                               borderSide: const BorderSide(color: VividColors.cyan),
                             ),
                             filled: true,
-                            fillColor: VividColors.deepBlue,
+                            fillColor: vc.surfaceAlt,
                           ),
                           onSubmitted: (_) => _saveNewName(provider, broadcast.id),
                         ),
@@ -566,7 +577,7 @@ class _RecipientDetailsState extends State<_RecipientDetails> {
                         padding: const EdgeInsets.all(6),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.close, color: VividColors.textMuted, size: 20),
+                        icon: Icon(Icons.close, color: vc.textMuted, size: 20),
                         onPressed: _cancelEditing,
                         tooltip: 'Cancel',
                         constraints: const BoxConstraints(),
@@ -580,15 +591,15 @@ class _RecipientDetailsState extends State<_RecipientDetails> {
                       Expanded(
                         child: Text(
                           campaignName,
-                          style: const TextStyle(
-                            color: VividColors.textPrimary,
+                          style: TextStyle(
+                            color: vc.textPrimary,
                             fontSize: 18,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.edit, color: VividColors.textMuted, size: 18),
+                        icon: Icon(Icons.edit, color: vc.textMuted, size: 18),
                         onPressed: () => _startEditing(campaignName),
                         tooltip: 'Rename campaign',
                         constraints: const BoxConstraints(),
@@ -599,8 +610,8 @@ class _RecipientDetailsState extends State<_RecipientDetails> {
                 const SizedBox(height: 4),
                 Text(
                   _formatFullDate(broadcast.sentAt),
-                  style: const TextStyle(
-                    color: VividColors.textMuted,
+                  style: TextStyle(
+                    color: vc.textMuted,
                     fontSize: 13,
                   ),
                 ),
@@ -619,19 +630,19 @@ class _RecipientDetailsState extends State<_RecipientDetails> {
                       margin: const EdgeInsets.all(20),
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: VividColors.deepBlue,
+                        color: vc.surfaceAlt,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: VividColors.tealBlue.withOpacity(0.2),
+                          color: vc.border,
                         ),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
+                          Text(
                             'Message',
                             style: TextStyle(
-                              color: VividColors.textMuted,
+                              color: vc.textMuted,
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
                             ),
@@ -639,6 +650,7 @@ class _RecipientDetailsState extends State<_RecipientDetails> {
                           const SizedBox(height: 10),
                           LayoutBuilder(
                             builder: (context, constraints) {
+                              final vc = context.vividColors;
                               final hasImage = broadcast.photo != null;
                               final hasText = broadcast.messageContent != null;
                               final isNarrow = constraints.maxWidth < 600;
@@ -646,19 +658,17 @@ class _RecipientDetailsState extends State<_RecipientDetails> {
                               final imageErrorWidget = Container(
                                 height: 120,
                                 decoration: BoxDecoration(
-                                  color: VividColors.navy,
+                                  color: vc.surface,
                                   borderRadius: BorderRadius.circular(12),
                                 ),
-                                child: const Center(
-                                  child: Icon(Icons.broken_image_outlined, color: VividColors.textMuted, size: 32),
-                                ),
+                                child: Icon(Icons.broken_image_outlined, color: vc.textMuted, size: 32),
                               );
 
                               final textWidget = hasText
                                   ? Text(
                                       broadcast.messageContent!,
-                                      style: const TextStyle(
-                                        color: VividColors.textPrimary,
+                                      style: TextStyle(
+                                        color: vc.textPrimary,
                                         fontSize: 14,
                                         height: 1.6,
                                       ),
@@ -717,7 +727,7 @@ class _RecipientDetailsState extends State<_RecipientDetails> {
                                       decoration: BoxDecoration(
                                         borderRadius: BorderRadius.circular(12),
                                         border: Border.all(
-                                          color: VividColors.tealBlue.withValues(alpha: 0.2),
+                                          color: vc.border,
                                         ),
                                         boxShadow: [
                                           BoxShadow(
@@ -773,10 +783,10 @@ class _RecipientDetailsState extends State<_RecipientDetails> {
                       children: [
                         Row(
                           children: [
-                            const Text(
+                            Text(
                               'Recipients',
                               style: TextStyle(
-                                color: VividColors.textPrimary,
+                                color: vc.textPrimary,
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -784,8 +794,8 @@ class _RecipientDetailsState extends State<_RecipientDetails> {
                             const SizedBox(width: 8),
                             Text(
                               '(${provider.recipients.length})',
-                              style: const TextStyle(
-                                color: VividColors.textMuted,
+                              style: TextStyle(
+                                color: vc.textMuted,
                                 fontSize: 14,
                               ),
                             ),
@@ -800,13 +810,13 @@ class _RecipientDetailsState extends State<_RecipientDetails> {
                   ),
                   const SizedBox(height: 12),
                   if (provider.recipients.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.all(40),
+                    Padding(
+                      padding: const EdgeInsets.all(40),
                       child: Center(
                         child: Text(
                           'No recipients yet',
                           style: TextStyle(
-                            color: VividColors.textMuted,
+                            color: vc.textMuted,
                             fontSize: 14,
                           ),
                         ),
@@ -832,9 +842,9 @@ class _RecipientDetailsState extends State<_RecipientDetails> {
     );
   }
 
-  Widget _buildEmptyState() {
+  Widget _buildEmptyState(VividColorScheme vc) {
     return Container(
-      color: VividColors.navy,
+      color: vc.surface,
       child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -842,22 +852,22 @@ class _RecipientDetailsState extends State<_RecipientDetails> {
             Icon(
               Icons.touch_app,
               size: 64,
-              color: VividColors.textMuted.withOpacity(0.5),
+              color: vc.textMuted.withValues(alpha: 0.5),
             ),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               'Select a broadcast',
               style: TextStyle(
-                color: VividColors.textPrimary,
+                color: vc.textPrimary,
                 fontSize: 18,
                 fontWeight: FontWeight.w500,
               ),
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'View recipient details and delivery status',
               style: TextStyle(
-                color: VividColors.textMuted,
+                color: vc.textMuted,
                 fontSize: 14,
               ),
             ),
@@ -887,6 +897,7 @@ class _DeliveryStats extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     final sent = recipients.where((r) => r.status == 'accepted' || r.status == 'sent' || r.status == 'delivered').length;
     final failed = recipients.length - sent;
     final rate = recipients.isNotEmpty
@@ -895,16 +906,16 @@ class _DeliveryStats extends StatelessWidget {
 
     return Row(
       children: [
-        _buildStat('Sent', sent.toString(), Colors.green),
+        _buildStat(vc, 'Sent', sent.toString(), Colors.green),
         const SizedBox(width: 16),
-        _buildStat('Failed', failed.toString(), Colors.red),
+        _buildStat(vc, 'Failed', failed.toString(), Colors.red),
         const SizedBox(width: 16),
-        _buildStat('Rate', '${rate.toStringAsFixed(1)}%', VividColors.cyan),
+        _buildStat(vc, 'Rate', '${rate.toStringAsFixed(1)}%', VividColors.cyan),
       ],
     );
   }
 
-  Widget _buildStat(String label, String value, Color color) {
+  Widget _buildStat(VividColorScheme vc, String label, String value, Color color) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -919,8 +930,8 @@ class _DeliveryStats extends StatelessWidget {
         const SizedBox(width: 4),
         Text(
           '$label: ',
-          style: const TextStyle(
-            color: VividColors.textMuted,
+          style: TextStyle(
+            color: vc.textMuted,
             fontSize: 12,
           ),
         ),
@@ -944,6 +955,7 @@ class _RecipientTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     final bool isSent = recipient.status == 'accepted' || recipient.status == 'sent' || recipient.status == 'delivered';
     final Color statusColor = isSent ? Colors.green : Colors.red;
     final String statusLabel = isSent ? 'Delivered' : 'Failed';
@@ -952,7 +964,7 @@ class _RecipientTile extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: VividColors.deepBlue,
+        color: vc.surfaceAlt,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
@@ -980,8 +992,8 @@ class _RecipientTile extends StatelessWidget {
               children: [
                 Text(
                   recipient.displayName,
-                  style: const TextStyle(
-                    color: VividColors.textPrimary,
+                  style: TextStyle(
+                    color: vc.textPrimary,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -989,8 +1001,8 @@ class _RecipientTile extends StatelessWidget {
                     recipient.customerName != null)
                   Text(
                     recipient.customerPhone!,
-                    style: const TextStyle(
-                      color: VividColors.textMuted,
+                    style: TextStyle(
+                      color: vc.textMuted,
                       fontSize: 12,
                     ),
                   ),
@@ -1086,6 +1098,7 @@ class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     final provider = context.watch<BroadcastsProvider>();
 
     return Dialog(
@@ -1096,9 +1109,9 @@ class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
             : 500,
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
-          color: VividColors.navy,
+          color: vc.surface,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: VividColors.tealBlue.withOpacity(0.3)),
+          border: Border.all(color: vc.popupBorder),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.3),
@@ -1122,23 +1135,23 @@ class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
                   child: const Icon(Icons.campaign, color: Colors.white, size: 22),
                 ),
                 const SizedBox(width: 12),
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         'New Broadcast',
                         style: TextStyle(
-                          color: VividColors.textPrimary,
+                          color: vc.textPrimary,
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      SizedBox(height: 2),
+                      const SizedBox(height: 2),
                       Text(
                         'Describe who should receive the message',
                         style: TextStyle(
-                          color: VividColors.textMuted,
+                          color: vc.textMuted,
                           fontSize: 12,
                         ),
                       ),
@@ -1147,7 +1160,7 @@ class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
                 ),
                 IconButton(
                   onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close, color: VividColors.textMuted),
+                  icon: Icon(Icons.close, color: vc.textMuted),
                 ),
               ],
             ),
@@ -1155,7 +1168,7 @@ class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: VividColors.deepBlue.withOpacity(0.5),
+                color: vc.surfaceAlt.withOpacity(0.5),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: VividColors.cyan.withOpacity(0.2)),
               ),
@@ -1167,7 +1180,7 @@ class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
                     child: Text(
                       'Example: "Send {Name} an offer in english/arabic"',
                       style: TextStyle(
-                        color: VividColors.textMuted,
+                        color: vc.textMuted,
                         fontSize: 12,
                         fontStyle: FontStyle.italic,
                       ),
@@ -1179,19 +1192,19 @@ class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
             const SizedBox(height: 16),
             Container(
               decoration: BoxDecoration(
-                color: VividColors.darkNavy,
+                color: vc.background,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: VividColors.tealBlue.withOpacity(0.3)),
+                border: Border.all(color: vc.popupBorder),
               ),
               child: TextField(
                 controller: _controller,
                 focusNode: _focusNode,
                 enabled: !provider.isSending,
                 maxLines: 4,
-                style: const TextStyle(color: VividColors.textPrimary, fontSize: 15),
-                decoration: const InputDecoration(
+                style: TextStyle(color: vc.textPrimary, fontSize: 15),
+                decoration: InputDecoration(
                   hintText: 'Type your broadcast instruction...',
-                  hintStyle: TextStyle(color: VividColors.textMuted),
+                  hintStyle: TextStyle(color: vc.textMuted),
                   border: InputBorder.none,
                   contentPadding: EdgeInsets.all(16),
                 ),
@@ -1226,9 +1239,9 @@ class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
               children: [
                 TextButton(
                   onPressed: provider.isSending ? null : () => Navigator.of(context).pop(),
-                  child: const Text(
+                  child: Text(
                     'Cancel',
-                    style: TextStyle(color: VividColors.textMuted),
+                    style: TextStyle(color: vc.textMuted),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1239,7 +1252,7 @@ class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
                     padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                     decoration: BoxDecoration(
                       gradient: provider.isSending ? null : VividColors.primaryGradient,
-                      color: provider.isSending ? VividColors.deepBlue : null,
+                      color: provider.isSending ? vc.surfaceAlt : null,
                       borderRadius: BorderRadius.circular(12),
                       boxShadow: provider.isSending ? null : [
                         BoxShadow(
@@ -1262,10 +1275,10 @@ class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          const Text(
+                          Text(
                             'Sending...',
                             style: TextStyle(
-                              color: VividColors.textMuted,
+                              color: vc.textMuted,
                               fontWeight: FontWeight.w600,
                             ),
                           ),

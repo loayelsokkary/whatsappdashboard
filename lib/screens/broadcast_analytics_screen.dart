@@ -83,7 +83,8 @@ class _BroadcastAnalyticsScreenState extends State<BroadcastAnalyticsScreen> {
     ));
   }
 
-  Widget _buildExportButton(BroadcastAnalyticsData data) {
+  Widget _buildExportButton(BuildContext context, BroadcastAnalyticsData data) {
+    final vc = context.vividColors;
     final menuColors = {
       'csv': Colors.green,
       'excel': const Color(0xFF217346),
@@ -95,13 +96,13 @@ class _BroadcastAnalyticsScreenState extends State<BroadcastAnalyticsScreen> {
       enabled: !_isExporting,
       offset: const Offset(0, 45),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      color: VividColors.navy,
+      color: vc.surface,
       itemBuilder: (context) => [
-        _buildExportMenuItem('csv',   'CSV',        Icons.table_chart,    'Spreadsheet format', menuColors),
-        _buildExportMenuItem('excel', 'Excel',      Icons.grid_on,        'Formatted workbook', menuColors),
-        _buildExportMenuItem('pdf',   'PDF',        Icons.picture_as_pdf, 'Professional report', menuColors),
+        _buildExportMenuItem(context, 'csv',   'CSV',        Icons.table_chart,    'Spreadsheet format', menuColors),
+        _buildExportMenuItem(context, 'excel', 'Excel',      Icons.grid_on,        'Formatted workbook', menuColors),
+        _buildExportMenuItem(context, 'pdf',   'PDF',        Icons.picture_as_pdf, 'Professional report', menuColors),
         const PopupMenuDivider(),
-        _buildExportMenuItem('all',   'Export All', Icons.download,       'All formats', menuColors),
+        _buildExportMenuItem(context, 'all',   'Export All', Icons.download,       'All formats', menuColors),
       ],
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -131,9 +132,11 @@ class _BroadcastAnalyticsScreenState extends State<BroadcastAnalyticsScreen> {
   }
 
   PopupMenuItem<String> _buildExportMenuItem(
+    BuildContext context,
     String value, String title, IconData icon, String subtitle,
     Map<String, Color> colors,
   ) {
+    final vc = context.vividColors;
     return PopupMenuItem<String>(
       value: value,
       child: Row(
@@ -148,8 +151,8 @@ class _BroadcastAnalyticsScreenState extends State<BroadcastAnalyticsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(color: VividColors.textPrimary, fontWeight: FontWeight.w600)),
-                Text(subtitle, style: const TextStyle(color: VividColors.textMuted, fontSize: 11)),
+                Text(title, style: TextStyle(color: vc.textPrimary, fontWeight: FontWeight.w600)),
+                Text(subtitle, style: TextStyle(color: vc.textMuted, fontSize: 11)),
               ],
             ),
           ),
@@ -160,13 +163,14 @@ class _BroadcastAnalyticsScreenState extends State<BroadcastAnalyticsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     final provider = context.watch<BroadcastAnalyticsProvider>();
     final analytics = provider.analytics;
 
     return Container(
-      color: VividColors.darkNavy,
+      color: vc.background,
       child: analytics == null
-              ? _buildEmptyState()
+              ? _buildEmptyState(context)
               : LayoutBuilder(
                   builder: (context, constraints) {
                     final isMobile = constraints.maxWidth < 600;
@@ -182,17 +186,17 @@ class _BroadcastAnalyticsScreenState extends State<BroadcastAnalyticsScreen> {
                             children: [
                               const Icon(Icons.analytics, color: VividColors.cyan, size: 28),
                               const SizedBox(width: 12),
-                              const Expanded(
+                              Expanded(
                                 child: Text(
                                   'Broadcast Analytics',
                                   style: TextStyle(
-                                    color: VividColors.textPrimary,
+                                    color: vc.textPrimary,
                                     fontSize: 24,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
                               ),
-                              _buildExportButton(analytics),
+                              _buildExportButton(context, analytics),
                             ],
                           ),
                           const SizedBox(height: 24),
@@ -280,7 +284,8 @@ class _BroadcastAnalyticsScreenState extends State<BroadcastAnalyticsScreen> {
     );
   }
 
-  Widget _buildEmptyState() {
+  Widget _buildEmptyState(BuildContext context) {
+    final vc = context.vividColors;
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -288,21 +293,21 @@ class _BroadcastAnalyticsScreenState extends State<BroadcastAnalyticsScreen> {
           Icon(
             Icons.analytics_outlined,
             size: 64,
-            color: VividColors.textMuted.withOpacity(0.5),
+            color: vc.textMuted.withOpacity(0.5),
           ),
           const SizedBox(height: 16),
-          const Text(
+          Text(
             'No analytics data yet',
             style: TextStyle(
-              color: VividColors.textMuted,
+              color: vc.textMuted,
               fontSize: 16,
             ),
           ),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             'Start sending broadcasts to see analytics',
             style: TextStyle(
-              color: VividColors.textMuted,
+              color: vc.textMuted,
               fontSize: 13,
             ),
           ),
@@ -375,13 +380,14 @@ class _MetricCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: VividColors.navy,
+        color: vc.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: VividColors.tealBlue.withOpacity(0.2),
+          color: vc.border,
         ),
       ),
       child: Column(
@@ -403,8 +409,8 @@ class _MetricCard extends StatelessWidget {
           const SizedBox(height: 16),
           Text(
             value,
-            style: const TextStyle(
-              color: VividColors.textPrimary,
+            style: TextStyle(
+              color: vc.textPrimary,
               fontSize: 28,
               fontWeight: FontWeight.bold,
             ),
@@ -412,8 +418,8 @@ class _MetricCard extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             label,
-            style: const TextStyle(
-              color: VividColors.textMuted,
+            style: TextStyle(
+              color: vc.textMuted,
               fontSize: 13,
             ),
           ),
@@ -434,24 +440,25 @@ class _StatusBreakdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     final total = analytics.totalRecipients;
 
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: VividColors.navy,
+        color: vc.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: VividColors.tealBlue.withOpacity(0.2),
+          color: vc.border,
         ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Delivery Status',
             style: TextStyle(
-              color: VividColors.textPrimary,
+              color: vc.textPrimary,
               fontSize: 16,
               fontWeight: FontWeight.w600,
             ),
@@ -491,6 +498,7 @@ class _StatusRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     final percentage = total > 0 ? count / total : 0.0;
 
     return Column(
@@ -512,8 +520,8 @@ class _StatusRow extends StatelessWidget {
                 const SizedBox(width: 8),
                 Text(
                   label,
-                  style: const TextStyle(
-                    color: VividColors.textMuted,
+                  style: TextStyle(
+                    color: vc.textMuted,
                     fontSize: 13,
                   ),
                 ),
@@ -521,8 +529,8 @@ class _StatusRow extends StatelessWidget {
             ),
             Text(
               '$count (${(percentage * 100).toStringAsFixed(1)}%)',
-              style: const TextStyle(
-                color: VividColors.textPrimary,
+              style: TextStyle(
+                color: vc.textPrimary,
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
               ),
@@ -534,7 +542,7 @@ class _StatusRow extends StatelessWidget {
           borderRadius: BorderRadius.circular(4),
           child: LinearProgressIndicator(
             value: percentage,
-            backgroundColor: VividColors.deepBlue,
+            backgroundColor: vc.surfaceAlt,
             valueColor: AlwaysStoppedAnimation<Color>(color),
             minHeight: 6,
           ),
@@ -555,6 +563,7 @@ class _ActivityChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     int maxRecipients = 1;
     for (final d in data) {
       if (d.recipients > maxRecipients) {
@@ -565,10 +574,10 @@ class _ActivityChart extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: VividColors.navy,
+        color: vc.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: VividColors.tealBlue.withOpacity(0.2),
+          color: vc.border,
         ),
       ),
       child: Column(
@@ -576,10 +585,10 @@ class _ActivityChart extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Text(
+              Text(
                 'Last 7 Days Activity',
                 style: TextStyle(
-                  color: VividColors.textPrimary,
+                  color: vc.textPrimary,
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
                 ),
@@ -596,10 +605,10 @@ class _ActivityChart extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 6),
-                  const Text(
+                  Text(
                     'Recipients',
                     style: TextStyle(
-                      color: VividColors.textMuted,
+                      color: vc.textMuted,
                       fontSize: 12,
                     ),
                   ),
@@ -612,7 +621,7 @@ class _ActivityChart extends StatelessWidget {
             height: 180,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
-              children: _buildBars(maxRecipients),
+              children: _buildBars(context, maxRecipients),
             ),
           ),
         ],
@@ -620,7 +629,8 @@ class _ActivityChart extends StatelessWidget {
     );
   }
 
-  List<Widget> _buildBars(int maxRecipients) {
+  List<Widget> _buildBars(BuildContext context, int maxRecipients) {
+    final vc = context.vividColors;
     return data.map((day) {
       final barHeight = maxRecipients > 0
           ? (day.recipients / maxRecipients * 120)
@@ -661,8 +671,8 @@ class _ActivityChart extends StatelessWidget {
               const SizedBox(height: 8),
               Text(
                 _formatDay(day.date),
-                style: const TextStyle(
-                  color: VividColors.textMuted,
+                style: TextStyle(
+                  color: vc.textMuted,
                   fontSize: 10,
                 ),
               ),
@@ -691,22 +701,23 @@ class _CampaignPerformanceTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: VividColors.navy,
+        color: vc.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: VividColors.tealBlue.withOpacity(0.2),
+          color: vc.border,
         ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Recent Campaign Performance',
             style: TextStyle(
-              color: VividColors.textPrimary,
+              color: vc.textPrimary,
               fontSize: 16,
               fontWeight: FontWeight.w600,
             ),
@@ -715,50 +726,51 @@ class _CampaignPerformanceTable extends StatelessWidget {
 
           if (isMobile)
             // Mobile: card-based list
-            ...campaigns.map((campaign) => _buildMobileCampaignCard(campaign)).toList()
+            ...campaigns.map((campaign) => _buildMobileCampaignCard(context, campaign)).toList()
           else ...[
             // Desktop: Table Header
             Container(
               padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
               decoration: BoxDecoration(
-                color: VividColors.deepBlue,
+                color: vc.surfaceAlt,
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Row(
-                children: const [
-                  Expanded(flex: 3, child: Text('Campaign', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12))),
-                  Expanded(flex: 1, child: Text('Recipients', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12), textAlign: TextAlign.center)),
-                  Expanded(flex: 1, child: Text('Accepted', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12), textAlign: TextAlign.center)),
-                  Expanded(flex: 1, child: Text('Failed', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12), textAlign: TextAlign.center)),
+                children: [
+                  Expanded(flex: 3, child: Text('Campaign', style: TextStyle(color: vc.textMuted, fontWeight: FontWeight.w600, fontSize: 12))),
+                  Expanded(flex: 1, child: Text('Recipients', style: TextStyle(color: vc.textMuted, fontWeight: FontWeight.w600, fontSize: 12), textAlign: TextAlign.center)),
+                  Expanded(flex: 1, child: Text('Accepted', style: TextStyle(color: vc.textMuted, fontWeight: FontWeight.w600, fontSize: 12), textAlign: TextAlign.center)),
+                  Expanded(flex: 1, child: Text('Failed', style: TextStyle(color: vc.textMuted, fontWeight: FontWeight.w600, fontSize: 12), textAlign: TextAlign.center)),
                 ],
               ),
             ),
             const SizedBox(height: 8),
 
             // Desktop: Table Rows
-            ...campaigns.map((campaign) => _buildCampaignRow(campaign)).toList(),
+            ...campaigns.map((campaign) => _buildCampaignRow(context, campaign)).toList(),
           ],
         ],
       ),
     );
   }
 
-  Widget _buildMobileCampaignCard(CampaignPerformance campaign) {
+  Widget _buildMobileCampaignCard(BuildContext context, CampaignPerformance campaign) {
+    final vc = context.vividColors;
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: VividColors.deepBlue,
+        color: vc.surfaceAlt,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: VividColors.tealBlue.withOpacity(0.1)),
+        border: Border.all(color: vc.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             campaign.name,
-            style: const TextStyle(
-              color: VividColors.textPrimary,
+            style: TextStyle(
+              color: vc.textPrimary,
               fontWeight: FontWeight.w600,
               fontSize: 14,
             ),
@@ -768,8 +780,8 @@ class _CampaignPerformanceTable extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             _formatDate(campaign.sentAt),
-            style: const TextStyle(
-              color: VividColors.textMuted,
+            style: TextStyle(
+              color: vc.textMuted,
               fontSize: 11,
             ),
           ),
@@ -777,13 +789,13 @@ class _CampaignPerformanceTable extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: _MobileMetricItem(label: 'Recipients', value: campaign.recipients.toString(), color: VividColors.textPrimary),
+                child: _MobileMetricItem(label: 'Recipients', value: campaign.recipients.toString(), color: vc.textPrimary),
               ),
               Expanded(
                 child: _MobileMetricItem(label: 'Accepted', value: campaign.delivered.toString(), color: Colors.green),
               ),
               Expanded(
-                child: _MobileMetricItem(label: 'Failed', value: campaign.failed.toString(), color: campaign.failed > 0 ? Colors.red : VividColors.textMuted),
+                child: _MobileMetricItem(label: 'Failed', value: campaign.failed.toString(), color: campaign.failed > 0 ? Colors.red : vc.textMuted),
               ),
             ],
           ),
@@ -792,13 +804,14 @@ class _CampaignPerformanceTable extends StatelessWidget {
     );
   }
 
-  Widget _buildCampaignRow(CampaignPerformance campaign) {
+  Widget _buildCampaignRow(BuildContext context, CampaignPerformance campaign) {
+    final vc = context.vividColors;
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
       decoration: BoxDecoration(
         border: Border(
           bottom: BorderSide(
-            color: VividColors.tealBlue.withOpacity(0.1),
+            color: vc.borderSubtle,
           ),
         ),
       ),
@@ -811,8 +824,8 @@ class _CampaignPerformanceTable extends StatelessWidget {
               children: [
                 Text(
                   campaign.name,
-                  style: const TextStyle(
-                    color: VividColors.textPrimary,
+                  style: TextStyle(
+                    color: vc.textPrimary,
                     fontWeight: FontWeight.w500,
                   ),
                   maxLines: 1,
@@ -820,8 +833,8 @@ class _CampaignPerformanceTable extends StatelessWidget {
                 ),
                 Text(
                   _formatDate(campaign.sentAt),
-                  style: const TextStyle(
-                    color: VividColors.textMuted,
+                  style: TextStyle(
+                    color: vc.textMuted,
                     fontSize: 11,
                   ),
                 ),
@@ -832,7 +845,7 @@ class _CampaignPerformanceTable extends StatelessWidget {
             flex: 1,
             child: Text(
               campaign.recipients.toString(),
-              style: const TextStyle(color: VividColors.textPrimary),
+              style: TextStyle(color: vc.textPrimary),
               textAlign: TextAlign.center,
             ),
           ),
@@ -849,7 +862,7 @@ class _CampaignPerformanceTable extends StatelessWidget {
             child: Text(
               campaign.failed.toString(),
               style: TextStyle(
-                color: campaign.failed > 0 ? Colors.red : VividColors.textMuted,
+                color: campaign.failed > 0 ? Colors.red : vc.textMuted,
               ),
               textAlign: TextAlign.center,
             ),
@@ -895,13 +908,14 @@ class _MobileMetricItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
-          style: const TextStyle(
-            color: VividColors.textMuted,
+          style: TextStyle(
+            color: vc.textMuted,
             fontSize: 10,
           ),
         ),

@@ -34,7 +34,7 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
   final FocusNode _focusNode = FocusNode();
   int _previousMessageCount = 0;
   Set<String> _seenMessageIds = {};
-  
+
   // AI Toggle loading state only
   bool _aiToggleLoading = false;
   bool _isUploading = false;
@@ -63,10 +63,10 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
 
   Future<void> _toggleAi(bool value) async {
     setState(() => _aiToggleLoading = true);
-    
+
     final aiProvider = context.read<AiSettingsProvider>();
     final success = await aiProvider.toggleAi(widget.conversation.customerPhone, value);
-    
+
     if (mounted) {
       setState(() => _aiToggleLoading = false);
 
@@ -80,7 +80,7 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
                 size: 18,
               ),
               const SizedBox(width: 8),
-              Text(success 
+              Text(success
                   ? 'AI ${value ? "enabled" : "disabled"} for this customer'
                   : 'Failed to update AI status'),
             ],
@@ -272,117 +272,121 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
 
     return showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: VividColors.navy,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: [
-            Icon(
-              isImage ? Icons.image : Icons.picture_as_pdf,
-              color: isImage ? VividColors.cyan : const Color(0xFFEF4444),
-              size: 22,
-            ),
-            const SizedBox(width: 10),
-            const Expanded(
-              child: Text(
-                'Send File',
-                style: TextStyle(
-                  color: VividColors.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
+      builder: (context) {
+        final vc = context.vividColors;
+        return AlertDialog(
+          backgroundColor: vc.surface,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              Icon(
+                isImage ? Icons.image : Icons.picture_as_pdf,
+                color: isImage ? VividColors.cyan : const Color(0xFFEF4444),
+                size: 22,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Send File',
+                  style: TextStyle(
+                    color: vc.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Filename
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: VividColors.darkNavy,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: VividColors.tealBlue.withOpacity(0.2)),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.attach_file,
-                    size: 16,
-                    color: VividColors.textMuted,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      filename,
-                      style: const TextStyle(
-                        color: VividColors.textSecondary,
-                        fontSize: 13,
-                      ),
-                      overflow: TextOverflow.ellipsis,
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Filename
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: vc.background,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: vc.border),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.attach_file,
+                      size: 16,
+                      color: vc.textMuted,
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        filename,
+                        style: TextStyle(
+                          color: vc.textSecondary,
+                          fontSize: 13,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
+              const SizedBox(height: 16),
 
-            // Caption input
-            TextField(
-              controller: captionController,
-              autofocus: true,
-              maxLines: 3,
-              style: const TextStyle(color: VividColors.textPrimary, fontSize: 14),
-              decoration: InputDecoration(
-                labelText: 'Caption (optional)',
-                labelStyle: const TextStyle(color: VividColors.textMuted),
-                hintText: 'Add a message...',
-                hintStyle: TextStyle(color: VividColors.textMuted.withOpacity(0.5)),
-                filled: true,
-                fillColor: VividColors.darkNavy,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: VividColors.tealBlue.withOpacity(0.3)),
+              // Caption input
+              TextField(
+                controller: captionController,
+                autofocus: true,
+                maxLines: 3,
+                style: TextStyle(color: vc.textPrimary, fontSize: 14),
+                decoration: InputDecoration(
+                  labelText: 'Caption (optional)',
+                  labelStyle: TextStyle(color: vc.textMuted),
+                  hintText: 'Add a message...',
+                  hintStyle: TextStyle(color: vc.textMuted.withValues(alpha: 0.5)),
+                  filled: true,
+                  fillColor: vc.background,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: vc.popupBorder),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: vc.popupBorder),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: VividColors.cyan),
+                  ),
                 ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: VividColors.tealBlue.withOpacity(0.3)),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: VividColors.cyan),
-                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, null),
+              style: TextButton.styleFrom(foregroundColor: vc.textMuted),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton.icon(
+              onPressed: () => Navigator.pop(context, captionController.text.trim()),
+              icon: const Icon(Icons.send, size: 16),
+              label: const Text('Send'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: VividColors.brightBlue,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               ),
             ),
           ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, null),
-            style: TextButton.styleFrom(foregroundColor: VividColors.textMuted),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton.icon(
-            onPressed: () => Navigator.pop(context, captionController.text.trim()),
-            icon: const Icon(Icons.send, size: 16),
-            label: const Text('Send'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: VividColors.brightBlue,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     final provider = context.watch<ConversationsProvider>();
     final messages = provider.messages;
 
@@ -393,7 +397,7 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
     }
 
     return Container(
-      color: VividColors.darkNavy,
+      color: vc.background,
       child: Column(
         children: [
           _buildHeader(),
@@ -405,12 +409,13 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
   }
 
   Widget _buildHeader() {
+    final vc = context.vividColors;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       decoration: BoxDecoration(
-        color: VividColors.navy,
+        color: vc.surface,
         border: Border(
-          bottom: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+          bottom: BorderSide(color: vc.border),
         ),
       ),
       child: Row(
@@ -420,7 +425,7 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: VividColors.brightBlue.withOpacity(0.2),
+              color: VividColors.brightBlue.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Center(
@@ -439,7 +444,7 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
             ),
           ),
           const SizedBox(width: 12),
-          
+
           // Info
           Expanded(
             child: Column(
@@ -447,8 +452,8 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
               children: [
                 Text(
                   widget.conversation.displayName,
-                  style: const TextStyle(
-                    color: VividColors.textPrimary,
+                  style: TextStyle(
+                    color: vc.textPrimary,
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
                   ),
@@ -460,8 +465,8 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
                     Flexible(
                       child: Text(
                         widget.conversation.customerPhone,
-                        style: const TextStyle(
-                          color: VividColors.textMuted,
+                        style: TextStyle(
+                          color: vc.textMuted,
                           fontSize: 13,
                         ),
                         overflow: TextOverflow.ellipsis,
@@ -474,10 +479,10 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
                       child: IconButton(
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
-                        icon: const Icon(
+                        icon: Icon(
                           Icons.copy_rounded,
                           size: 14,
-                          color: VividColors.textMuted,
+                          color: vc.textMuted,
                         ),
                         onPressed: () {
                           Clipboard.setData(ClipboardData(
@@ -516,15 +521,16 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
   }
 
   Widget _buildLabelButton() {
+    final vc = context.vividColors;
     final currentLabel = widget.conversation.label;
     final hasRevenueLabel = currentLabel == 'Appointment Booked' || currentLabel == 'Payment Done';
 
     return PopupMenuButton<String>(
       tooltip: 'Label conversation',
-      color: VividColors.navy,
+      color: vc.surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+        side: BorderSide(color: vc.border),
       ),
       offset: const Offset(0, 40),
       onSelected: (label) {
@@ -542,12 +548,12 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
             isActive: currentLabel == 'Payment Done'),
         if (hasRevenueLabel) ...[
           const PopupMenuDivider(),
-          const PopupMenuItem<String>(
+          PopupMenuItem<String>(
             value: '_clear',
             child: Row(children: [
-              Icon(Icons.close, size: 16, color: VividColors.textMuted),
-              SizedBox(width: 10),
-              Text('Clear Label', style: TextStyle(color: VividColors.textMuted, fontSize: 13)),
+              Icon(Icons.close, size: 16, color: vc.textMuted),
+              const SizedBox(width: 10),
+              Text('Clear Label', style: TextStyle(color: vc.textMuted, fontSize: 13)),
             ]),
           ),
         ],
@@ -557,16 +563,16 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
         decoration: BoxDecoration(
           color: hasRevenueLabel
               ? (currentLabel == 'Appointment Booked'
-                  ? const Color(0xFF10B981).withOpacity(0.15)
-                  : const Color(0xFF06B6D4).withOpacity(0.15))
-              : VividColors.darkNavy,
+                  ? const Color(0xFF10B981).withValues(alpha: 0.15)
+                  : const Color(0xFF06B6D4).withValues(alpha: 0.15))
+              : vc.background,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
             color: hasRevenueLabel
                 ? (currentLabel == 'Appointment Booked'
-                    ? const Color(0xFF10B981).withOpacity(0.4)
-                    : const Color(0xFF06B6D4).withOpacity(0.4))
-                : VividColors.tealBlue.withOpacity(0.2),
+                    ? const Color(0xFF10B981).withValues(alpha: 0.4)
+                    : const Color(0xFF06B6D4).withValues(alpha: 0.4))
+                : vc.border,
           ),
         ),
         child: Row(
@@ -579,7 +585,7 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
               size: 16,
               color: hasRevenueLabel
                   ? (currentLabel == 'Appointment Booked' ? const Color(0xFF10B981) : const Color(0xFF06B6D4))
-                  : VividColors.textMuted,
+                  : vc.textMuted,
             ),
             const SizedBox(width: 6),
             Text(
@@ -587,7 +593,7 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
               style: TextStyle(
                 color: hasRevenueLabel
                     ? (currentLabel == 'Appointment Booked' ? const Color(0xFF10B981) : const Color(0xFF06B6D4))
-                    : VividColors.textMuted,
+                    : vc.textMuted,
                 fontSize: 12,
                 fontWeight: hasRevenueLabel ? FontWeight.w600 : FontWeight.w400,
               ),
@@ -599,12 +605,13 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
   }
 
   PopupMenuItem<String> _labelMenuItem(String label, IconData icon, Color color, {bool isActive = false}) {
+    final vc = context.vividColors;
     return PopupMenuItem(
       value: label,
       child: Row(children: [
         Icon(icon, size: 16, color: color),
         const SizedBox(width: 10),
-        Text(label, style: TextStyle(color: VividColors.textPrimary, fontSize: 13)),
+        Text(label, style: TextStyle(color: vc.textPrimary, fontSize: 13)),
         if (isActive) ...[
           const Spacer(),
           Icon(Icons.check, size: 16, color: color),
@@ -614,19 +621,20 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
   }
 
   Widget _buildAiToggle() {
+    final vc = context.vividColors;
     // Watch the provider for real-time updates
     final aiProvider = context.watch<AiSettingsProvider>();
     final aiEnabled = aiProvider.isAiEnabled(widget.conversation.customerPhone);
-    
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: VividColors.darkNavy,
+        color: vc.background,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: aiEnabled 
-              ? VividColors.cyan.withOpacity(0.3)
-              : VividColors.statusUrgent.withOpacity(0.3),
+          color: aiEnabled
+              ? VividColors.cyan.withValues(alpha: 0.3)
+              : VividColors.statusUrgent.withValues(alpha: 0.3),
         ),
       ),
       child: Row(
@@ -635,13 +643,13 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
           Icon(
             Icons.smart_toy_rounded,
             size: 18,
-            color: aiEnabled ? VividColors.cyan : VividColors.textMuted,
+            color: aiEnabled ? VividColors.cyan : vc.textMuted,
           ),
           const SizedBox(width: 8),
           Text(
             'AI',
             style: TextStyle(
-              color: aiEnabled ? VividColors.cyan : VividColors.textMuted,
+              color: aiEnabled ? VividColors.cyan : vc.textMuted,
               fontSize: 13,
               fontWeight: FontWeight.w600,
             ),
@@ -664,9 +672,9 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
                 value: aiEnabled,
                 onChanged: _toggleAi,
                 activeColor: VividColors.cyan,
-                activeTrackColor: VividColors.cyan.withOpacity(0.3),
-                inactiveThumbColor: VividColors.textMuted,
-                inactiveTrackColor: VividColors.deepBlue,
+                activeTrackColor: VividColors.cyan.withValues(alpha: 0.3),
+                inactiveThumbColor: vc.textMuted,
+                inactiveTrackColor: vc.surfaceAlt,
                 materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
             ),
@@ -676,6 +684,7 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
   }
 
   Widget _buildMessages(List<Message> messages, bool isLoading) {
+    final vc = context.vividColors;
     if (isLoading && messages.isEmpty) {
       return const Center(
         child: CircularProgressIndicator(color: VividColors.cyan),
@@ -687,9 +696,9 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.chat_bubble_outline, size: 48, color: VividColors.textMuted.withOpacity(0.5)),
+            Icon(Icons.chat_bubble_outline, size: 48, color: vc.textMuted.withValues(alpha: 0.5)),
             const SizedBox(height: 12),
-            const Text('No messages yet', style: TextStyle(color: VividColors.textMuted)),
+            Text('No messages yet', style: TextStyle(color: vc.textMuted)),
           ],
         ),
       );
@@ -757,31 +766,32 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
   }
 
   Widget _buildDateDivider(String label) {
+    final vc = context.vividColors;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Row(
         children: [
-          Expanded(child: Divider(color: VividColors.tealBlue.withOpacity(0.2), height: 1)),
+          Expanded(child: Divider(color: vc.border, height: 1)),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
-                color: VividColors.navy,
+                color: vc.surface,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: VividColors.tealBlue.withOpacity(0.2)),
+                border: Border.all(color: vc.border),
               ),
               child: Text(
                 label,
-                style: const TextStyle(
-                  color: VividColors.textMuted,
+                style: TextStyle(
+                  color: vc.textMuted,
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
                 ),
               ),
             ),
           ),
-          Expanded(child: Divider(color: VividColors.tealBlue.withOpacity(0.2), height: 1)),
+          Expanded(child: Divider(color: vc.border, height: 1)),
         ],
       ),
     );
@@ -800,7 +810,7 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
   Color _replyBorderColor(SenderType type) {
     switch (type) {
       case SenderType.customer:
-        return VividColors.deepBlue;
+        return context.vividColors.surfaceAlt;
       case SenderType.ai:
         return VividColors.cyan;
       case SenderType.manager:
@@ -820,6 +830,7 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
   }
 
   Widget _buildInput(bool isSending) {
+    final vc = context.vividColors;
     final busy = isSending || _isUploading;
 
     return Column(
@@ -830,9 +841,9 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
           Container(
             height: 300,
             decoration: BoxDecoration(
-              color: VividColors.navy,
+              color: vc.surface,
               border: Border(
-                top: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+                top: BorderSide(color: vc.border),
               ),
             ),
             child: EmojiPicker(
@@ -841,23 +852,23 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
                 height: 300,
                 checkPlatformCompatibility: true,
                 emojiViewConfig: EmojiViewConfig(
-                  backgroundColor: VividColors.navy,
+                  backgroundColor: vc.surface,
                   columns: 8,
                   emojiSizeMax: 28,
-                  noRecents: const Text(
+                  noRecents: Text(
                     'No Recents',
-                    style: TextStyle(fontSize: 16, color: VividColors.textMuted),
+                    style: TextStyle(fontSize: 16, color: vc.textMuted),
                   ),
                 ),
                 categoryViewConfig: CategoryViewConfig(
-                  backgroundColor: VividColors.navy,
-                  iconColor: VividColors.textMuted,
+                  backgroundColor: vc.surface,
+                  iconColor: vc.textMuted,
                   iconColorSelected: VividColors.cyan,
                   indicatorColor: VividColors.cyan,
-                  dividerColor: VividColors.tealBlue.withOpacity(0.2),
+                  dividerColor: vc.border,
                 ),
                 searchViewConfig: SearchViewConfig(
-                  backgroundColor: VividColors.navy,
+                  backgroundColor: vc.surface,
                   buttonIconColor: VividColors.cyan,
                   hintText: 'Search emoji...',
                 ),
@@ -873,9 +884,9 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
           Container(
             padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
             decoration: BoxDecoration(
-              color: VividColors.navy,
+              color: vc.surface,
               border: Border(
-                top: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+                top: BorderSide(color: vc.border),
               ),
             ),
             child: Row(
@@ -907,8 +918,8 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
                         _replyingTo!.content.length > 50
                             ? '${_replyingTo!.content.substring(0, 50)}...'
                             : _replyingTo!.content,
-                        style: const TextStyle(
-                          color: VividColors.textMuted,
+                        style: TextStyle(
+                          color: vc.textMuted,
                           fontSize: 12,
                         ),
                         maxLines: 1,
@@ -919,7 +930,7 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
                 ),
                 IconButton(
                   onPressed: () => setState(() => _replyingTo = null),
-                  icon: const Icon(Icons.close, size: 18, color: VividColors.textMuted),
+                  icon: Icon(Icons.close, size: 18, color: vc.textMuted),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                 ),
@@ -930,9 +941,9 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: VividColors.navy,
+            color: vc.surface,
             border: _replyingTo != null ? null : Border(
-              top: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+              top: BorderSide(color: vc.border),
             ),
           ),
           child: SafeArea(
@@ -955,9 +966,9 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        const Text(
+                        Text(
                           'Uploading...',
-                          style: TextStyle(color: VividColors.textMuted, fontSize: 13),
+                          style: TextStyle(color: vc.textMuted, fontSize: 13),
                         ),
                       ],
                     ),
@@ -973,15 +984,15 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
                         width: 42,
                         height: 42,
                         decoration: BoxDecoration(
-                          color: VividColors.darkNavy,
+                          color: vc.background,
                           borderRadius: BorderRadius.circular(21),
                           border: Border.all(
-                            color: VividColors.tealBlue.withOpacity(0.3),
+                            color: vc.popupBorder,
                           ),
                         ),
                         child: Icon(
                           Icons.attach_file,
-                          color: busy ? VividColors.textMuted : VividColors.cyan,
+                          color: busy ? vc.textMuted : VividColors.cyan,
                           size: 20,
                         ),
                       ),
@@ -999,13 +1010,13 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
                         height: 42,
                         decoration: BoxDecoration(
                           color: _showEmojiPicker
-                              ? VividColors.cyan.withOpacity(0.15)
-                              : VividColors.darkNavy,
+                              ? VividColors.cyan.withValues(alpha: 0.15)
+                              : vc.background,
                           borderRadius: BorderRadius.circular(21),
                           border: Border.all(
                             color: _showEmojiPicker
-                                ? VividColors.cyan.withOpacity(0.5)
-                                : VividColors.tealBlue.withOpacity(0.3),
+                                ? VividColors.cyan.withValues(alpha: 0.5)
+                                : vc.popupBorder,
                           ),
                         ),
                         child: Center(
@@ -1023,10 +1034,10 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
                       child: Container(
                         constraints: const BoxConstraints(maxHeight: 120),
                         decoration: BoxDecoration(
-                          color: VividColors.darkNavy,
+                          color: vc.background,
                           borderRadius: BorderRadius.circular(24),
                           border: Border.all(
-                            color: VividColors.tealBlue.withOpacity(0.3),
+                            color: vc.popupBorder,
                           ),
                         ),
                         child: TextField(
@@ -1041,14 +1052,14 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
                               setState(() => _showEmojiPicker = false);
                             }
                           },
-                          style: const TextStyle(color: VividColors.textPrimary, fontSize: 15),
+                          style: TextStyle(color: vc.textPrimary, fontSize: 15),
                           decoration: InputDecoration(
                             hintText: _isUploading
                                 ? 'Uploading...'
                                 : isSending
                                     ? 'Sending...'
                                     : 'Type a message...',
-                            hintStyle: const TextStyle(color: VividColors.textMuted),
+                            hintStyle: TextStyle(color: vc.textMuted),
                             border: InputBorder.none,
                             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                           ),
@@ -1066,11 +1077,11 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
                         height: 46,
                         decoration: BoxDecoration(
                           gradient: busy ? null : VividColors.primaryGradient,
-                          color: busy ? VividColors.deepBlue : null,
+                          color: busy ? vc.surfaceAlt : null,
                           borderRadius: BorderRadius.circular(23),
                           boxShadow: busy ? null : [
                             BoxShadow(
-                              color: VividColors.brightBlue.withOpacity(0.3),
+                              color: VividColors.brightBlue.withValues(alpha: 0.3),
                               blurRadius: 8,
                               offset: const Offset(0, 2),
                             ),
@@ -1086,9 +1097,9 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
                                     color: VividColors.cyan,
                                   ),
                                 )
-                              : const Icon(
+                              : Icon(
                                   Icons.send_rounded,
-                                  color: VividColors.darkNavy,
+                                  color: vc.background,
                                   size: 20,
                                 ),
                         ),
@@ -1171,7 +1182,7 @@ class _AnimatedMessageBubbleState extends State<_AnimatedMessageBubble>
   @override
   void didUpdateWidget(_AnimatedMessageBubble oldWidget) {
     super.didUpdateWidget(oldWidget);
-    
+
     // Animate when transitioning from pending to confirmed
     if (oldWidget.isPending && !widget.isPending) {
       _controller.reset();
@@ -1261,7 +1272,7 @@ class _MessageBubbleState extends State<_MessageBubble>
   @override
   void didUpdateWidget(_MessageBubble oldWidget) {
     super.didUpdateWidget(oldWidget);
-    
+
     if (widget.isPending && !_pulseController.isAnimating) {
       _pulseController.repeat(reverse: true);
     } else if (!widget.isPending && _pulseController.isAnimating) {
@@ -1295,6 +1306,7 @@ class _MessageBubbleState extends State<_MessageBubble>
   }
 
   Widget _buildDropdownMenu() {
+    final vc = context.vividColors;
     final hasText = widget.message.content.trim().isNotEmpty;
     return SizedBox(
       width: 24,
@@ -1303,48 +1315,48 @@ class _MessageBubbleState extends State<_MessageBubble>
         onSelected: _onMenuSelected,
         padding: EdgeInsets.zero,
         constraints: const BoxConstraints(),
-        color: VividColors.navy,
+        color: vc.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(8),
-          side: BorderSide(color: VividColors.tealBlue.withOpacity(0.3)),
+          side: BorderSide(color: vc.popupBorder),
         ),
         icon: Container(
           width: 24,
           height: 24,
           decoration: BoxDecoration(
-            color: _bubbleColor().withOpacity(0.9),
+            color: _bubbleColor(vc).withValues(alpha: 0.9),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: const Icon(
+          child: Icon(
             Icons.keyboard_arrow_down,
             size: 18,
-            color: VividColors.textMuted,
+            color: vc.textMuted,
           ),
         ),
         itemBuilder: (_) => [
           if (widget.onReply != null)
-            const PopupMenuItem<String>(
+            PopupMenuItem<String>(
               value: 'reply',
               height: 40,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.reply, size: 16, color: VividColors.textPrimary),
-                  SizedBox(width: 8),
-                  Text('Reply', style: TextStyle(color: VividColors.textPrimary, fontSize: 13)),
+                  Icon(Icons.reply, size: 16, color: vc.textPrimary),
+                  const SizedBox(width: 8),
+                  Text('Reply', style: TextStyle(color: vc.textPrimary, fontSize: 13)),
                 ],
               ),
             ),
           if (hasText)
-            const PopupMenuItem<String>(
+            PopupMenuItem<String>(
               value: 'copy',
               height: 40,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.copy, size: 16, color: VividColors.textPrimary),
-                  SizedBox(width: 8),
-                  Text('Copy', style: TextStyle(color: VividColors.textPrimary, fontSize: 13)),
+                  Icon(Icons.copy, size: 16, color: vc.textPrimary),
+                  const SizedBox(width: 8),
+                  Text('Copy', style: TextStyle(color: vc.textPrimary, fontSize: 13)),
                 ],
               ),
             ),
@@ -1355,6 +1367,7 @@ class _MessageBubbleState extends State<_MessageBubble>
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     final isCustomer = widget.message.senderType == SenderType.customer;
     final isManager = widget.message.senderType == SenderType.manager;
 
@@ -1431,7 +1444,7 @@ class _MessageBubbleState extends State<_MessageBubble>
                               child: Icon(
                                 Icons.reply_rounded,
                                 size: 20,
-                                color: VividColors.cyan.withOpacity(0.8),
+                                color: VividColors.cyan.withValues(alpha: 0.8),
                               ),
                             ),
                           ),
@@ -1451,8 +1464,8 @@ class _MessageBubbleState extends State<_MessageBubble>
                                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                                 decoration: BoxDecoration(
                                   color: widget.isHighlighted
-                                      ? Color.alphaBlend(Colors.amber.withOpacity(0.25), _bubbleColor())
-                                      : _bubbleColor(),
+                                      ? Color.alphaBlend(Colors.amber.withValues(alpha: 0.25), _bubbleColor(vc))
+                                      : _bubbleColor(vc),
                                   borderRadius: BorderRadius.only(
                                     topLeft: const Radius.circular(16),
                                     topRight: const Radius.circular(16),
@@ -1462,8 +1475,8 @@ class _MessageBubbleState extends State<_MessageBubble>
                                   boxShadow: [
                                     BoxShadow(
                                       color: widget.isPending
-                                          ? VividColors.brightBlue.withOpacity(0.2)
-                                          : Colors.black.withOpacity(0.12),
+                                          ? VividColors.brightBlue.withValues(alpha: 0.2)
+                                          : Colors.black.withValues(alpha: 0.12),
                                       blurRadius: widget.isPending ? 8 : 4,
                                       offset: const Offset(0, 2),
                                     ),
@@ -1488,7 +1501,7 @@ class _MessageBubbleState extends State<_MessageBubble>
 
                                     // Quoted reply
                                     if (widget.message.replyToMessage != null)
-                                      _buildQuotedReply(widget.message.replyToMessage!),
+                                      _buildQuotedReply(widget.message.replyToMessage!, vc),
 
                                     // Voice message player (replaces text for voice messages)
                                     if (isCustomer && widget.message.isVoiceMessage)
@@ -1499,7 +1512,7 @@ class _MessageBubbleState extends State<_MessageBubble>
                                     else ...[
                                       // Media
                                       if (widget.message.hasMedia)
-                                        _buildMediaContent(),
+                                        _buildMediaContent(vc),
                                       if (widget.message.hasMedia && widget.message.content.trim().isNotEmpty)
                                         const SizedBox(height: 8),
 
@@ -1507,8 +1520,8 @@ class _MessageBubbleState extends State<_MessageBubble>
                                       if (widget.message.content.trim().isNotEmpty)
                                         SelectableText(
                                           widget.message.content,
-                                          style: const TextStyle(
-                                            color: VividColors.textPrimary,
+                                          style: TextStyle(
+                                            color: isManager ? vc.agentBubbleText : vc.textPrimary,
                                             fontSize: 15,
                                             height: 1.4,
                                           ),
@@ -1528,7 +1541,7 @@ class _MessageBubbleState extends State<_MessageBubble>
                                             widget.isPending ? 'Sending...' : _formatTime(widget.message.createdAt),
                                             key: ValueKey(widget.isPending ? 'pending' : 'sent'),
                                             style: TextStyle(
-                                              color: VividColors.textPrimary.withOpacity(0.5),
+                                              color: vc.textPrimary.withValues(alpha: 0.5),
                                               fontSize: 10,
                                             ),
                                           ),
@@ -1550,7 +1563,7 @@ class _MessageBubbleState extends State<_MessageBubble>
                                             child: Icon(
                                               Icons.done_all,
                                               size: 14,
-                                              color: VividColors.cyan.withOpacity(0.7),
+                                              color: VividColors.cyan.withValues(alpha: 0.7),
                                             ),
                                           ),
                                         ],
@@ -1622,12 +1635,12 @@ class _MessageBubbleState extends State<_MessageBubble>
     return bubble;
   }
 
-  Widget _buildQuotedReply(Message replied) {
+  Widget _buildQuotedReply(Message replied, VividColorScheme vc) {
     Color borderColor;
     String senderName;
     switch (replied.senderType) {
       case SenderType.customer:
-        borderColor = VividColors.deepBlue;
+        borderColor = vc.surfaceAlt;
         senderName = replied.senderName ?? 'Customer';
       case SenderType.ai:
         borderColor = VividColors.cyan;
@@ -1641,7 +1654,7 @@ class _MessageBubbleState extends State<_MessageBubble>
       margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.15),
+        color: Colors.black.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(8),
         border: Border(
           left: BorderSide(color: borderColor, width: 3),
@@ -1665,7 +1678,7 @@ class _MessageBubbleState extends State<_MessageBubble>
                 ? '${replied.content.substring(0, 50)}...'
                 : replied.content,
             style: TextStyle(
-              color: VividColors.textPrimary.withOpacity(0.7),
+              color: vc.textPrimary.withValues(alpha: 0.7),
               fontSize: 12,
             ),
             maxLines: 2,
@@ -1676,14 +1689,14 @@ class _MessageBubbleState extends State<_MessageBubble>
     );
   }
 
-  Color _bubbleColor() {
+  Color _bubbleColor(VividColorScheme vc) {
     switch (widget.message.senderType) {
       case SenderType.customer:
-        return VividColors.deepBlue;
+        return vc.surfaceAlt;
       case SenderType.ai:
-        return VividColors.tealBlue.withOpacity(0.6);
+        return vc.aiBubble;
       case SenderType.manager:
-        return VividColors.brightBlue.withOpacity(widget.isPending ? 0.6 : 0.8);
+        return VividColors.brightBlue.withValues(alpha: widget.isPending ? 0.6 : 0.8);
     }
   }
 
@@ -1695,7 +1708,7 @@ class _MessageBubbleState extends State<_MessageBubble>
     return arabicRegex.hasMatch(firstChar) ? TextDirection.rtl : TextDirection.ltr;
   }
 
-  Widget _buildMediaContent() {
+  Widget _buildMediaContent(VividColorScheme vc) {
     final msg = widget.message;
 
     if (msg.isImage) {
@@ -1714,7 +1727,7 @@ class _MessageBubbleState extends State<_MessageBubble>
                   width: 200,
                   height: 150,
                   decoration: BoxDecoration(
-                    color: VividColors.deepBlue.withOpacity(0.5),
+                    color: vc.surfaceAlt.withValues(alpha: 0.5),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Center(
@@ -1730,11 +1743,11 @@ class _MessageBubbleState extends State<_MessageBubble>
                   width: 200,
                   height: 80,
                   decoration: BoxDecoration(
-                    color: VividColors.deepBlue.withOpacity(0.5),
+                    color: vc.surfaceAlt.withValues(alpha: 0.5),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Center(
-                    child: Icon(Icons.broken_image, color: VividColors.textMuted, size: 32),
+                  child: Center(
+                    child: Icon(Icons.broken_image, color: vc.textMuted, size: 32),
                   ),
                 );
               },
@@ -1750,9 +1763,9 @@ class _MessageBubbleState extends State<_MessageBubble>
         child: Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: VividColors.darkNavy.withOpacity(0.5),
+            color: vc.background.withValues(alpha: 0.5),
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: VividColors.tealBlue.withOpacity(0.2)),
+            border: Border.all(color: vc.border),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -1762,8 +1775,8 @@ class _MessageBubbleState extends State<_MessageBubble>
               Flexible(
                 child: Text(
                   msg.mediaFilename ?? 'Document',
-                  style: const TextStyle(
-                    color: VividColors.textPrimary,
+                  style: TextStyle(
+                    color: vc.textPrimary,
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
                   ),
@@ -1785,9 +1798,9 @@ class _MessageBubbleState extends State<_MessageBubble>
       child: Container(
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: VividColors.darkNavy.withOpacity(0.5),
+          color: vc.background.withValues(alpha: 0.5),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: VividColors.tealBlue.withOpacity(0.2)),
+          border: Border.all(color: vc.border),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -1797,8 +1810,8 @@ class _MessageBubbleState extends State<_MessageBubble>
             Flexible(
               child: Text(
                 msg.mediaFilename ?? 'Attachment',
-                style: const TextStyle(
-                  color: VividColors.textPrimary,
+                style: TextStyle(
+                  color: vc.textPrimary,
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
                 ),
@@ -1866,6 +1879,7 @@ class _MessageBubbleState extends State<_MessageBubble>
   }
 
   Future<void> _downloadFile(String fileUrl) async {
+    final vc = context.vividColors;
     try {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -1876,7 +1890,7 @@ class _MessageBubbleState extends State<_MessageBubble>
               Text('Downloading...'),
             ],
           ),
-          backgroundColor: VividColors.deepBlue,
+          backgroundColor: vc.surfaceAlt,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           duration: const Duration(seconds: 2),
@@ -2016,7 +2030,7 @@ class _SendingIndicatorState extends State<_SendingIndicator>
             final bounce = (progress < 0.5)
                 ? progress * 2
                 : 2 - (progress * 2);
-            
+
             return Container(
               margin: EdgeInsets.only(left: index > 0 ? 2 : 0),
               child: Transform.translate(
@@ -2025,7 +2039,7 @@ class _SendingIndicatorState extends State<_SendingIndicator>
                   width: 4,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: VividColors.cyan.withOpacity(0.5 + (0.5 * bounce)),
+                    color: VividColors.cyan.withValues(alpha: 0.5 + (0.5 * bounce)),
                     shape: BoxShape.circle,
                   ),
                 ),

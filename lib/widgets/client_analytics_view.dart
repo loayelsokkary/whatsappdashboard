@@ -41,15 +41,16 @@ class _ClientAnalyticsViewState extends State<ClientAnalyticsView> {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            VividColors.darkNavy,
-            VividColors.navy,
-            VividColors.deepBlue.withOpacity(0.5),
+            vc.background,
+            vc.surface,
+            vc.surfaceAlt.withOpacity(0.5),
           ],
         ),
       ),
@@ -87,8 +88,8 @@ class _ClientAnalyticsViewState extends State<ClientAnalyticsView> {
                     children: [
                       Text(
                         '${widget.client.name} Analytics',
-                        style: const TextStyle(
-                          color: VividColors.textPrimary,
+                        style: TextStyle(
+                          color: vc.textPrimary,
                           fontSize: 28,
                           fontWeight: FontWeight.bold,
                         ),
@@ -130,7 +131,7 @@ class _ClientAnalyticsViewState extends State<ClientAnalyticsView> {
                           Text(
                             'Internal performance metrics',
                             style: TextStyle(
-                              color: VividColors.textMuted.withOpacity(0.7),
+                              color: vc.textMuted.withOpacity(0.7),
                               fontSize: 14,
                             ),
                           ),
@@ -156,7 +157,7 @@ class _ClientAnalyticsViewState extends State<ClientAnalyticsView> {
                         const SizedBox(height: 16),
                         Text(
                           provider.error!,
-                          style: const TextStyle(color: VividColors.textMuted),
+                          style: TextStyle(color: vc.textMuted),
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 24),
@@ -175,10 +176,10 @@ class _ClientAnalyticsViewState extends State<ClientAnalyticsView> {
                 } else if (widget.client.hasFeature('broadcasts')) {
                   return _buildBroadcastAnalytics(provider);
                 } else {
-                  return const Center(
+                  return Center(
                     child: Text(
                       'No analytics available for this client type',
-                      style: TextStyle(color: VividColors.textMuted),
+                      style: TextStyle(color: vc.textMuted),
                     ),
                   );
                 }
@@ -205,13 +206,14 @@ class _ClientAnalyticsViewState extends State<ClientAnalyticsView> {
   }
 
   Widget _buildConversationAnalytics(AdminAnalyticsProvider provider) {
+    final vc = context.vividColors;
     final analytics = provider.getConversationAnalytics(widget.client.id);
 
     if (analytics == null) {
-      return const Center(
+      return Center(
         child: Text(
           'No data available',
-          style: TextStyle(color: VividColors.textMuted),
+          style: TextStyle(color: vc.textMuted),
         ),
       );
     }
@@ -273,7 +275,7 @@ class _ClientAnalyticsViewState extends State<ClientAnalyticsView> {
                   icon: Icons.access_time,
                   label: 'Last Activity',
                   value: _formatLastActivity(analytics.lastActivity),
-                  color: VividColors.textMuted,
+                  color: vc.textMuted,
                   description: 'Most recent conversation',
                 ),
               ], isMobile: isMobile),
@@ -316,13 +318,14 @@ class _ClientAnalyticsViewState extends State<ClientAnalyticsView> {
   }
 
   Widget _buildBroadcastAnalytics(AdminAnalyticsProvider provider) {
+    final vc = context.vividColors;
     final analytics = provider.getBroadcastAnalytics(widget.client.id);
 
     if (analytics == null) {
-      return const Center(
+      return Center(
         child: Text(
           'No data available',
-          style: TextStyle(color: VividColors.textMuted),
+          style: TextStyle(color: vc.textMuted),
         ),
       );
     }
@@ -356,7 +359,7 @@ class _ClientAnalyticsViewState extends State<ClientAnalyticsView> {
                   icon: Icons.access_time,
                   label: 'Last Activity',
                   value: _formatLastActivity(analytics.lastActivity),
-                  color: VividColors.textMuted,
+                  color: vc.textMuted,
                   description: 'Most recent broadcast',
                 ),
               ], isMobile: isMobile),
@@ -507,13 +510,14 @@ class _LargeMetricCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: VividColors.navy,
+        color: vc.surface,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: isHighlight ? color.withOpacity(0.5) : VividColors.tealBlue.withOpacity(0.2),
+          color: isHighlight ? color.withOpacity(0.5) : vc.border,
           width: isHighlight ? 2 : 1,
         ),
         boxShadow: isHighlight ? [
@@ -541,8 +545,8 @@ class _LargeMetricCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   label,
-                  style: const TextStyle(
-                    color: VividColors.textMuted,
+                  style: TextStyle(
+                    color: vc.textMuted,
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
                   ),
@@ -566,7 +570,7 @@ class _LargeMetricCard extends StatelessWidget {
             Text(
               description!,
               style: TextStyle(
-                color: VividColors.textMuted.withOpacity(0.7),
+                color: vc.textMuted.withOpacity(0.7),
                 fontSize: 12,
               ),
             ),
@@ -592,6 +596,7 @@ class _AutomationBreakdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     final total = aiMessages + managerMessages;
     final aiPercent = total > 0 ? aiMessages / total : 0.0;
     final managerPercent = total > 0 ? managerMessages / total : 0.0;
@@ -599,9 +604,9 @@ class _AutomationBreakdown extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(28),
       decoration: BoxDecoration(
-        color: VividColors.navy,
+        color: vc.surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: VividColors.tealBlue.withOpacity(0.2)),
+        border: Border.all(color: vc.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -617,10 +622,10 @@ class _AutomationBreakdown extends StatelessWidget {
                 child: const Icon(Icons.pie_chart, color: VividColors.brightBlue, size: 22),
               ),
               const SizedBox(width: 12),
-              const Text(
+              Text(
                 'Response Breakdown',
                 style: TextStyle(
-                  color: VividColors.textPrimary,
+                  color: vc.textPrimary,
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),
@@ -644,8 +649,8 @@ class _AutomationBreakdown extends StatelessWidget {
                         child: aiPercent > 0.1
                             ? Text(
                                 '${(aiPercent * 100).toStringAsFixed(0)}%',
-                                style: const TextStyle(
-                                  color: VividColors.darkNavy,
+                                style: TextStyle(
+                                  color: vc.background,
                                   fontSize: 14,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -705,12 +710,13 @@ class _DeliveryBreakdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return Container(
       padding: const EdgeInsets.all(28),
       decoration: BoxDecoration(
-        color: VividColors.navy,
+        color: vc.surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: VividColors.tealBlue.withOpacity(0.2)),
+        border: Border.all(color: vc.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -726,10 +732,10 @@ class _DeliveryBreakdown extends StatelessWidget {
                 child: const Icon(Icons.bar_chart, color: VividColors.brightBlue, size: 22),
               ),
               const SizedBox(width: 12),
-              const Text(
+              Text(
                 'Delivery Breakdown',
                 style: TextStyle(
-                  color: VividColors.textPrimary,
+                  color: vc.textPrimary,
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),
@@ -759,14 +765,15 @@ class _RateBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return Row(
       children: [
         SizedBox(
           width: 80,
           child: Text(
             label,
-            style: const TextStyle(
-              color: VividColors.textMuted,
+            style: TextStyle(
+              color: vc.textMuted,
               fontSize: 14,
             ),
           ),
@@ -776,7 +783,7 @@ class _RateBar extends StatelessWidget {
             borderRadius: BorderRadius.circular(6),
             child: LinearProgressIndicator(
               value: rate / 100,
-              backgroundColor: VividColors.deepBlue,
+              backgroundColor: vc.surfaceAlt,
               valueColor: AlwaysStoppedAnimation<Color>(color),
               minHeight: 12,
             ),
@@ -813,6 +820,7 @@ class _LegendItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -837,7 +845,7 @@ class _LegendItem extends StatelessWidget {
                 Text(
                   label,
                   style: TextStyle(
-                    color: VividColors.textMuted.withOpacity(0.9),
+                    color: vc.textMuted.withOpacity(0.9),
                     fontSize: 12,
                   ),
                 ),

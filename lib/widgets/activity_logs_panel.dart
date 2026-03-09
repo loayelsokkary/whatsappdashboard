@@ -47,6 +47,7 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return Consumer<ActivityLogsProvider>(
       builder: (context, provider, _) {
         return Column(
@@ -66,6 +67,7 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
   }
 
   Widget _buildHeader(ActivityLogsProvider provider) {
+    final vc = context.vividColors;
     return Row(
       children: [
         Icon(Icons.history, color: VividColors.cyan, size: 28),
@@ -75,19 +77,19 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                widget.clientName != null 
+                widget.clientName != null
                     ? '${widget.clientName} Activity Logs'
                     : 'All Activity Logs',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
-                  color: VividColors.textPrimary,
+                  color: vc.textPrimary,
                 ),
               ),
               Text(
                 '${provider.logs.length} activities${provider.allLogs.length != provider.logs.length ? " (filtered from ${provider.allLogs.length})" : ""}',
-                style: const TextStyle(
-                  color: VividColors.textMuted,
+                style: TextStyle(
+                  color: vc.textMuted,
                   fontSize: 12,
                 ),
               ),
@@ -105,7 +107,7 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
                   height: 20,
                   child: CircularProgressIndicator(strokeWidth: 2, color: VividColors.cyan),
                 )
-              : const Icon(Icons.refresh, color: VividColors.textSecondary),
+              : Icon(Icons.refresh, color: vc.textSecondary),
           tooltip: 'Refresh',
         ),
       ],
@@ -113,59 +115,63 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
   }
 
   Widget _buildExportButton(ActivityLogsProvider provider) {
+    final vc = context.vividColors;
     return PopupMenuButton<String>(
       onSelected: (format) => _handleExport(format, provider.logs),
       offset: const Offset(0, 40),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      color: VividColors.navy,
-      itemBuilder: (context) => [
-        PopupMenuItem(
-          value: 'csv',
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(6),
+      color: vc.surface,
+      itemBuilder: (context) {
+        final vc = context.vividColors;
+        return [
+          PopupMenuItem(
+            value: 'csv',
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Icon(Icons.table_chart, color: Colors.green, size: 18),
                 ),
-                child: const Icon(Icons.table_chart, color: Colors.green, size: 18),
-              ),
-              const SizedBox(width: 10),
-              const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('CSV', style: TextStyle(color: VividColors.textPrimary, fontWeight: FontWeight.w600)),
-                  Text('Spreadsheet format', style: TextStyle(color: VividColors.textMuted, fontSize: 11)),
-                ],
-              ),
-            ],
-          ),
-        ),
-        PopupMenuItem(
-          value: 'excel',
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF217346).withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(6),
+                const SizedBox(width: 10),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('CSV', style: TextStyle(color: vc.textPrimary, fontWeight: FontWeight.w600)),
+                    Text('Spreadsheet format', style: TextStyle(color: vc.textMuted, fontSize: 11)),
+                  ],
                 ),
-                child: const Icon(Icons.grid_on, color: Color(0xFF217346), size: 18),
-              ),
-              const SizedBox(width: 10),
-              const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Excel', style: TextStyle(color: VividColors.textPrimary, fontWeight: FontWeight.w600)),
-                  Text('Formatted workbook', style: TextStyle(color: VividColors.textMuted, fontSize: 11)),
-                ],
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      ],
+          PopupMenuItem(
+            value: 'excel',
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF217346).withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Icon(Icons.grid_on, color: Color(0xFF217346), size: 18),
+                ),
+                const SizedBox(width: 10),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Excel', style: TextStyle(color: vc.textPrimary, fontWeight: FontWeight.w600)),
+                    Text('Formatted workbook', style: TextStyle(color: vc.textMuted, fontSize: 11)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ];
+      },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
@@ -179,21 +185,21 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
             ),
           ],
         ),
-        child: const Row(
+        child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.download, color: VividColors.darkNavy, size: 16),
-            SizedBox(width: 6),
+            Icon(Icons.download, color: vc.background, size: 16),
+            const SizedBox(width: 6),
             Text(
               'Export',
               style: TextStyle(
-                color: VividColors.darkNavy,
+                color: vc.background,
                 fontWeight: FontWeight.w600,
                 fontSize: 13,
               ),
             ),
-            SizedBox(width: 2),
-            Icon(Icons.arrow_drop_down, color: VividColors.darkNavy, size: 18),
+            const SizedBox(width: 2),
+            Icon(Icons.arrow_drop_down, color: vc.background, size: 18),
           ],
         ),
       ),
@@ -224,24 +230,25 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
   }
 
   Widget _buildFilters(ActivityLogsProvider provider) {
+    final vc = context.vividColors;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: VividColors.navy,
+        color: vc.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: VividColors.tealBlue.withOpacity(0.2)),
+        border: Border.all(color: vc.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.filter_list, color: VividColors.textMuted, size: 18),
+              Icon(Icons.filter_list, color: vc.textMuted, size: 18),
               const SizedBox(width: 8),
-              const Text(
+              Text(
                 'Filters',
                 style: TextStyle(
-                  color: VividColors.textSecondary,
+                  color: vc.textSecondary,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -279,7 +286,7 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
                     hintText: 'Search by name or description...',
                     prefixIcon: const Icon(Icons.search, size: 20),
                     filled: true,
-                    fillColor: VividColors.darkNavy,
+                    fillColor: vc.background,
                     contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
@@ -344,13 +351,13 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
                   selectedColor: VividColors.brightBlue.withOpacity(0.3),
                   checkmarkColor: VividColors.brightBlue,
                   labelStyle: TextStyle(
-                    color: provider.filterAiOnly ? VividColors.brightBlue : VividColors.textSecondary,
+                    color: provider.filterAiOnly ? VividColors.brightBlue : vc.textSecondary,
                     fontSize: 13,
                   ),
                   side: BorderSide(
-                    color: provider.filterAiOnly ? VividColors.brightBlue : VividColors.tealBlue.withOpacity(0.3),
+                    color: provider.filterAiOnly ? VividColors.brightBlue : vc.popupBorder,
                   ),
-                  backgroundColor: VividColors.darkNavy,
+                  backgroundColor: vc.background,
                 ),
             ],
           ),
@@ -366,30 +373,32 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
     required ValueChanged<T?> onChanged,
     required double width,
   }) {
+    final vc = context.vividColors;
     return Container(
       width: width,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
-        color: VividColors.darkNavy,
+        color: vc.background,
         borderRadius: BorderRadius.circular(8),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<T>(
           value: value,
-          hint: Text(hint, style: const TextStyle(color: VividColors.textMuted)),
+          hint: Text(hint, style: TextStyle(color: vc.textMuted)),
           isExpanded: true,
-          dropdownColor: VividColors.navy,
+          dropdownColor: vc.surface,
           items: items,
           onChanged: onChanged,
-          style: const TextStyle(color: VividColors.textPrimary, fontSize: 13),
+          style: TextStyle(color: vc.textPrimary, fontSize: 13),
         ),
       ),
     );
   }
 
   Widget _buildDateRangeButton(ActivityLogsProvider provider) {
+    final vc = context.vividColors;
     final hasDateFilter = provider.startDate != null || provider.endDate != null;
-    
+
     return OutlinedButton.icon(
       onPressed: () => _showDateRangePicker(provider),
       icon: const Icon(Icons.date_range, size: 18),
@@ -399,9 +408,9 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
             : 'Date Range',
       ),
       style: OutlinedButton.styleFrom(
-        foregroundColor: hasDateFilter ? VividColors.cyan : VividColors.textSecondary,
+        foregroundColor: hasDateFilter ? VividColors.cyan : vc.textSecondary,
         side: BorderSide(
-          color: hasDateFilter ? VividColors.cyan : VividColors.tealBlue.withOpacity(0.3),
+          color: hasDateFilter ? VividColors.cyan : vc.popupBorder,
         ),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       ),
@@ -422,13 +431,14 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
           ? DateTimeRange(start: provider.startDate!, end: provider.endDate!)
           : null,
       builder: (context, child) {
+        final vc = context.vividColors;
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.dark(
+            colorScheme: ColorScheme.dark(
               primary: VividColors.cyan,
-              onPrimary: VividColors.darkNavy,
-              surface: VividColors.navy,
-              onSurface: VividColors.textPrimary,
+              onPrimary: vc.background,
+              surface: vc.surface,
+              onSurface: vc.textPrimary,
             ),
           ),
           child: child!,
@@ -475,10 +485,11 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
   }
 
   Widget _buildStatCard(String label, String value, IconData icon, Color color, String subtitle) {
+    final vc = context.vividColors;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: VividColors.navy,
+        color: vc.surface,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: color.withOpacity(0.3)),
       ),
@@ -507,9 +518,9 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
                 ),
                 Text(
                   label,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
-                    color: VividColors.textMuted,
+                    color: vc.textMuted,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -517,7 +528,7 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
                   subtitle,
                   style: TextStyle(
                     fontSize: 9,
-                    color: VividColors.textMuted.withValues(alpha: 0.6),
+                    color: vc.textMuted.withValues(alpha: 0.6),
                   ),
                 ),
               ],
@@ -529,6 +540,7 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
   }
 
   Widget _buildLogsList(ActivityLogsProvider provider) {
+    final vc = context.vividColors;
     if (provider.error != null) {
       return Center(
         child: Column(
@@ -536,7 +548,7 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
           children: [
             const Icon(Icons.error_outline, color: VividColors.statusUrgent, size: 48),
             const SizedBox(height: 16),
-            Text(provider.error!, style: const TextStyle(color: VividColors.textMuted)),
+            Text(provider.error!, style: TextStyle(color: vc.textMuted)),
             const SizedBox(height: 16),
             ElevatedButton.icon(
               onPressed: _loadLogs,
@@ -553,11 +565,11 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.history, color: VividColors.textMuted.withOpacity(0.5), size: 64),
+            Icon(Icons.history, color: vc.textMuted.withOpacity(0.5), size: 64),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               'No activity logs found',
-              style: TextStyle(color: VividColors.textMuted, fontSize: 16),
+              style: TextStyle(color: vc.textMuted, fontSize: 16),
             ),
             if (provider.allLogs.isNotEmpty) ...[
               const SizedBox(height: 8),
@@ -576,15 +588,15 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
 
     return Container(
       decoration: BoxDecoration(
-        color: VividColors.navy,
+        color: vc.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: VividColors.tealBlue.withOpacity(0.2)),
+        border: Border.all(color: vc.border),
       ),
       child: ListView.separated(
         padding: const EdgeInsets.all(8),
         itemCount: provider.logs.length,
         separatorBuilder: (_, __) => Divider(
-          color: VividColors.tealBlue.withOpacity(0.1),
+          color: vc.borderSubtle,
           height: 1,
         ),
         itemBuilder: (context, index) {
@@ -596,6 +608,7 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
   }
 
   Widget _buildLogItem(ActivityLog log) {
+    final vc = context.vividColors;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
       child: Row(
@@ -615,7 +628,7 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
             ),
           ),
           const SizedBox(width: 12),
-          
+
           // Details
           Expanded(
             child: Column(
@@ -625,9 +638,9 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
                   children: [
                     Text(
                       log.userName,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.w600,
-                        color: VividColors.textPrimary,
+                        color: vc.textPrimary,
                         fontSize: 13,
                       ),
                     ),
@@ -690,8 +703,8 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
                 const SizedBox(height: 4),
                 Text(
                   log.description,
-                  style: const TextStyle(
-                    color: VividColors.textSecondary,
+                  style: TextStyle(
+                    color: vc.textSecondary,
                     fontSize: 12,
                   ),
                 ),
@@ -702,22 +715,22 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
               ],
             ),
           ),
-          
+
           // Timestamp
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
                 _formatTime(log.createdAt),
-                style: const TextStyle(
-                  color: VividColors.textMuted,
+                style: TextStyle(
+                  color: vc.textMuted,
                   fontSize: 11,
                 ),
               ),
               Text(
                 _formatDateShort(log.createdAt),
-                style: const TextStyle(
-                  color: VividColors.textMuted,
+                style: TextStyle(
+                  color: vc.textMuted,
                   fontSize: 10,
                 ),
               ),
@@ -729,6 +742,7 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
   }
 
   Widget _buildMetadataChips(Map<String, dynamic> metadata) {
+    final vc = context.vividColors;
     final displayItems = metadata.entries
         .where((e) => !e.key.contains('_id') && e.value != null)
         .take(3)
@@ -743,14 +757,14 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
           decoration: BoxDecoration(
-            color: VividColors.darkNavy,
+            color: vc.background,
             borderRadius: BorderRadius.circular(4),
           ),
           child: Text(
             '${_formatKey(entry.key)}: ${_formatValue(entry.value)}',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 10,
-              color: VividColors.textMuted,
+              color: vc.textMuted,
             ),
           ),
         );
@@ -801,11 +815,12 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
   }
 
   Color _getActionColor(ActionType type) {
+    final vc = context.vividColors;
     switch (type) {
       case ActionType.login:
         return VividColors.statusSuccess;
       case ActionType.logout:
-        return VividColors.textMuted;
+        return vc.textMuted;
       case ActionType.messageSent:
         return VividColors.cyan;
       case ActionType.broadcastSent:

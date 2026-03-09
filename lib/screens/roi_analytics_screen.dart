@@ -66,23 +66,25 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     final provider = context.watch<RoiAnalyticsProvider>();
 
     return Scaffold(
-      backgroundColor: VividColors.darkNavy,
+      backgroundColor: vc.background,
       body: provider.isLoading
           ? const Center(child: CircularProgressIndicator(color: VividColors.cyan))
           : provider.error != null
-              ? _buildError(provider.error!)
+              ? _buildError(context, provider.error!)
               : provider.data == null
-                  ? const Center(
+                  ? Center(
                       child: Text('No analytics data',
-                          style: TextStyle(color: VividColors.textMuted)))
-                  : _buildContent(provider.data!),
+                          style: TextStyle(color: vc.textMuted)))
+                  : _buildContent(context, provider.data!),
     );
   }
 
-  Widget _buildError(String error) {
+  Widget _buildError(BuildContext context, String error) {
+    final vc = context.vividColors;
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -90,7 +92,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           const Icon(Icons.error_outline, color: VividColors.statusUrgent, size: 48),
           const SizedBox(height: 16),
           Text(error,
-              style: const TextStyle(color: VividColors.textSecondary),
+              style: TextStyle(color: vc.textSecondary),
               textAlign: TextAlign.center),
           const SizedBox(height: 16),
           TextButton.icon(
@@ -103,7 +105,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     );
   }
 
-  Widget _buildContent(AnalyticsData data) {
+  Widget _buildContent(BuildContext context, AnalyticsData data) {
     return RefreshIndicator(
       onRefresh: () async => _loadAnalytics(),
       color: VividColors.cyan,
@@ -118,7 +120,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildHeader(data),
+                _buildHeader(context, data),
                 const SizedBox(height: 28),
                 _AnalyticsView(data: data, isWide: isWide),
                 const SizedBox(height: 20),
@@ -130,7 +132,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     );
   }
 
-  Widget _buildHeader(AnalyticsData data) {
+  Widget _buildHeader(BuildContext context, AnalyticsData data) {
+    final vc = context.vividColors;
     return Row(
       children: [
         Expanded(
@@ -139,61 +142,62 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             children: [
               Text(
                 ClientConfig.businessName,
-                style: const TextStyle(
-                  color: VividColors.textPrimary,
+                style: TextStyle(
+                  color: vc.textPrimary,
                   fontSize: 24,
                   fontWeight: FontWeight.w700,
                   letterSpacing: -0.5,
                 ),
               ),
               const SizedBox(height: 4),
-              const Text(
+              Text(
                 'Analytics',
-                style: TextStyle(color: VividColors.textMuted, fontSize: 13),
+                style: TextStyle(color: vc.textMuted, fontSize: 13),
               ),
             ],
           ),
         ),
-        _buildDateFilter(),
+        _buildDateFilter(context),
         const SizedBox(width: 12),
-        _buildExportButton(data),
+        _buildExportButton(context, data),
         const SizedBox(width: 4),
         IconButton(
           onPressed: _loadAnalytics,
-          icon: const Icon(Icons.refresh_rounded, color: VividColors.textMuted, size: 20),
+          icon: Icon(Icons.refresh_rounded, color: vc.textMuted, size: 20),
           tooltip: 'Refresh',
         ),
       ],
     );
   }
 
-  Widget _buildExportButton(AnalyticsData data) {
+  Widget _buildExportButton(BuildContext context, AnalyticsData data) {
+    final vc = context.vividColors;
     return PopupMenuButton<String>(
-      icon: const Icon(Icons.download_rounded, color: VividColors.textMuted, size: 20),
+      icon: Icon(Icons.download_rounded, color: vc.textMuted, size: 20),
       tooltip: 'Export',
-      color: VividColors.navy,
+      color: vc.surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: VividColors.tealBlue.withValues(alpha: 0.3)),
+        side: BorderSide(color: vc.popupBorder),
       ),
       itemBuilder: (_) => [
-        const PopupMenuItem(
+        PopupMenuItem(
           value: 'csv',
           child: Row(
             children: [
-              Icon(Icons.table_chart_outlined, size: 16, color: VividColors.textSecondary),
-              SizedBox(width: 10),
-              Text('Export CSV', style: TextStyle(color: VividColors.textPrimary, fontSize: 13)),
+              Icon(Icons.table_chart_outlined, size: 16, color: vc.textSecondary),
+              const SizedBox(width: 10),
+              Text('Export CSV', style: TextStyle(color: vc.textPrimary, fontSize: 13)),
             ],
           ),
         ),
-        const PopupMenuItem(
+        PopupMenuItem(
           value: 'pdf',
           child: Row(
             children: [
-              Icon(Icons.picture_as_pdf_outlined, size: 16, color: VividColors.textSecondary),
-              SizedBox(width: 10),
-              Text('Export PDF', style: TextStyle(color: VividColors.textPrimary, fontSize: 13)),
+              Icon(Icons.picture_as_pdf_outlined, size: 16, color: vc.textSecondary),
+              const SizedBox(width: 10),
+              Text('Export PDF', style: TextStyle(color: vc.textPrimary, fontSize: 13)),
             ],
           ),
         ),
@@ -221,21 +225,22 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     }
   }
 
-  Widget _buildDateFilter() {
+  Widget _buildDateFilter(BuildContext context) {
+    final vc = context.vividColors;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
       decoration: BoxDecoration(
-        color: VividColors.navy,
+        color: vc.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: VividColors.tealBlue.withValues(alpha: 0.3)),
+        border: Border.all(color: vc.popupBorder),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<DateRangeFilter>(
           value: _dateFilter,
-          icon: const Icon(Icons.keyboard_arrow_down, color: VividColors.textMuted, size: 18),
-          dropdownColor: VividColors.navy,
+          icon: Icon(Icons.keyboard_arrow_down, color: vc.textMuted, size: 18),
+          dropdownColor: vc.surface,
           borderRadius: BorderRadius.circular(12),
-          style: const TextStyle(color: VividColors.textPrimary, fontSize: 13),
+          style: TextStyle(color: vc.textPrimary, fontSize: 13),
           items: DateRangeFilter.values.map((filter) {
             final isSelected = filter == _dateFilter;
             return DropdownMenuItem(
@@ -246,13 +251,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   Icon(
                     Icons.calendar_today_outlined,
                     size: 13,
-                    color: isSelected ? VividColors.cyan : VividColors.textMuted,
+                    color: isSelected ? VividColors.cyan : vc.textMuted,
                   ),
                   const SizedBox(width: 8),
                   Text(
                     filter.label,
                     style: TextStyle(
-                      color: isSelected ? VividColors.textPrimary : VividColors.textSecondary,
+                      color: isSelected ? vc.textPrimary : vc.textSecondary,
                       fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
                       fontSize: 13,
                     ),
@@ -284,6 +289,7 @@ class _AnalyticsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     final m = data.current;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -344,29 +350,30 @@ class _AnalyticsView extends StatelessWidget {
         // Open / Overdue conversations
         if (data.openConversations.isNotEmpty) ...[
           _sectionTitle(
+            context,
             data.overdueConversations.isNotEmpty
                 ? 'Open Conversations (${data.overdueConversations.length} overdue)'
                 : 'Open Conversations',
             Icons.chat_outlined,
           ),
           const SizedBox(height: 16),
-          _buildOpenConversations(),
+          _buildOpenConversations(context),
           const SizedBox(height: 32),
         ],
 
         // Campaign performance
         if (data.campaigns.isNotEmpty) ...[
-          _sectionTitle('Campaign Performance', Icons.campaign_outlined),
+          _sectionTitle(context, 'Campaign Performance', Icons.campaign_outlined),
           const SizedBox(height: 16),
-          _buildCampaignsTable(),
+          _buildCampaignsTable(context),
           const SizedBox(height: 32),
         ],
 
         // Daily trends
         if (data.dailyBreakdown.isNotEmpty) ...[
-          _sectionTitle('Daily Trends', Icons.trending_up),
+          _sectionTitle(context, 'Daily Trends', Icons.trending_up),
           const SizedBox(height: 16),
-          _buildDailyChart(),
+          _buildDailyChart(context),
         ],
       ],
     );
@@ -402,15 +409,16 @@ class _AnalyticsView extends StatelessWidget {
     );
   }
 
-  Widget _sectionTitle(String title, IconData icon) {
+  Widget _sectionTitle(BuildContext context, String title, IconData icon) {
+    final vc = context.vividColors;
     return Row(
       children: [
         Icon(icon, color: VividColors.cyan, size: 18),
         const SizedBox(width: 8),
         Text(
           title,
-          style: const TextStyle(
-            color: VividColors.textPrimary,
+          style: TextStyle(
+            color: vc.textPrimary,
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
@@ -420,7 +428,8 @@ class _AnalyticsView extends StatelessWidget {
   }
 
   // ---- Open Conversations ----
-  Widget _buildOpenConversations() {
+  Widget _buildOpenConversations(BuildContext context) {
+    final vc = context.vividColors;
     final convs = data.openConversations;
     // Sort overdue first, then by waiting time desc
     final sorted = [...convs]..sort((a, b) => b.waitingTime.compareTo(a.waitingTime));
@@ -428,9 +437,9 @@ class _AnalyticsView extends StatelessWidget {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: VividColors.navy,
+        color: vc.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: VividColors.tealBlue.withValues(alpha: 0.2)),
+        border: Border.all(color: vc.border),
       ),
       child: Column(
         children: sorted.take(10).toList().asMap().entries.map((entry) {
@@ -443,7 +452,7 @@ class _AnalyticsView extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
             decoration: BoxDecoration(
               border: idx < min(sorted.length, 10) - 1
-                  ? Border(bottom: BorderSide(color: VividColors.tealBlue.withValues(alpha: 0.1)))
+                  ? Border(bottom: BorderSide(color: vc.borderSubtle))
                   : null,
             ),
             child: Row(
@@ -464,8 +473,8 @@ class _AnalyticsView extends StatelessWidget {
                     children: [
                       Text(
                         c.customerName ?? c.customerPhone,
-                        style: const TextStyle(
-                          color: VividColors.textPrimary,
+                        style: TextStyle(
+                          color: vc.textPrimary,
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
                         ),
@@ -473,7 +482,7 @@ class _AnalyticsView extends StatelessWidget {
                       ),
                       if (c.customerName != null)
                         Text(c.customerPhone,
-                            style: const TextStyle(color: VividColors.textMuted, fontSize: 11)),
+                            style: TextStyle(color: vc.textMuted, fontSize: 11)),
                     ],
                   ),
                 ),
@@ -481,7 +490,7 @@ class _AnalyticsView extends StatelessWidget {
                   flex: 3,
                   child: Text(
                     c.lastMessage,
-                    style: const TextStyle(color: VividColors.textSecondary, fontSize: 12),
+                    style: TextStyle(color: vc.textSecondary, fontSize: 12),
                     overflow: TextOverflow.ellipsis,
                     maxLines: 1,
                   ),
@@ -490,7 +499,7 @@ class _AnalyticsView extends StatelessWidget {
                 Text(
                   waitLabel,
                   style: TextStyle(
-                    color: isOverdue ? VividColors.statusUrgent : VividColors.textMuted,
+                    color: isOverdue ? VividColors.statusUrgent : vc.textMuted,
                     fontSize: 12,
                     fontWeight: isOverdue ? FontWeight.w600 : FontWeight.w400,
                   ),
@@ -510,13 +519,14 @@ class _AnalyticsView extends StatelessWidget {
   }
 
   // ---- Campaign Performance Table ----
-  Widget _buildCampaignsTable() {
+  Widget _buildCampaignsTable(BuildContext context) {
+    final vc = context.vividColors;
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: VividColors.navy,
+        color: vc.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: VividColors.tealBlue.withValues(alpha: 0.2)),
+        border: Border.all(color: vc.border),
       ),
       child: Column(
         children: [
@@ -524,18 +534,18 @@ class _AnalyticsView extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             decoration: BoxDecoration(
-              color: VividColors.deepBlue,
+              color: vc.surfaceAlt,
               borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
               border: Border(
                   bottom: BorderSide(color: VividColors.tealBlue.withValues(alpha: 0.15))),
             ),
-            child: const Row(
+            child: Row(
               children: [
                 Expanded(
                     flex: 3,
                     child: Text('Campaign',
                         style: TextStyle(
-                            color: VividColors.textMuted,
+                            color: vc.textMuted,
                             fontSize: 11,
                             fontWeight: FontWeight.w600))),
                 Expanded(
@@ -543,7 +553,7 @@ class _AnalyticsView extends StatelessWidget {
                     child: Text('Sent',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                            color: VividColors.textMuted,
+                            color: vc.textMuted,
                             fontSize: 11,
                             fontWeight: FontWeight.w600))),
                 Expanded(
@@ -551,7 +561,7 @@ class _AnalyticsView extends StatelessWidget {
                     child: Text('Responded',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                            color: VividColors.textMuted,
+                            color: vc.textMuted,
                             fontSize: 11,
                             fontWeight: FontWeight.w600))),
                 Expanded(
@@ -559,7 +569,7 @@ class _AnalyticsView extends StatelessWidget {
                     child: Text('Leads',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                            color: VividColors.textMuted,
+                            color: vc.textMuted,
                             fontSize: 11,
                             fontWeight: FontWeight.w600))),
                 Expanded(
@@ -567,7 +577,7 @@ class _AnalyticsView extends StatelessWidget {
                     child: Text('Revenue',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                            color: VividColors.textMuted,
+                            color: vc.textMuted,
                             fontSize: 11,
                             fontWeight: FontWeight.w600))),
               ],
@@ -590,16 +600,16 @@ class _AnalyticsView extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(c.name,
-                              style: const TextStyle(
-                                  color: VividColors.textPrimary,
+                              style: TextStyle(
+                                  color: vc.textPrimary,
                                   fontSize: 13,
                                   fontWeight: FontWeight.w500),
                               overflow: TextOverflow.ellipsis),
                           if (c.sentAt != null)
                             Text(
                                 '${c.sentAt!.day}/${c.sentAt!.month}/${c.sentAt!.year}',
-                                style: const TextStyle(
-                                    color: VividColors.textMuted, fontSize: 11)),
+                                style: TextStyle(
+                                    color: vc.textMuted, fontSize: 11)),
                         ],
                       ),
                     ),
@@ -607,21 +617,21 @@ class _AnalyticsView extends StatelessWidget {
                         flex: 1,
                         child: Text('${c.sent}',
                             textAlign: TextAlign.center,
-                            style: const TextStyle(
-                                color: VividColors.textSecondary, fontSize: 13))),
+                            style: TextStyle(
+                                color: vc.textSecondary, fontSize: 13))),
                     Expanded(
                         flex: 1,
                         child: Text('${c.responded}',
                             textAlign: TextAlign.center,
                             style: TextStyle(
-                                color: c.responded > 0 ? VividColors.statusSuccess : VividColors.textMuted,
+                                color: c.responded > 0 ? VividColors.statusSuccess : vc.textMuted,
                                 fontSize: 13))),
                     Expanded(
                         flex: 1,
                         child: Text('${c.leads}',
                             textAlign: TextAlign.center,
                             style: TextStyle(
-                                color: c.leads > 0 ? VividColors.cyan : VividColors.textMuted,
+                                color: c.leads > 0 ? VividColors.cyan : vc.textMuted,
                                 fontSize: 13))),
                     Expanded(
                         flex: 1,
@@ -631,7 +641,7 @@ class _AnalyticsView extends StatelessWidget {
                             style: TextStyle(
                                 color: c.revenue > 0
                                     ? VividColors.statusSuccess
-                                    : VividColors.textMuted,
+                                    : vc.textMuted,
                                 fontSize: 13))),
                   ],
                 ),
@@ -642,7 +652,8 @@ class _AnalyticsView extends StatelessWidget {
   }
 
   // ---- Daily Trends Chart ----
-  Widget _buildDailyChart() {
+  Widget _buildDailyChart(BuildContext context) {
+    final vc = context.vividColors;
     final days = data.dailyBreakdown.length > 30
         ? data.dailyBreakdown.sublist(data.dailyBreakdown.length - 30)
         : data.dailyBreakdown;
@@ -654,16 +665,16 @@ class _AnalyticsView extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: VividColors.navy,
+        color: vc.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: VividColors.tealBlue.withValues(alpha: 0.2)),
+        border: Border.all(color: vc.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('Leads per day — last ${days.length} days',
-              style: const TextStyle(
-                  color: VividColors.textSecondary, fontSize: 13, fontWeight: FontWeight.w500)),
+              style: TextStyle(
+                  color: vc.textSecondary, fontSize: 13, fontWeight: FontWeight.w500)),
           const SizedBox(height: 20),
           SizedBox(
             height: 100,
@@ -691,7 +702,7 @@ class _AnalyticsView extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _legendDot(VividColors.cyan, 'Leads'),
+              _legendDot(context, VividColors.cyan, 'Leads'),
             ],
           ),
         ],
@@ -699,7 +710,8 @@ class _AnalyticsView extends StatelessWidget {
     );
   }
 
-  Widget _legendDot(Color color, String label) {
+  Widget _legendDot(BuildContext context, Color color, String label) {
+    final vc = context.vividColors;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -708,7 +720,7 @@ class _AnalyticsView extends StatelessWidget {
             height: 8,
             decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
         const SizedBox(width: 5),
-        Text(label, style: const TextStyle(color: VividColors.textMuted, fontSize: 11)),
+        Text(label, style: TextStyle(color: vc.textMuted, fontSize: 11)),
       ],
     );
   }
@@ -742,13 +754,14 @@ class _LargeMetricCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        color: VividColors.navy,
+        color: vc.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: VividColors.tealBlue.withValues(alpha: 0.2)),
+        border: Border.all(color: vc.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -762,8 +775,8 @@ class _LargeMetricCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   data.label,
-                  style: const TextStyle(
-                      color: VividColors.textSecondary,
+                  style: TextStyle(
+                      color: vc.textSecondary,
                       fontSize: 12,
                       fontWeight: FontWeight.w500),
                 ),
@@ -784,7 +797,7 @@ class _LargeMetricCard extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             data.subtitle,
-            style: const TextStyle(color: VividColors.textMuted, fontSize: 12),
+            style: TextStyle(color: vc.textMuted, fontSize: 12),
           ),
           if (data.progress != null) ...[
             const SizedBox(height: 12),
@@ -792,7 +805,7 @@ class _LargeMetricCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(3),
               child: LinearProgressIndicator(
                 value: data.progress!.clamp(0.0, 1.0),
-                backgroundColor: VividColors.tealBlue.withValues(alpha: 0.1),
+                backgroundColor: vc.borderSubtle,
                 valueColor: AlwaysStoppedAnimation<Color>(data.color),
                 minHeight: 4,
               ),

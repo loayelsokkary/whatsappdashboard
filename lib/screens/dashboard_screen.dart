@@ -17,8 +17,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return Scaffold(
-      backgroundColor: VividColors.darkNavy,
+      backgroundColor: vc.background,
       body: LayoutBuilder(
         builder: (context, constraints) {
           // Responsive breakpoints
@@ -36,6 +37,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   // Mobile: show list OR detail (not both)
   Widget _buildMobileLayout() {
+    final vc = context.vividColors;
     final conversationsProvider = context.watch<ConversationsProvider>();
 
     if (conversationsProvider.selectedConversation != null) {
@@ -45,20 +47,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             decoration: BoxDecoration(
-              color: VividColors.navy,
+              color: vc.surface,
               border: Border(
-                bottom: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+                bottom: BorderSide(color: vc.border),
               ),
             ),
             child: Row(
               children: [
                 IconButton(
-                  icon: const Icon(Icons.arrow_back, color: VividColors.textPrimary),
+                  icon: Icon(Icons.arrow_back, color: vc.textPrimary),
                   onPressed: () => conversationsProvider.clearSelection(),
                 ),
-                const Text(
+                Text(
                   'Back to Conversations',
-                  style: TextStyle(color: VividColors.textPrimary),
+                  style: TextStyle(color: vc.textPrimary),
                 ),
               ],
             ),
@@ -125,6 +127,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildResizableHandle(BoxConstraints constraints) {
+    final vc = context.vividColors;
     return MouseRegion(
       cursor: SystemMouseCursors.resizeColumn,
       child: GestureDetector(
@@ -142,7 +145,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               width: 2,
               height: 40,
               decoration: BoxDecoration(
-                color: VividColors.tealBlue.withValues(alpha: 0.3),
+                color: vc.popupBorder,
                 borderRadius: BorderRadius.circular(1),
               ),
             ),
@@ -153,8 +156,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildEmptyState(ConversationsProvider provider) {
+    final vc = context.vividColors;
     return Container(
-      color: VividColors.darkNavy,
+      color: vc.background,
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -163,20 +167,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
               width: 80,
               height: 80,
               decoration: BoxDecoration(
-                color: VividColors.brightBlue.withOpacity(0.1),
+                color: VividColors.brightBlue.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Icon(
                 Icons.forum_outlined,
                 size: 40,
-                color: VividColors.brightBlue.withOpacity(0.5),
+                color: VividColors.brightBlue.withValues(alpha: 0.5),
               ),
             ),
             const SizedBox(height: 24),
-            const Text(
+            Text(
               'Select a conversation',
               style: TextStyle(
-                color: VividColors.textPrimary,
+                color: vc.textPrimary,
                 fontSize: 20,
                 fontWeight: FontWeight.w600,
               ),
@@ -184,8 +188,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const SizedBox(height: 8),
             Text(
               '${provider.totalCount} conversations available',
-              style: const TextStyle(
-                color: VividColors.textMuted,
+              style: TextStyle(
+                color: vc.textMuted,
                 fontSize: 14,
               ),
             ),

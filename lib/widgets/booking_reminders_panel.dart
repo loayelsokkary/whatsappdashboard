@@ -26,6 +26,7 @@ class _BookingRemindersPanelState extends State<BookingRemindersPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return Consumer<BookingRemindersProvider>(
       builder: (context, provider, _) {
         return LayoutBuilder(
@@ -33,7 +34,7 @@ class _BookingRemindersPanelState extends State<BookingRemindersPanel> {
             final isMobile = constraints.maxWidth < 600;
 
             if (isMobile) {
-              return _buildMobileLayout(provider);
+              return _buildMobileLayout(context, provider);
             }
 
             return Row(
@@ -42,16 +43,16 @@ class _BookingRemindersPanelState extends State<BookingRemindersPanel> {
                   flex: 2,
                   child: Container(
                     decoration: BoxDecoration(
-                      color: VividColors.navy,
-                      border: Border(right: BorderSide(color: VividColors.tealBlue.withOpacity(0.2))),
+                      color: vc.surface,
+                      border: Border(right: BorderSide(color: vc.border)),
                     ),
                     child: Column(
                       children: [
-                        _buildHeader(provider),
-                        _buildStatsRow(provider.stats),
-                        _buildFilters(provider),
-                        _buildSearchBar(provider),
-                        Expanded(child: _buildBookingsList(provider)),
+                        _buildHeader(context, provider),
+                        _buildStatsRow(context, provider.stats),
+                        _buildFilters(context, provider),
+                        _buildSearchBar(context, provider),
+                        Expanded(child: _buildBookingsList(context, provider)),
                       ],
                     ),
                   ),
@@ -59,8 +60,8 @@ class _BookingRemindersPanelState extends State<BookingRemindersPanel> {
                 Expanded(
                   flex: 3,
                   child: _selectedBooking == null
-                      ? _buildEmptyDetail()
-                      : _buildBookingDetails(_selectedBooking!, provider),
+                      ? _buildEmptyDetail(context)
+                      : _buildBookingDetails(context, _selectedBooking!, provider),
                 ),
               ],
             );
@@ -70,29 +71,30 @@ class _BookingRemindersPanelState extends State<BookingRemindersPanel> {
     );
   }
 
-  Widget _buildMobileLayout(BookingRemindersProvider provider) {
+  Widget _buildMobileLayout(BuildContext context, BookingRemindersProvider provider) {
+    final vc = context.vividColors;
     if (_selectedBooking != null) {
       return Column(
         children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             decoration: BoxDecoration(
-              color: VividColors.navy,
+              color: vc.surface,
               border: Border(
-                bottom: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+                bottom: BorderSide(color: vc.border),
               ),
             ),
             child: Row(
               children: [
                 IconButton(
-                  icon: const Icon(Icons.arrow_back, color: VividColors.textPrimary),
+                  icon: Icon(Icons.arrow_back, color: vc.textPrimary),
                   onPressed: () => setState(() => _selectedBooking = null),
                 ),
                 const SizedBox(width: 4),
-                const Text(
+                Text(
                   'Booking Details',
                   style: TextStyle(
-                    color: VividColors.textPrimary,
+                    color: vc.textPrimary,
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
                   ),
@@ -100,29 +102,30 @@ class _BookingRemindersPanelState extends State<BookingRemindersPanel> {
               ],
             ),
           ),
-          Expanded(child: _buildBookingDetails(_selectedBooking!, provider)),
+          Expanded(child: _buildBookingDetails(context, _selectedBooking!, provider)),
         ],
       );
     }
 
     return Container(
-      color: VividColors.navy,
+      color: vc.surface,
       child: Column(
         children: [
-          _buildHeader(provider),
-          _buildStatsRow(provider.stats),
-          _buildFilters(provider),
-          _buildSearchBar(provider),
-          Expanded(child: _buildBookingsList(provider)),
+          _buildHeader(context, provider),
+          _buildStatsRow(context, provider.stats),
+          _buildFilters(context, provider),
+          _buildSearchBar(context, provider),
+          Expanded(child: _buildBookingsList(context, provider)),
         ],
       ),
     );
   }
 
-  Widget _buildHeader(BookingRemindersProvider provider) {
+  Widget _buildHeader(BuildContext context, BookingRemindersProvider provider) {
+    final vc = context.vividColors;
     return Container(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)))),
+      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: vc.border))),
       child: Row(
         children: [
           Container(
@@ -131,17 +134,17 @@ class _BookingRemindersPanelState extends State<BookingRemindersPanel> {
             child: const Icon(Icons.calendar_month, color: VividColors.cyan, size: 24),
           ),
           const SizedBox(width: 12),
-          const Column(
+          Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Booking Reminders', style: TextStyle(color: VividColors.textPrimary, fontSize: 18, fontWeight: FontWeight.bold)),
-              Text('Track appointment reminders', style: TextStyle(color: VividColors.textMuted, fontSize: 12)),
+              Text('Booking Reminders', style: TextStyle(color: vc.textPrimary, fontSize: 18, fontWeight: FontWeight.bold)),
+              Text('Track appointment reminders', style: TextStyle(color: vc.textMuted, fontSize: 12)),
             ],
           ),
           const Spacer(),
           IconButton(
             onPressed: () => provider.refresh(),
-            icon: const Icon(Icons.refresh, color: VividColors.textMuted),
+            icon: Icon(Icons.refresh, color: vc.textMuted),
             tooltip: 'Refresh',
           ),
         ],
@@ -149,9 +152,10 @@ class _BookingRemindersPanelState extends State<BookingRemindersPanel> {
     );
   }
 
-  Widget _buildStatsRow(BookingReminderStats stats) {
+  Widget _buildStatsRow(BuildContext context, BookingReminderStats stats) {
+    final vc = context.vividColors;
     final badges = [
-      _StatBadge(label: 'Total', value: stats.totalBookings, color: VividColors.textMuted),
+      _StatBadge(label: 'Total', value: stats.totalBookings, color: vc.textMuted),
       _StatBadge(label: 'Upcoming', value: stats.upcomingBookings, color: VividColors.brightBlue),
       _StatBadge(label: 'Sent', value: stats.remindersSent, color: Colors.orange),
       _StatBadge(label: 'Confirmed', value: stats.confirmed, color: VividColors.statusSuccess),
@@ -174,7 +178,8 @@ class _BookingRemindersPanelState extends State<BookingRemindersPanel> {
     );
   }
 
-  Widget _buildFilters(BookingRemindersProvider provider) {
+  Widget _buildFilters(BuildContext context, BookingRemindersProvider provider) {
+    final vc = context.vividColors;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Column(
@@ -186,7 +191,7 @@ class _BookingRemindersPanelState extends State<BookingRemindersPanel> {
             child: Row(
               children: [
                 _FilterChip(label: 'All', isSelected: provider.statusFilter == ReminderStatusFilter.all, onTap: () => provider.setStatusFilter(ReminderStatusFilter.all)),
-                _FilterChip(label: 'Pending', isSelected: provider.statusFilter == ReminderStatusFilter.pending, onTap: () => provider.setStatusFilter(ReminderStatusFilter.pending), color: VividColors.textMuted),
+                _FilterChip(label: 'Pending', isSelected: provider.statusFilter == ReminderStatusFilter.pending, onTap: () => provider.setStatusFilter(ReminderStatusFilter.pending), color: vc.textMuted),
                 _FilterChip(label: 'Sent', isSelected: provider.statusFilter == ReminderStatusFilter.reminderSent, onTap: () => provider.setStatusFilter(ReminderStatusFilter.reminderSent), color: Colors.orange),
                 _FilterChip(label: 'Confirmed', isSelected: provider.statusFilter == ReminderStatusFilter.confirmed, onTap: () => provider.setStatusFilter(ReminderStatusFilter.confirmed), color: VividColors.statusSuccess),
                 _FilterChip(label: 'Cancelled', isSelected: provider.statusFilter == ReminderStatusFilter.cancelled, onTap: () => provider.setStatusFilter(ReminderStatusFilter.cancelled), color: VividColors.statusUrgent),
@@ -214,7 +219,7 @@ class _BookingRemindersPanelState extends State<BookingRemindersPanel> {
               onPressed: () => provider.clearFilters(),
               icon: const Icon(Icons.clear, size: 16),
               label: const Text('Clear filters'),
-              style: TextButton.styleFrom(foregroundColor: VividColors.textMuted, padding: EdgeInsets.zero),
+              style: TextButton.styleFrom(foregroundColor: vc.textMuted, padding: EdgeInsets.zero),
             ),
           ],
         ],
@@ -222,22 +227,23 @@ class _BookingRemindersPanelState extends State<BookingRemindersPanel> {
     );
   }
 
-  Widget _buildSearchBar(BookingRemindersProvider provider) {
+  Widget _buildSearchBar(BuildContext context, BookingRemindersProvider provider) {
+    final vc = context.vividColors;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: TextField(
         controller: _searchController,
         onChanged: provider.setSearchQuery,
-        style: const TextStyle(color: VividColors.textPrimary),
+        style: TextStyle(color: vc.textPrimary),
         decoration: InputDecoration(
           hintText: 'Search by name, phone, service...',
-          hintStyle: TextStyle(color: VividColors.textMuted.withOpacity(0.5)),
-          prefixIcon: const Icon(Icons.search, color: VividColors.textMuted),
+          hintStyle: TextStyle(color: vc.textMuted.withOpacity(0.5)),
+          prefixIcon: Icon(Icons.search, color: vc.textMuted),
           suffixIcon: provider.searchQuery.isNotEmpty
-              ? IconButton(icon: const Icon(Icons.clear, size: 18), onPressed: () { _searchController.clear(); provider.setSearchQuery(''); }, color: VividColors.textMuted)
+              ? IconButton(icon: const Icon(Icons.clear, size: 18), onPressed: () { _searchController.clear(); provider.setSearchQuery(''); }, color: vc.textMuted)
               : null,
           filled: true,
-          fillColor: VividColors.deepBlue,
+          fillColor: vc.surfaceAlt,
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         ),
@@ -245,7 +251,8 @@ class _BookingRemindersPanelState extends State<BookingRemindersPanel> {
     );
   }
 
-  Widget _buildBookingsList(BookingRemindersProvider provider) {
+  Widget _buildBookingsList(BuildContext context, BookingRemindersProvider provider) {
+    final vc = context.vividColors;
     final bookings = provider.filteredBookings;
 
     if (bookings.isEmpty) {
@@ -253,9 +260,9 @@ class _BookingRemindersPanelState extends State<BookingRemindersPanel> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.calendar_today, size: 48, color: VividColors.textMuted.withOpacity(0.5)),
+            Icon(Icons.calendar_today, size: 48, color: vc.textMuted.withOpacity(0.5)),
             const SizedBox(height: 12),
-            Text(provider.hasActiveFilters ? 'No bookings match filters' : 'No bookings found', style: const TextStyle(color: VividColors.textMuted)),
+            Text(provider.hasActiveFilters ? 'No bookings match filters' : 'No bookings found', style: TextStyle(color: vc.textMuted)),
           ],
         ),
       );
@@ -278,30 +285,32 @@ class _BookingRemindersPanelState extends State<BookingRemindersPanel> {
     );
   }
 
-  Widget _buildEmptyDetail() {
+  Widget _buildEmptyDetail(BuildContext context) {
+    final vc = context.vividColors;
     return Container(
-      color: VividColors.darkNavy,
+      color: vc.background,
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.touch_app, size: 64, color: VividColors.textMuted.withOpacity(0.3)),
+            Icon(Icons.touch_app, size: 64, color: vc.textMuted.withOpacity(0.3)),
             const SizedBox(height: 16),
-            const Text('Select a booking', style: TextStyle(color: VividColors.textPrimary, fontSize: 18)),
-            const Text('View details and reminder status', style: TextStyle(color: VividColors.textMuted)),
+            Text('Select a booking', style: TextStyle(color: vc.textPrimary, fontSize: 18)),
+            Text('View details and reminder status', style: TextStyle(color: vc.textMuted)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildBookingDetails(Booking booking, BookingRemindersProvider provider) {
+  Widget _buildBookingDetails(BuildContext context, Booking booking, BookingRemindersProvider provider) {
+    final vc = context.vividColors;
     final dateFormat = DateFormat('EEEE, MMMM d, yyyy');
-    final statusColor = _getStatusColor(booking.reminderStatus);
+    final statusColor = _getStatusColor(context, booking.reminderStatus);
     final isSending = provider.isSendingReminder(booking.id);
 
     return Container(
-      color: VividColors.darkNavy,
+      color: vc.background,
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
@@ -320,17 +329,17 @@ class _BookingRemindersPanelState extends State<BookingRemindersPanel> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(booking.customerName, style: const TextStyle(color: VividColors.textPrimary, fontSize: 20, fontWeight: FontWeight.bold)),
+                      Text(booking.customerName, style: TextStyle(color: vc.textPrimary, fontSize: 20, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 4),
                       GestureDetector(
                         onTap: () => Clipboard.setData(ClipboardData(text: booking.customerPhone)),
                         child: Row(
                           children: [
-                            const Icon(Icons.phone, size: 14, color: VividColors.textMuted),
+                            Icon(Icons.phone, size: 14, color: vc.textMuted),
                             const SizedBox(width: 4),
-                            Text(booking.customerPhone, style: const TextStyle(color: VividColors.textMuted)),
+                            Text(booking.customerPhone, style: TextStyle(color: vc.textMuted)),
                             const SizedBox(width: 4),
-                            const Icon(Icons.copy, size: 12, color: VividColors.textMuted),
+                            Icon(Icons.copy, size: 12, color: vc.textMuted),
                           ],
                         ),
                       ),
@@ -409,12 +418,13 @@ class _BookingRemindersPanelState extends State<BookingRemindersPanel> {
   }
 
   void _showSendReminderDialog(BuildContext context, Booking booking, BookingRemindersProvider provider) {
+    final vc = context.vividColors;
     final dateFormat = DateFormat('MMMM d');
-    
+
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        backgroundColor: VividColors.navy,
+        backgroundColor: vc.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
           children: [
@@ -427,7 +437,7 @@ class _BookingRemindersPanelState extends State<BookingRemindersPanel> {
               child: const Icon(Icons.send, color: VividColors.cyan, size: 20),
             ),
             const SizedBox(width: 12),
-            const Text('Send Reminder', style: TextStyle(color: VividColors.textPrimary)),
+            Text('Send Reminder', style: TextStyle(color: vc.textPrimary)),
           ],
         ),
         content: Column(
@@ -436,42 +446,42 @@ class _BookingRemindersPanelState extends State<BookingRemindersPanel> {
           children: [
             Text(
               'Send a reminder to ${booking.customerName} for their ${booking.service} appointment?',
-              style: const TextStyle(color: VividColors.textMuted),
+              style: TextStyle(color: vc.textMuted),
             ),
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: VividColors.deepBlue,
+                color: vc.surfaceAlt,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: VividColors.tealBlue.withOpacity(0.2)),
+                border: Border.all(color: vc.border),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.person, size: 14, color: VividColors.textMuted),
+                      Icon(Icons.person, size: 14, color: vc.textMuted),
                       const SizedBox(width: 6),
-                      Text(booking.customerName, style: const TextStyle(color: VividColors.textPrimary)),
+                      Text(booking.customerName, style: TextStyle(color: vc.textPrimary)),
                     ],
                   ),
                   const SizedBox(height: 6),
                   Row(
                     children: [
-                      const Icon(Icons.phone, size: 14, color: VividColors.textMuted),
+                      Icon(Icons.phone, size: 14, color: vc.textMuted),
                       const SizedBox(width: 6),
-                      Text(booking.customerPhone, style: const TextStyle(color: VividColors.textMuted)),
+                      Text(booking.customerPhone, style: TextStyle(color: vc.textMuted)),
                     ],
                   ),
                   const SizedBox(height: 6),
                   Row(
                     children: [
-                      const Icon(Icons.event, size: 14, color: VividColors.textMuted),
+                      Icon(Icons.event, size: 14, color: vc.textMuted),
                       const SizedBox(width: 6),
                       Text(
                         '${dateFormat.format(booking.appointmentDate)} at ${booking.appointmentTime}',
-                        style: const TextStyle(color: VividColors.textMuted),
+                        style: TextStyle(color: vc.textMuted),
                       ),
                     ],
                   ),
@@ -504,14 +514,14 @@ class _BookingRemindersPanelState extends State<BookingRemindersPanel> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel', style: TextStyle(color: VividColors.textMuted)),
+            child: Text('Cancel', style: TextStyle(color: vc.textMuted)),
           ),
           ElevatedButton.icon(
             onPressed: () async {
               Navigator.pop(dialogContext);
-              
+
               final success = await provider.sendManualReminder(booking);
-              
+
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
@@ -523,8 +533,8 @@ class _BookingRemindersPanelState extends State<BookingRemindersPanel> {
                           size: 18,
                         ),
                         const SizedBox(width: 8),
-                        Text(success 
-                            ? 'Reminder sent to ${booking.customerName}!' 
+                        Text(success
+                            ? 'Reminder sent to ${booking.customerName}!'
                             : provider.sendError ?? 'Failed to send reminder'),
                       ],
                     ),
@@ -547,10 +557,11 @@ class _BookingRemindersPanelState extends State<BookingRemindersPanel> {
     );
   }
 
-  Color _getStatusColor(ReminderStatus status) {
+  Color _getStatusColor(BuildContext context, ReminderStatus status) {
+    final vc = context.vividColors;
     switch (status) {
       case ReminderStatus.pending:
-        return VividColors.textMuted;
+        return vc.textMuted;
       case ReminderStatus.reminderSent:
         return Colors.orange;
       case ReminderStatus.confirmed:
@@ -578,6 +589,7 @@ class _SendReminderButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     final hasBeenSent = booking.manualReminderSentAt != null;
     final timeAgo = hasBeenSent ? _formatTimeAgo(booking.manualReminderSentAt!) : null;
 
@@ -641,7 +653,7 @@ class _SendReminderButton extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           gradient: isSending ? null : VividColors.primaryGradient,
-          color: isSending ? VividColors.deepBlue : null,
+          color: isSending ? vc.surfaceAlt : null,
           borderRadius: BorderRadius.circular(12),
           boxShadow: isSending ? null : [
             BoxShadow(
@@ -664,10 +676,10 @@ class _SendReminderButton extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 12),
-              const Text(
+              Text(
                 'Sending Reminder...',
                 style: TextStyle(
-                  color: VividColors.textMuted,
+                  color: vc.textMuted,
                   fontWeight: FontWeight.w600,
                   fontSize: 16,
                 ),
@@ -692,12 +704,12 @@ class _SendReminderButton extends StatelessWidget {
 
   String _formatTimeAgo(DateTime dateTime) {
     final diff = DateTime.now().difference(dateTime);
-    
+
     if (diff.inMinutes < 1) return 'Just now';
     if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
     if (diff.inHours < 24) return '${diff.inHours}h ago';
     if (diff.inDays < 7) return '${diff.inDays}d ago';
-    
+
     final bh = dateTime.toUtc().add(const Duration(hours: 3));
     return DateFormat('MMM d, h:mm a').format(bh);
   }
@@ -740,6 +752,7 @@ class _FilterChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     final chipColor = color ?? VividColors.cyan;
     return Padding(
       padding: const EdgeInsets.only(right: 8),
@@ -749,11 +762,11 @@ class _FilterChip extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            color: isSelected ? chipColor.withOpacity(0.2) : VividColors.deepBlue,
+            color: isSelected ? chipColor.withOpacity(0.2) : vc.surfaceAlt,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(color: isSelected ? chipColor : Colors.transparent),
           ),
-          child: Text(label, style: TextStyle(color: isSelected ? chipColor : VividColors.textMuted, fontSize: 12, fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal)),
+          child: Text(label, style: TextStyle(color: isSelected ? chipColor : vc.textMuted, fontSize: 12, fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal)),
         ),
       ),
     );
@@ -777,16 +790,17 @@ class _BookingTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final statusColor = _getStatusColor(booking.reminderStatus);
+    final vc = context.vividColors;
+    final statusColor = _getStatusColor(context, booking.reminderStatus);
     final dateFormat = DateFormat('MMM d');
     final hasManualReminder = booking.manualReminderSentAt != null;
-    
+
     return InkWell(
       onTap: onTap,
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
         decoration: BoxDecoration(
-          color: isSelected ? VividColors.brightBlue.withOpacity(0.1) : VividColors.deepBlue,
+          color: isSelected ? VividColors.brightBlue.withOpacity(0.1) : vc.surfaceAlt,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(color: isSelected ? VividColors.cyan : Colors.transparent, width: 2),
         ),
@@ -802,7 +816,7 @@ class _BookingTile extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        Expanded(child: Text(booking.customerName, style: const TextStyle(color: VividColors.textPrimary, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis)),
+                        Expanded(child: Text(booking.customerName, style: TextStyle(color: vc.textPrimary, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis)),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                           decoration: BoxDecoration(color: statusColor.withOpacity(0.2), borderRadius: BorderRadius.circular(10)),
@@ -811,13 +825,13 @@ class _BookingTile extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 4),
-                    Text(booking.service, style: const TextStyle(color: VividColors.textMuted, fontSize: 12), overflow: TextOverflow.ellipsis),
+                    Text(booking.service, style: TextStyle(color: vc.textMuted, fontSize: 12), overflow: TextOverflow.ellipsis),
                     const SizedBox(height: 6),
                     Row(
                       children: [
-                        const Icon(Icons.event, size: 12, color: VividColors.textMuted),
+                        Icon(Icons.event, size: 12, color: vc.textMuted),
                         const SizedBox(width: 4),
-                        Text('${dateFormat.format(booking.appointmentDate)} at ${booking.appointmentTime}', style: const TextStyle(color: VividColors.textMuted, fontSize: 11)),
+                        Text('${dateFormat.format(booking.appointmentDate)} at ${booking.appointmentTime}', style: TextStyle(color: vc.textMuted, fontSize: 11)),
                         const Spacer(),
                         // Reminder indicators
                         _ReminderDot(label: '3d', sent: booking.reminder3Day),
@@ -875,9 +889,10 @@ class _BookingTile extends StatelessWidget {
     );
   }
 
-  Color _getStatusColor(ReminderStatus status) {
+  Color _getStatusColor(BuildContext context, ReminderStatus status) {
+    final vc = context.vividColors;
     switch (status) {
-      case ReminderStatus.pending: return VividColors.textMuted;
+      case ReminderStatus.pending: return vc.textMuted;
       case ReminderStatus.reminderSent: return Colors.orange;
       case ReminderStatus.confirmed: return VividColors.statusSuccess;
       case ReminderStatus.cancelled: return VividColors.statusUrgent;
@@ -899,13 +914,14 @@ class _ReminderDot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     Color color;
     IconData icon;
     if (sent) {
       color = VividColors.statusSuccess;
       icon = Icons.check;
     } else {
-      color = VividColors.textMuted.withOpacity(0.3);
+      color = vc.textMuted.withOpacity(0.3);
       icon = Icons.circle_outlined;
     }
 
@@ -928,8 +944,9 @@ class _DetailCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return Container(
-      decoration: BoxDecoration(color: VividColors.navy, borderRadius: BorderRadius.circular(12), border: Border.all(color: VividColors.tealBlue.withOpacity(0.2))),
+      decoration: BoxDecoration(color: vc.surface, borderRadius: BorderRadius.circular(12), border: Border.all(color: vc.border)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -939,7 +956,7 @@ class _DetailCard extends StatelessWidget {
               children: [
                 Icon(icon, color: VividColors.cyan, size: 20),
                 const SizedBox(width: 8),
-                Text(title, style: const TextStyle(color: VividColors.textPrimary, fontWeight: FontWeight.w600)),
+                Text(title, style: TextStyle(color: vc.textPrimary, fontWeight: FontWeight.w600)),
               ],
             ),
           ),
@@ -958,13 +975,14 @@ class _DetailRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(width: 100, child: Text(label, style: const TextStyle(color: VividColors.textMuted, fontSize: 13))),
-          Expanded(child: Text(value, style: const TextStyle(color: VividColors.textPrimary, fontSize: 13))),
+          SizedBox(width: 100, child: Text(label, style: TextStyle(color: vc.textMuted, fontSize: 13))),
+          Expanded(child: Text(value, style: TextStyle(color: vc.textPrimary, fontSize: 13))),
         ],
       ),
     );
@@ -975,16 +993,17 @@ class _ReminderStatusRow extends StatelessWidget {
   final String label;
   final bool sent;
   final DateTime? sentAt;
-  
+
   const _ReminderStatusRow({required this.label, required this.sent, this.sentAt});
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
         children: [
-          SizedBox(width: 120, child: Text(label, style: const TextStyle(color: VividColors.textMuted, fontSize: 13))),
+          SizedBox(width: 120, child: Text(label, style: TextStyle(color: vc.textMuted, fontSize: 13))),
           if (sent) ...[
             const Icon(Icons.check_circle, color: VividColors.statusSuccess, size: 16),
             const SizedBox(width: 6),
@@ -993,9 +1012,9 @@ class _ReminderStatusRow extends StatelessWidget {
               style: const TextStyle(color: VividColors.statusSuccess, fontSize: 13),
             ),
           ] else ...[
-            Icon(Icons.circle_outlined, color: VividColors.textMuted.withOpacity(0.5), size: 16),
+            Icon(Icons.circle_outlined, color: vc.textMuted.withOpacity(0.5), size: 16),
             const SizedBox(width: 6),
-            Text('Not sent', style: TextStyle(color: VividColors.textMuted.withOpacity(0.5), fontSize: 13)),
+            Text('Not sent', style: TextStyle(color: vc.textMuted.withOpacity(0.5), fontSize: 13)),
           ],
         ],
       ),
@@ -1019,6 +1038,7 @@ class _TimelineItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     final format = DateFormat('MMM d, h:mm a');
     final bh = date.toUtc().add(const Duration(hours: 3));
     return Padding(
@@ -1030,8 +1050,8 @@ class _TimelineItem extends StatelessWidget {
             height: 24,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: isCompleted ? VividColors.statusSuccess.withOpacity(0.2) : VividColors.deepBlue,
-              border: Border.all(color: isCompleted ? VividColors.statusSuccess : VividColors.textMuted.withOpacity(0.3)),
+              color: isCompleted ? VividColors.statusSuccess.withOpacity(0.2) : vc.surfaceAlt,
+              border: Border.all(color: isCompleted ? VividColors.statusSuccess : vc.textMuted.withOpacity(0.3)),
             ),
             child: isCompleted ? const Icon(Icons.check, size: 14, color: VividColors.statusSuccess) : null,
           ),
@@ -1040,8 +1060,8 @@ class _TimelineItem extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, style: TextStyle(color: isCompleted ? VividColors.textPrimary : VividColors.textMuted, fontWeight: isCompleted ? FontWeight.w500 : FontWeight.normal)),
-                Text(format.format(bh), style: TextStyle(color: VividColors.textMuted.withOpacity(0.7), fontSize: 11)),
+                Text(label, style: TextStyle(color: isCompleted ? vc.textPrimary : vc.textMuted, fontWeight: isCompleted ? FontWeight.w500 : FontWeight.normal)),
+                Text(format.format(bh), style: TextStyle(color: vc.textMuted.withOpacity(0.7), fontSize: 11)),
               ],
             ),
           ),

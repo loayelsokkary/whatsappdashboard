@@ -40,8 +40,9 @@ class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateM
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return Scaffold(
-      backgroundColor: VividColors.darkNavy,
+      backgroundColor: vc.background,
       body: Column(
         children: [
           _buildHeader(),
@@ -63,6 +64,7 @@ class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateM
   }
 
   Widget _buildHeader() {
+    final vc = context.vividColors;
     final agent = context.watch<AgentProvider>().agent;
 
     return LayoutBuilder(
@@ -75,9 +77,9 @@ class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateM
             vertical: isMobile ? 10 : 16,
           ),
           decoration: BoxDecoration(
-            color: VividColors.navy,
+            color: vc.surface,
             border: Border(
-              bottom: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+              bottom: BorderSide(color: vc.border),
             ),
           ),
           child: Row(
@@ -100,7 +102,7 @@ class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateM
                   Text(
                     'Vivid Admin',
                     style: TextStyle(
-                      color: VividColors.textPrimary,
+                      color: vc.textPrimary,
                       fontSize: isMobile ? 16 : 20,
                       fontWeight: FontWeight.bold,
                     ),
@@ -109,7 +111,7 @@ class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateM
                     Text(
                       'Manage clients and users',
                       style: TextStyle(
-                        color: VividColors.textMuted,
+                        color: vc.textMuted,
                         fontSize: 13,
                       ),
                     ),
@@ -139,8 +141,8 @@ class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateM
                     children: [
                       Text(
                         agent.name,
-                        style: const TextStyle(
-                          color: VividColors.textPrimary,
+                        style: TextStyle(
+                          color: vc.textPrimary,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -157,7 +159,7 @@ class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateM
                 const SizedBox(width: 8),
                 IconButton(
                   onPressed: () => context.read<AgentProvider>().logout(),
-                  icon: const Icon(Icons.logout, color: VividColors.textMuted),
+                  icon: Icon(Icons.logout, color: vc.textMuted),
                   tooltip: 'Logout',
                 ),
               ],
@@ -169,18 +171,19 @@ class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateM
   }
 
   Widget _buildTabs() {
+    final vc = context.vividColors;
     return LayoutBuilder(
       builder: (context, constraints) {
         final isMobile = constraints.maxWidth < 600;
 
         return Container(
-          color: VividColors.navy,
+          color: vc.surface,
           child: TabBar(
             controller: _tabController,
             indicatorColor: VividColors.cyan,
             indicatorWeight: 3,
             labelColor: VividColors.cyan,
-            unselectedLabelColor: VividColors.textMuted,
+            unselectedLabelColor: vc.textMuted,
             tabs: isMobile
                 ? const [
                     Tab(icon: Icon(Icons.business)),
@@ -208,6 +211,7 @@ class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateM
 class _ClientsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     final provider = context.watch<AdminProvider>();
 
     return LayoutBuilder(
@@ -223,24 +227,24 @@ class _ClientsTab extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: VividColors.navy,
+                    color: vc.surface,
                     border: Border(
-                      bottom: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+                      bottom: BorderSide(color: vc.border),
                     ),
                   ),
                   child: Row(
                     children: [
                       IconButton(
                         onPressed: () => provider.clearSelection(),
-                        icon: const Icon(Icons.arrow_back, color: VividColors.textPrimary),
+                        icon: Icon(Icons.arrow_back, color: vc.textPrimary),
                         tooltip: 'Back to clients',
                       ),
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
                           provider.selectedClient!.name,
-                          style: const TextStyle(
-                            color: VividColors.textPrimary,
+                          style: TextStyle(
+                            color: vc.textPrimary,
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
                           ),
@@ -278,7 +282,7 @@ class _ClientsTab extends StatelessWidget {
               ),
               Expanded(
                 child: provider.clients.isEmpty
-                        ? _buildEmptyState('No clients yet', 'Add your first client to get started')
+                        ? _buildEmptyState(context, 'No clients yet', 'Add your first client to get started')
                         : ListView.builder(
                             itemCount: provider.clients.length,
                             itemBuilder: (context, index) {
@@ -327,7 +331,7 @@ class _ClientsTab extends StatelessWidget {
                   // List
                   Expanded(
                     child: provider.clients.isEmpty
-                            ? _buildEmptyState('No clients yet', 'Add your first client to get started')
+                            ? _buildEmptyState(context, 'No clients yet', 'Add your first client to get started')
                             : ListView.builder(
                                 itemCount: provider.clients.length,
                                 itemBuilder: (context, index) {
@@ -348,7 +352,7 @@ class _ClientsTab extends StatelessWidget {
             ),
 
             // Divider
-            Container(width: 1, color: VividColors.tealBlue.withOpacity(0.2)),
+            Container(width: 1, color: vc.border),
 
             // Client details / users
             Expanded(
@@ -357,15 +361,15 @@ class _ClientsTab extends StatelessWidget {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.touch_app, size: 64, color: VividColors.textMuted.withOpacity(0.5)),
+                          Icon(Icons.touch_app, size: 64, color: vc.textMuted.withOpacity(0.5)),
                           const SizedBox(height: 16),
-                          const Text(
+                          Text(
                             'Select a client',
-                            style: TextStyle(color: VividColors.textPrimary, fontSize: 18),
+                            style: TextStyle(color: vc.textPrimary, fontSize: 18),
                           ),
-                          const Text(
+                          Text(
                             'View and manage their users',
-                            style: TextStyle(color: VividColors.textMuted),
+                            style: TextStyle(color: vc.textMuted),
                           ),
                         ],
                       ),
@@ -378,15 +382,16 @@ class _ClientsTab extends StatelessWidget {
     );
   }
 
-  Widget _buildEmptyState(String title, String subtitle) {
+  Widget _buildEmptyState(BuildContext context, String title, String subtitle) {
+    final vc = context.vividColors;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.business_outlined, size: 64, color: VividColors.textMuted.withOpacity(0.5)),
+          Icon(Icons.business_outlined, size: 64, color: vc.textMuted.withOpacity(0.5)),
           const SizedBox(height: 16),
-          Text(title, style: const TextStyle(color: VividColors.textPrimary, fontSize: 16)),
-          Text(subtitle, style: const TextStyle(color: VividColors.textMuted, fontSize: 13)),
+          Text(title, style: TextStyle(color: vc.textPrimary, fontSize: 16)),
+          Text(subtitle, style: TextStyle(color: vc.textMuted, fontSize: 13)),
         ],
       ),
     );
@@ -400,14 +405,15 @@ class _ClientsTab extends StatelessWidget {
   }
 
   void _confirmDelete(BuildContext context, Client client) {
+    final vc = context.vividColors;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: VividColors.navy,
-        title: const Text('Delete Client', style: TextStyle(color: VividColors.textPrimary)),
+        backgroundColor: vc.surface,
+        title: Text('Delete Client', style: TextStyle(color: vc.textPrimary)),
         content: Text(
           'Are you sure you want to delete "${client.name}"? This will also delete all their users.',
-          style: const TextStyle(color: VividColors.textMuted),
+          style: TextStyle(color: vc.textMuted),
         ),
         actions: [
           TextButton(
@@ -449,13 +455,14 @@ class _ClientCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return InkWell(
       onTap: onTap,
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: isSelected ? VividColors.brightBlue.withOpacity(0.1) : VividColors.deepBlue,
+          color: isSelected ? VividColors.brightBlue.withOpacity(0.1) : vc.surfaceAlt,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: isSelected ? VividColors.cyan : Colors.transparent,
@@ -470,22 +477,22 @@ class _ClientCard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     client.name,
-                    style: const TextStyle(
-                      color: VividColors.textPrimary,
+                    style: TextStyle(
+                      color: vc.textPrimary,
                       fontWeight: FontWeight.w600,
                       fontSize: 15,
                     ),
                   ),
                 ),
                 PopupMenuButton<String>(
-                  icon: const Icon(Icons.more_vert, color: VividColors.textMuted, size: 20),
-                  color: VividColors.navy,
+                  icon: Icon(Icons.more_vert, color: vc.textMuted, size: 20),
+                  color: vc.surface,
                   onSelected: (value) {
                     if (value == 'edit') onEdit();
                     if (value == 'delete') onDelete();
                   },
                   itemBuilder: (context) => [
-                    const PopupMenuItem(value: 'edit', child: Text('Edit', style: TextStyle(color: VividColors.textPrimary))),
+                    PopupMenuItem(value: 'edit', child: Text('Edit', style: TextStyle(color: vc.textPrimary))),
                     const PopupMenuItem(value: 'delete', child: Text('Delete', style: TextStyle(color: Colors.red))),
                   ],
                 ),
@@ -494,7 +501,7 @@ class _ClientCard extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               client.slug,
-              style: const TextStyle(color: VividColors.textMuted, fontSize: 12),
+              style: TextStyle(color: vc.textMuted, fontSize: 12),
             ),
             const SizedBox(height: 8),
             
@@ -524,14 +531,14 @@ class _ClientCard extends StatelessWidget {
                     Icon(
                       client.hasAiConversations ? Icons.smart_toy : Icons.smart_toy_outlined,
                       size: 14,
-                      color: client.hasAiConversations ? VividColors.cyan : VividColors.textMuted,
+                      color: client.hasAiConversations ? VividColors.cyan : vc.textMuted,
                     ),
                     const SizedBox(width: 4),
                     Text(
                       client.hasAiConversations ? 'AI Enabled' : 'AI Disabled',
                       style: TextStyle(
                         fontSize: 11,
-                        color: client.hasAiConversations ? VividColors.cyan : VividColors.textMuted,
+                        color: client.hasAiConversations ? VividColors.cyan : vc.textMuted,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -543,25 +550,25 @@ class _ClientCard extends StatelessWidget {
               const SizedBox(height: 8),
               Row(
                 children: [
-                  const Icon(Icons.phone, size: 12, color: VividColors.textMuted),
+                  Icon(Icons.phone, size: 12, color: vc.textMuted),
                   const SizedBox(width: 4),
                   Text(
                     client.businessPhone!,
-                    style: const TextStyle(color: VividColors.textMuted, fontSize: 11),
+                    style: TextStyle(color: vc.textMuted, fontSize: 11),
                   ),
                 ],
               ),
             ],
-            
+
             if (client.bookingsTable != null) ...[
               const SizedBox(height: 4),
               Row(
                 children: [
-                  const Icon(Icons.calendar_month, size: 12, color: VividColors.textMuted),
+                  Icon(Icons.calendar_month, size: 12, color: vc.textMuted),
                   const SizedBox(width: 4),
                   Text(
                     client.bookingsTable!,
-                    style: const TextStyle(color: VividColors.textMuted, fontSize: 11),
+                    style: TextStyle(color: vc.textMuted, fontSize: 11),
                   ),
                 ],
               ),
@@ -584,11 +591,12 @@ class _ClientDetail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     final provider = context.watch<AdminProvider>();
     final users = provider.selectedClientUsers;
 
     return Container(
-      color: VividColors.darkNavy,
+      color: vc.background,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -596,9 +604,9 @@ class _ClientDetail extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: VividColors.navy,
+              color: vc.surface,
               border: Border(
-                bottom: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+                bottom: BorderSide(color: vc.border),
               ),
             ),
             child: Row(
@@ -618,8 +626,8 @@ class _ClientDetail extends StatelessWidget {
                     children: [
                       Text(
                         client.name,
-                        style: const TextStyle(
-                          color: VividColors.textPrimary,
+                        style: TextStyle(
+                          color: vc.textPrimary,
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
                         ),
@@ -627,7 +635,7 @@ class _ClientDetail extends StatelessWidget {
                       const SizedBox(height: 4),
                       Text(
                         'Slug: ${client.slug} ${client.businessPhone != null ? "• Phone: ${client.businessPhone}" : ""}',
-                        style: const TextStyle(color: VividColors.textMuted, fontSize: 13),
+                        style: TextStyle(color: vc.textMuted, fontSize: 13),
                       ),
                     ],
                   ),
@@ -641,10 +649,10 @@ class _ClientDetail extends StatelessWidget {
             padding: const EdgeInsets.all(20),
             child: Row(
               children: [
-                const Text(
+                Text(
                   'Users',
                   style: TextStyle(
-                    color: VividColors.textPrimary,
+                    color: vc.textPrimary,
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
                   ),
@@ -683,9 +691,9 @@ class _ClientDetail extends StatelessWidget {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.person_add, size: 48, color: VividColors.textMuted.withOpacity(0.5)),
+                        Icon(Icons.person_add, size: 48, color: vc.textMuted.withOpacity(0.5)),
                         const SizedBox(height: 12),
-                        const Text('No users yet', style: TextStyle(color: VividColors.textMuted)),
+                        Text('No users yet', style: TextStyle(color: vc.textMuted)),
                       ],
                     ),
                   )
@@ -715,21 +723,22 @@ class _ClientDetail extends StatelessWidget {
   }
 
   void _confirmToggleBlock(BuildContext context, AppUser user) {
+    final vc = context.vividColors;
     final isBlocking = !user.isBlocked;
     final newStatus = isBlocking ? 'blocked' : 'active';
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        backgroundColor: VividColors.navy,
+        backgroundColor: vc.surface,
         title: Text(
           isBlocking ? 'Block User' : 'Unblock User',
-          style: const TextStyle(color: VividColors.textPrimary),
+          style: TextStyle(color: vc.textPrimary),
         ),
         content: Text(
           isBlocking
               ? 'Block "${user.name}"? They will no longer be able to log in.'
               : 'Unblock "${user.name}"? They will be able to log in again.',
-          style: const TextStyle(color: VividColors.textMuted),
+          style: TextStyle(color: vc.textMuted),
         ),
         actions: [
           TextButton(
@@ -793,11 +802,12 @@ class _UserTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: VividColors.deepBlue,
+        color: vc.surfaceAlt,
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
@@ -824,8 +834,8 @@ class _UserTile extends StatelessWidget {
                     Flexible(
                       child: Text(
                         user.name,
-                        style: const TextStyle(
-                          color: VividColors.textPrimary,
+                        style: TextStyle(
+                          color: vc.textPrimary,
                           fontWeight: FontWeight.w500,
                         ),
                         overflow: TextOverflow.ellipsis,
@@ -838,7 +848,7 @@ class _UserTile extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   user.email,
-                  style: const TextStyle(color: VividColors.textMuted, fontSize: 12),
+                  style: TextStyle(color: vc.textMuted, fontSize: 12),
                 ),
               ],
             ),
@@ -859,7 +869,7 @@ class _UserTile extends StatelessWidget {
           IconButton(
             onPressed: onEdit,
             icon: const Icon(Icons.edit, size: 18),
-            color: VividColors.textMuted,
+            color: vc.textMuted,
           ),
           IconButton(
             onPressed: onToggleBlock,
@@ -886,7 +896,8 @@ class _RoleBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final config = _getRoleConfig(role);
+    final vc = context.vividColors;
+    final config = _getRoleConfig(context, role);
     
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -913,7 +924,8 @@ class _RoleBadge extends StatelessWidget {
     );
   }
 
-  _RoleConfig _getRoleConfig(String role) {
+  _RoleConfig _getRoleConfig(BuildContext context, String role) {
+    final vc = context.vividColors;
     switch (role.toLowerCase()) {
       case 'admin':
         return _RoleConfig(
@@ -942,7 +954,7 @@ class _RoleBadge extends StatelessWidget {
       default:
         return _RoleConfig(
           label: role,
-          color: VividColors.textMuted,
+          color: vc.textMuted,
           icon: Icons.person,
         );
     }
@@ -968,6 +980,7 @@ class _RoleConfig {
 class _UsersTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     final provider = context.watch<AdminProvider>();
     final users = provider.allUsers;
 
@@ -984,8 +997,8 @@ class _UsersTab extends StatelessWidget {
                 children: [
                   Text(
                     'All Users (${users.length})',
-                    style: const TextStyle(
-                      color: VividColors.textPrimary,
+                    style: TextStyle(
+                      color: vc.textPrimary,
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
                     ),
@@ -999,18 +1012,18 @@ class _UsersTab extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 decoration: BoxDecoration(
-                  color: VividColors.navy,
+                  color: vc.surface,
                   border: Border(
-                    bottom: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+                    bottom: BorderSide(color: vc.border),
                   ),
                 ),
-                child: const Row(
+                child: Row(
                   children: [
-                    Expanded(flex: 2, child: Text('Name', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
-                    Expanded(flex: 3, child: Text('Email', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
-                    Expanded(flex: 1, child: Text('Role', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
-                    Expanded(flex: 2, child: Text('Client', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
-                    SizedBox(width: 90, child: Text('Actions', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
+                    Expanded(flex: 2, child: Text('Name', style: TextStyle(color: vc.textMuted, fontWeight: FontWeight.w600))),
+                    Expanded(flex: 3, child: Text('Email', style: TextStyle(color: vc.textMuted, fontWeight: FontWeight.w600))),
+                    Expanded(flex: 1, child: Text('Role', style: TextStyle(color: vc.textMuted, fontWeight: FontWeight.w600))),
+                    Expanded(flex: 2, child: Text('Client', style: TextStyle(color: vc.textMuted, fontWeight: FontWeight.w600))),
+                    SizedBox(width: 90, child: Text('Actions', style: TextStyle(color: vc.textMuted, fontWeight: FontWeight.w600))),
                   ],
                 ),
               ),
@@ -1018,7 +1031,7 @@ class _UsersTab extends StatelessWidget {
             // Users list
             Expanded(
               child: users.isEmpty
-                      ? const Center(child: Text('No users found', style: TextStyle(color: VividColors.textMuted)))
+                      ? Center(child: Text('No users found', style: TextStyle(color: vc.textMuted)))
                       : ListView.builder(
                           itemCount: users.length,
                           itemBuilder: (context, index) {
@@ -1046,11 +1059,12 @@ class _UsersTab extends StatelessWidget {
     String role,
     AdminProvider provider,
   ) {
+    final vc = context.vividColors;
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: VividColors.deepBlue,
+        color: vc.surfaceAlt,
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
@@ -1065,8 +1079,8 @@ class _UsersTab extends StatelessWidget {
                     Flexible(
                       child: Text(
                         user['name'] ?? '',
-                        style: const TextStyle(
-                          color: VividColors.textPrimary,
+                        style: TextStyle(
+                          color: vc.textPrimary,
                           fontWeight: FontWeight.w500,
                         ),
                         overflow: TextOverflow.ellipsis,
@@ -1080,7 +1094,7 @@ class _UsersTab extends StatelessWidget {
                 // Email
                 Text(
                   user['email'] ?? '',
-                  style: const TextStyle(color: VividColors.textMuted, fontSize: 12),
+                  style: TextStyle(color: vc.textMuted, fontSize: 12),
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
@@ -1114,11 +1128,12 @@ class _UsersTab extends StatelessWidget {
     String role,
     AdminProvider provider,
   ) {
+    final vc = context.vividColors;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(color: VividColors.tealBlue.withOpacity(0.1)),
+          bottom: BorderSide(color: vc.borderSubtle),
         ),
       ),
       child: Row(
@@ -1127,14 +1142,14 @@ class _UsersTab extends StatelessWidget {
             flex: 2,
             child: Text(
               user['name'] ?? '',
-              style: const TextStyle(color: VividColors.textPrimary),
+              style: TextStyle(color: vc.textPrimary),
             ),
           ),
           Expanded(
             flex: 3,
             child: Text(
               user['email'] ?? '',
-              style: const TextStyle(color: VividColors.textMuted),
+              style: TextStyle(color: vc.textMuted),
             ),
           ),
           Expanded(
@@ -1167,6 +1182,7 @@ class _UsersTab extends StatelessWidget {
     Map<String, dynamic> user,
     AdminProvider provider,
   ) {
+    final vc = context.vividColors;
     return SizedBox(
       width: 90,
       child: Row(
@@ -1195,16 +1211,16 @@ class _UsersTab extends StatelessWidget {
               final confirmed = await showDialog<bool>(
                 context: context,
                 builder: (ctx) => AlertDialog(
-                  backgroundColor: VividColors.navy,
+                  backgroundColor: vc.surface,
                   title: Text(
                     isBlocking ? 'Block User' : 'Unblock User',
-                    style: const TextStyle(color: VividColors.textPrimary),
+                    style: TextStyle(color: vc.textPrimary),
                   ),
                   content: Text(
                     isBlocking
                         ? 'Block "$userName"? They will no longer be able to log in.'
                         : 'Unblock "$userName"? They will be able to log in again.',
-                    style: const TextStyle(color: VividColors.textMuted),
+                    style: TextStyle(color: vc.textMuted),
                   ),
                   actions: [
                     TextButton(
@@ -1273,6 +1289,7 @@ class _UsersTab extends StatelessWidget {
     String userName,
     AdminProvider provider,
   ) {
+    final vc = context.vividColors;
     final passwordController = TextEditingController();
     final confirmPasswordController = TextEditingController();
     bool showPassword = false;
@@ -1283,7 +1300,7 @@ class _UsersTab extends StatelessWidget {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
           return AlertDialog(
-            backgroundColor: VividColors.navy,
+            backgroundColor: vc.surface,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             title: Row(
               children: [
@@ -1292,7 +1309,7 @@ class _UsersTab extends StatelessWidget {
                 Expanded(
                   child: Text(
                     'Reset Password for $userName',
-                    style: const TextStyle(color: VividColors.textPrimary, fontSize: 16),
+                    style: TextStyle(color: vc.textPrimary, fontSize: 16),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -1308,52 +1325,52 @@ class _UsersTab extends StatelessWidget {
                   TextFormField(
                     controller: passwordController,
                     obscureText: !showPassword,
-                    style: const TextStyle(color: VividColors.textPrimary),
+                    style: TextStyle(color: vc.textPrimary),
                     decoration: InputDecoration(
                       labelText: 'New Password',
-                      labelStyle: const TextStyle(color: VividColors.textMuted, fontSize: 12),
-                      hintStyle: TextStyle(color: VividColors.textMuted.withOpacity(0.5)),
-                      prefixIcon: const Icon(Icons.lock, color: VividColors.textMuted, size: 18),
+                      labelStyle: TextStyle(color: vc.textMuted, fontSize: 12),
+                      hintStyle: TextStyle(color: vc.textMuted.withOpacity(0.5)),
+                      prefixIcon: Icon(Icons.lock, color: vc.textMuted, size: 18),
                       suffixIcon: IconButton(
                         icon: Icon(
                           showPassword ? Icons.visibility_off : Icons.visibility,
-                          color: VividColors.textMuted,
+                          color: vc.textMuted,
                           size: 18,
                         ),
                         onPressed: () => setDialogState(() => showPassword = !showPassword),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(color: VividColors.tealBlue.withOpacity(0.3)),
+                        borderSide: BorderSide(color: vc.popupBorder),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                         borderSide: const BorderSide(color: VividColors.cyan),
                       ),
                       filled: true,
-                      fillColor: VividColors.deepBlue,
+                      fillColor: vc.surfaceAlt,
                     ),
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: confirmPasswordController,
                     obscureText: !showPassword,
-                    style: const TextStyle(color: VividColors.textPrimary),
+                    style: TextStyle(color: vc.textPrimary),
                     decoration: InputDecoration(
                       labelText: 'Confirm Password',
-                      labelStyle: const TextStyle(color: VividColors.textMuted, fontSize: 12),
-                      hintStyle: TextStyle(color: VividColors.textMuted.withOpacity(0.5)),
-                      prefixIcon: const Icon(Icons.lock, color: VividColors.textMuted, size: 18),
+                      labelStyle: TextStyle(color: vc.textMuted, fontSize: 12),
+                      hintStyle: TextStyle(color: vc.textMuted.withOpacity(0.5)),
+                      prefixIcon: Icon(Icons.lock, color: vc.textMuted, size: 18),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(color: VividColors.tealBlue.withOpacity(0.3)),
+                        borderSide: BorderSide(color: vc.popupBorder),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                         borderSide: const BorderSide(color: VividColors.cyan),
                       ),
                       filled: true,
-                      fillColor: VividColors.deepBlue,
+                      fillColor: vc.surfaceAlt,
                     ),
                   ),
                 ],
@@ -1510,13 +1527,14 @@ class _ClientDialogState extends State<_ClientDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     final isEdit = widget.client != null;
 
     return AlertDialog(
-      backgroundColor: VividColors.navy,
+      backgroundColor: vc.surface,
       title: Text(
         isEdit ? 'Edit Client' : 'Add Client',
-        style: const TextStyle(color: VividColors.textPrimary),
+        style: TextStyle(color: vc.textPrimary),
       ),
       content: SizedBox(
         width: MediaQuery.of(context).size.width < 600
@@ -1530,19 +1548,19 @@ class _ClientDialogState extends State<_ClientDialog> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Basic Info Section
-                _buildSectionHeader(Icons.business, 'Basic Information'),
+                _buildSectionHeader(context, Icons.business, 'Basic Information'),
                 const SizedBox(height: 12),
-                _buildTextField(_nameController, 'Client Name', 'Enter client name'),
+                _buildTextField(context, _nameController, 'Client Name', 'Enter client name'),
                 const SizedBox(height: 12),
-                _buildTextField(_slugController, 'Slug', 'e.g., 3bs, karisma'),
+                _buildTextField(context, _slugController, 'Slug', 'e.g., 3bs, karisma'),
                 const SizedBox(height: 12),
-                _buildTextField(_bookingsTableController, 'Bookings Table', 'e.g., bookings_demo_karisma', required: false),
+                _buildTextField(context, _bookingsTableController, 'Bookings Table', 'e.g., bookings_demo_karisma', required: false),
                 const SizedBox(height: 20),
-                
+
                 // Enabled Features
-                const Text(
+                Text(
                   'Enabled Features',
-                  style: TextStyle(color: VividColors.textPrimary, fontWeight: FontWeight.w500),
+                  style: TextStyle(color: vc.textPrimary, fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 8),
                 Wrap(
@@ -1564,9 +1582,9 @@ class _ClientDialogState extends State<_ClientDialog> {
                       selectedColor: VividColors.brightBlue.withOpacity(0.3),
                       checkmarkColor: VividColors.cyan,
                       labelStyle: TextStyle(
-                        color: isSelected ? VividColors.cyan : VividColors.textMuted,
+                        color: isSelected ? VividColors.cyan : vc.textMuted,
                       ),
-                      backgroundColor: VividColors.deepBlue,
+                      backgroundColor: vc.surfaceAlt,
                     );
                   }).toList(),
                 ),
@@ -1575,15 +1593,15 @@ class _ClientDialogState extends State<_ClientDialog> {
                 // AI Conversations toggle
                 if (_selectedFeatures.contains('conversations'))
                   SwitchListTile(
-                    title: const Text(
+                    title: Text(
                       'AI-Powered Conversations',
-                      style: TextStyle(color: VividColors.textPrimary, fontSize: 14),
+                      style: TextStyle(color: vc.textPrimary, fontSize: 14),
                     ),
                     subtitle: Text(
                       _hasAiConversations
                           ? 'AI handles customer messages automatically'
                           : 'All messages go directly to managers',
-                      style: const TextStyle(color: VividColors.textMuted, fontSize: 12),
+                      style: TextStyle(color: vc.textMuted, fontSize: 12),
                     ),
                     value: _hasAiConversations,
                     onChanged: (val) => setState(() => _hasAiConversations = val),
@@ -1591,7 +1609,7 @@ class _ClientDialogState extends State<_ClientDialog> {
                     contentPadding: EdgeInsets.zero,
                     secondary: Icon(
                       Icons.smart_toy,
-                      color: _hasAiConversations ? VividColors.cyan : VividColors.textMuted,
+                      color: _hasAiConversations ? VividColors.cyan : vc.textMuted,
                       size: 20,
                     ),
                   ),
@@ -1601,6 +1619,7 @@ class _ClientDialogState extends State<_ClientDialog> {
                 // Only show config for enabled features
                 if (_selectedFeatures.contains('conversations')) ...[
                   _buildFeatureConfigSection(
+                    context,
                     icon: Icons.chat_bubble,
                     title: 'Conversations',
                     color: Colors.blue,
@@ -1611,9 +1630,10 @@ class _ClientDialogState extends State<_ClientDialog> {
                   ),
                   const SizedBox(height: 16),
                 ],
-                
+
                 if (_selectedFeatures.contains('broadcasts')) ...[
                   _buildFeatureConfigSection(
+                    context,
                     icon: Icons.campaign,
                     title: 'Broadcasts',
                     color: Colors.orange,
@@ -1624,9 +1644,10 @@ class _ClientDialogState extends State<_ClientDialog> {
                   ),
                   const SizedBox(height: 16),
                 ],
-                
+
                 if (_selectedFeatures.contains('booking_reminders')) ...[
                   _buildFeatureConfigSection(
+                    context,
                     icon: Icons.notifications_active,
                     title: 'Booking Reminders',
                     color: Colors.green,
@@ -1637,9 +1658,10 @@ class _ClientDialogState extends State<_ClientDialog> {
                   ),
                   const SizedBox(height: 16),
                 ],
-                
+
                 if (_selectedFeatures.contains('manager_chat')) ...[
                   _buildFeatureConfigSection(
+                    context,
                     icon: Icons.smart_toy,
                     title: 'Manager Chat (AI)',
                     color: Colors.purple,
@@ -1670,15 +1692,16 @@ class _ClientDialogState extends State<_ClientDialog> {
     );
   }
 
-  Widget _buildSectionHeader(IconData icon, String title) {
+  Widget _buildSectionHeader(BuildContext context, IconData icon, String title) {
+    final vc = context.vividColors;
     return Row(
       children: [
         Icon(icon, color: VividColors.cyan, size: 18),
         const SizedBox(width: 8),
         Text(
           title,
-          style: const TextStyle(
-            color: VividColors.textPrimary,
+          style: TextStyle(
+            color: vc.textPrimary,
             fontWeight: FontWeight.w600,
             fontSize: 14,
           ),
@@ -1687,7 +1710,8 @@ class _ClientDialogState extends State<_ClientDialog> {
     );
   }
 
-  Widget _buildFeatureConfigSection({
+  Widget _buildFeatureConfigSection(
+    BuildContext context, {
     required IconData icon,
     required String title,
     required Color color,
@@ -1723,6 +1747,7 @@ class _ClientDialogState extends State<_ClientDialog> {
           const SizedBox(height: 12),
           if (phoneController != null) ...[
             _buildTextField(
+              context,
               phoneController,
               'Phone',
               phoneHint ?? 'WhatsApp number',
@@ -1731,6 +1756,7 @@ class _ClientDialogState extends State<_ClientDialog> {
             const SizedBox(height: 10),
           ],
           _buildTextField(
+            context,
             webhookController,
             'Webhook URL',
             webhookHint,
@@ -1742,29 +1768,31 @@ class _ClientDialogState extends State<_ClientDialog> {
   }
 
   Widget _buildTextField(
+    BuildContext context,
     TextEditingController controller,
     String label,
     String hint, {
     bool required = true,
   }) {
+    final vc = context.vividColors;
     return TextFormField(
       controller: controller,
-      style: const TextStyle(color: VividColors.textPrimary),
+      style: TextStyle(color: vc.textPrimary),
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
-        labelStyle: const TextStyle(color: VividColors.textMuted),
-        hintStyle: TextStyle(color: VividColors.textMuted.withOpacity(0.5)),
+        labelStyle: TextStyle(color: vc.textMuted),
+        hintStyle: TextStyle(color: vc.textMuted.withOpacity(0.5)),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: VividColors.tealBlue.withOpacity(0.3)),
+          borderSide: BorderSide(color: vc.popupBorder),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
           borderSide: const BorderSide(color: VividColors.cyan),
         ),
         filled: true,
-        fillColor: VividColors.deepBlue,
+        fillColor: vc.surfaceAlt,
       ),
       validator: required ? (v) => v?.isEmpty == true ? 'Required' : null : null,
     );
@@ -1953,13 +1981,14 @@ class _UserDialogState extends State<_UserDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     final isEdit = widget.user != null;
 
     return AlertDialog(
-      backgroundColor: VividColors.navy,
+      backgroundColor: vc.surface,
       title: Text(
         isEdit ? 'Edit User' : 'Add User',
-        style: const TextStyle(color: VividColors.textPrimary),
+        style: TextStyle(color: vc.textPrimary),
       ),
       content: SizedBox(
         width: MediaQuery.of(context).size.width < 600
@@ -1972,11 +2001,12 @@ class _UserDialogState extends State<_UserDialog> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildTextField(_nameController, 'Name', 'User\'s name'),
+                _buildTextField(context, _nameController, 'Name', 'User\'s name'),
                 const SizedBox(height: 16),
-                _buildTextField(_emailController, 'Email', 'login@email.com'),
+                _buildTextField(context, _emailController, 'Email', 'login@email.com'),
                 const SizedBox(height: 16),
                 _buildPasswordField(
+                  context,
                   _passwordController,
                   isEdit ? 'New Password (optional)' : 'Password',
                   'Enter password',
@@ -1985,6 +2015,7 @@ class _UserDialogState extends State<_UserDialog> {
                 if (!isEdit) ...[
                   const SizedBox(height: 16),
                   _buildPasswordField(
+                    context,
                     _confirmPasswordController,
                     'Confirm Password',
                     'Re-enter password',
@@ -1994,19 +2025,19 @@ class _UserDialogState extends State<_UserDialog> {
                 const SizedBox(height: 20),
                 
                 // Role selection
-                const Text(
+                Text(
                   'Role',
                   style: TextStyle(
-                    color: VividColors.textPrimary,
+                    color: vc.textPrimary,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
                 const SizedBox(height: 8),
                 Container(
                   decoration: BoxDecoration(
-                    color: VividColors.deepBlue,
+                    color: vc.surfaceAlt,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: VividColors.tealBlue.withOpacity(0.3)),
+                    border: Border.all(color: vc.popupBorder),
                   ),
                   child: Column(
                     children: _roles.map((role) {
@@ -2028,7 +2059,7 @@ class _UserDialogState extends State<_UserDialog> {
                           decoration: BoxDecoration(
                             color: isSelected ? (role['color'] as Color).withOpacity(0.15) : null,
                             border: _roles.last != role 
-                                ? Border(bottom: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)))
+                                ? Border(bottom: BorderSide(color: vc.border))
                                 : null,
                           ),
                           child: Row(
@@ -2039,7 +2070,7 @@ class _UserDialogState extends State<_UserDialog> {
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
                                   border: Border.all(
-                                    color: isSelected ? role['color'] as Color : VividColors.textMuted,
+                                    color: isSelected ? role['color'] as Color : vc.textMuted,
                                     width: 2,
                                   ),
                                   color: isSelected ? role['color'] as Color : Colors.transparent,
@@ -2052,7 +2083,7 @@ class _UserDialogState extends State<_UserDialog> {
                               Icon(
                                 role['icon'] as IconData,
                                 size: 18,
-                                color: isSelected ? role['color'] as Color : VividColors.textMuted,
+                                color: isSelected ? role['color'] as Color : vc.textMuted,
                               ),
                               const SizedBox(width: 8),
                               Expanded(
@@ -2062,14 +2093,14 @@ class _UserDialogState extends State<_UserDialog> {
                                     Text(
                                       role['label'] as String,
                                       style: TextStyle(
-                                        color: isSelected ? VividColors.textPrimary : VividColors.textMuted,
+                                        color: isSelected ? vc.textPrimary : vc.textMuted,
                                         fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
                                       ),
                                     ),
                                     Text(
                                       role['description'] as String,
                                       style: TextStyle(
-                                        color: VividColors.textMuted.withOpacity(0.7),
+                                        color: vc.textMuted.withOpacity(0.7),
                                         fontSize: 11,
                                       ),
                                     ),
@@ -2123,12 +2154,12 @@ class _UserDialogState extends State<_UserDialog> {
                     decoration: BoxDecoration(
                       color: _showCustomPermissions 
                           ? Colors.purple.withOpacity(0.1) 
-                          : VividColors.deepBlue,
+                          : vc.surfaceAlt,
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
                         color: _showCustomPermissions 
                             ? Colors.purple.withOpacity(0.3) 
-                            : VividColors.tealBlue.withOpacity(0.3),
+                            : vc.popupBorder,
                       ),
                     ),
                     child: Row(
@@ -2140,7 +2171,7 @@ class _UserDialogState extends State<_UserDialog> {
                           size: 18,
                           color: _showCustomPermissions 
                               ? Colors.purple 
-                              : VividColors.textMuted,
+                              : vc.textMuted,
                         ),
                         const SizedBox(width: 8),
                         Expanded(
@@ -2151,8 +2182,8 @@ class _UserDialogState extends State<_UserDialog> {
                                 'Custom Permissions',
                                 style: TextStyle(
                                   color: _showCustomPermissions 
-                                      ? VividColors.textPrimary 
-                                      : VividColors.textMuted,
+                                      ? vc.textPrimary 
+                                      : vc.textMuted,
                                   fontWeight: FontWeight.w500,
                                 ),
                               ),
@@ -2161,7 +2192,7 @@ class _UserDialogState extends State<_UserDialog> {
                                     ? 'Override role defaults'
                                     : 'Use role defaults',
                                 style: TextStyle(
-                                  color: VividColors.textMuted.withOpacity(0.7),
+                                  color: vc.textMuted.withOpacity(0.7),
                                   fontSize: 11,
                                 ),
                               ),
@@ -2172,7 +2203,7 @@ class _UserDialogState extends State<_UserDialog> {
                           _showCustomPermissions 
                               ? Icons.keyboard_arrow_up 
                               : Icons.keyboard_arrow_down,
-                          color: VividColors.textMuted,
+                          color: vc.textMuted,
                         ),
                       ],
                     ),
@@ -2182,7 +2213,7 @@ class _UserDialogState extends State<_UserDialog> {
                 // Custom Permissions List
                 if (_showCustomPermissions) ...[
                   const SizedBox(height: 12),
-                  _buildPermissionsSection(),
+                  _buildPermissionsSection(context),
                 ],
               ],
             ),
@@ -2205,7 +2236,8 @@ class _UserDialogState extends State<_UserDialog> {
     );
   }
 
-  Widget _buildPermissionsSection() {
+  Widget _buildPermissionsSection(BuildContext context) {
+    final vc = context.vividColors;
     // Group permissions by category
     final Map<String, List<Permission>> grouped = {};
     for (final perm in Permission.values) {
@@ -2215,23 +2247,24 @@ class _UserDialogState extends State<_UserDialog> {
 
     return Container(
       decoration: BoxDecoration(
-        color: VividColors.deepBlue,
+        color: vc.surfaceAlt,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: Colors.purple.withOpacity(0.2)),
       ),
       child: Column(
         children: grouped.entries.map((entry) {
-          return _buildPermissionCategory(entry.key, entry.value);
+          return _buildPermissionCategory(context, entry.key, entry.value);
         }).toList(),
       ),
     );
   }
 
-  Widget _buildPermissionCategory(String category, List<Permission> permissions) {
+  Widget _buildPermissionCategory(BuildContext context, String category, List<Permission> permissions) {
+    final vc = context.vividColors;
     return Container(
       decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(color: VividColors.tealBlue.withOpacity(0.1)),
+          bottom: BorderSide(color: vc.borderSubtle),
         ),
       ),
       child: Column(
@@ -2242,20 +2275,21 @@ class _UserDialogState extends State<_UserDialog> {
             child: Text(
               category,
               style: TextStyle(
-                color: VividColors.textMuted.withOpacity(0.7),
+                color: vc.textMuted.withOpacity(0.7),
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
                 letterSpacing: 0.5,
               ),
             ),
           ),
-          ...permissions.map((perm) => _buildPermissionTile(perm)),
+          ...permissions.map((perm) => _buildPermissionTile(context, perm)),
         ],
       ),
     );
   }
 
-  Widget _buildPermissionTile(Permission permission) {
+  Widget _buildPermissionTile(BuildContext context, Permission permission) {
+    final vc = context.vividColors;
     final isEnabled = _effectivePermissions.contains(permission);
     final isRoleDefault = _isRoleDefault(permission);
     final isCustom = _isCustomGranted(permission);
@@ -2272,7 +2306,7 @@ class _UserDialogState extends State<_UserDialog> {
       badgeColor = Colors.purple;
     } else if (isRoleDefault && isEnabled) {
       badge = 'DEFAULT';
-      badgeColor = VividColors.textMuted;
+      badgeColor = vc.textMuted;
     }
 
     return InkWell(
@@ -2292,7 +2326,7 @@ class _UserDialogState extends State<_UserDialog> {
                       ? VividColors.cyan 
                       : isRevoked 
                           ? Colors.red.withOpacity(0.5)
-                          : VividColors.textMuted.withOpacity(0.3),
+                          : vc.textMuted.withOpacity(0.3),
                   width: 2,
                 ),
                 color: isEnabled 
@@ -2315,10 +2349,10 @@ class _UserDialogState extends State<_UserDialog> {
                 permission.displayName,
                 style: TextStyle(
                   color: isRevoked 
-                      ? VividColors.textMuted.withOpacity(0.5)
+                      ? vc.textMuted.withOpacity(0.5)
                       : isEnabled 
-                          ? VividColors.textPrimary 
-                          : VividColors.textMuted,
+                          ? vc.textPrimary 
+                          : vc.textMuted,
                   fontSize: 13,
                   decoration: isRevoked ? TextDecoration.lineThrough : null,
                 ),
@@ -2349,70 +2383,74 @@ class _UserDialogState extends State<_UserDialog> {
   }
 
   Widget _buildTextField(
+    BuildContext context,
     TextEditingController controller,
     String label,
     String hint, {
     bool obscure = false,
     bool required = true,
   }) {
+    final vc = context.vividColors;
     return TextFormField(
       controller: controller,
       obscureText: obscure,
-      style: const TextStyle(color: VividColors.textPrimary),
+      style: TextStyle(color: vc.textPrimary),
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
-        labelStyle: const TextStyle(color: VividColors.textMuted),
-        hintStyle: TextStyle(color: VividColors.textMuted.withOpacity(0.5)),
+        labelStyle: TextStyle(color: vc.textMuted),
+        hintStyle: TextStyle(color: vc.textMuted.withOpacity(0.5)),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: VividColors.tealBlue.withOpacity(0.3)),
+          borderSide: BorderSide(color: vc.popupBorder),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
           borderSide: const BorderSide(color: VividColors.cyan),
         ),
         filled: true,
-        fillColor: VividColors.deepBlue,
+        fillColor: vc.surfaceAlt,
       ),
       validator: required ? (v) => v?.isEmpty == true ? 'Required' : null : null,
     );
   }
 
   Widget _buildPasswordField(
+    BuildContext context,
     TextEditingController controller,
     String label,
     String hint, {
     bool required = true,
   }) {
+    final vc = context.vividColors;
     return TextFormField(
       controller: controller,
       obscureText: !_showPassword,
-      style: const TextStyle(color: VividColors.textPrimary),
+      style: TextStyle(color: vc.textPrimary),
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
-        labelStyle: const TextStyle(color: VividColors.textMuted),
-        hintStyle: TextStyle(color: VividColors.textMuted.withOpacity(0.5)),
-        prefixIcon: const Icon(Icons.lock, color: VividColors.textMuted, size: 18),
+        labelStyle: TextStyle(color: vc.textMuted),
+        hintStyle: TextStyle(color: vc.textMuted.withOpacity(0.5)),
+        prefixIcon: Icon(Icons.lock, color: vc.textMuted, size: 18),
         suffixIcon: IconButton(
           icon: Icon(
             _showPassword ? Icons.visibility_off : Icons.visibility,
-            color: VividColors.textMuted,
+            color: vc.textMuted,
             size: 18,
           ),
           onPressed: () => setState(() => _showPassword = !_showPassword),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: VividColors.tealBlue.withOpacity(0.3)),
+          borderSide: BorderSide(color: vc.popupBorder),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
           borderSide: const BorderSide(color: VividColors.cyan),
         ),
         filled: true,
-        fillColor: VividColors.deepBlue,
+        fillColor: vc.surfaceAlt,
       ),
       validator: required ? (v) => v?.isEmpty == true ? 'Required' : null : null,
     );
@@ -2536,6 +2574,7 @@ class _AnalyticsTabState extends State<_AnalyticsTab> {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return Consumer<AdminProvider>(
       builder: (context, provider, _) {
         return LayoutBuilder(
@@ -2550,23 +2589,23 @@ class _AnalyticsTabState extends State<_AnalyticsTab> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: VividColors.navy,
+                        color: vc.surface,
                         border: Border(
-                          bottom: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+                          bottom: BorderSide(color: vc.border),
                         ),
                       ),
                       child: Row(
                         children: [
                           IconButton(
                             onPressed: () => setState(() => _selectedClient = null),
-                            icon: const Icon(Icons.arrow_back, color: VividColors.textPrimary),
+                            icon: Icon(Icons.arrow_back, color: vc.textPrimary),
                           ),
                           const SizedBox(width: 4),
                           Expanded(
                             child: Text(
                               _selectedClient!.name,
-                              style: const TextStyle(
-                                color: VividColors.textPrimary,
+                              style: TextStyle(
+                                color: vc.textPrimary,
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -2586,10 +2625,10 @@ class _AnalyticsTabState extends State<_AnalyticsTab> {
                 children: [
                   Padding(
                     padding: const EdgeInsets.all(16),
-                    child: const Text(
+                    child: Text(
                       'Select Client',
                       style: TextStyle(
-                        color: VividColors.textPrimary,
+                        color: vc.textPrimary,
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                       ),
@@ -2623,9 +2662,9 @@ class _AnalyticsTabState extends State<_AnalyticsTab> {
                 Container(
                   width: 280,
                   decoration: BoxDecoration(
-                    color: VividColors.navy,
+                    color: vc.surface,
                     border: Border(
-                      right: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+                      right: BorderSide(color: vc.border),
                     ),
                   ),
                   child: Column(
@@ -2636,10 +2675,10 @@ class _AnalyticsTabState extends State<_AnalyticsTab> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
+                            Text(
                               'Select Client',
                               style: TextStyle(
-                                color: VividColors.textPrimary,
+                                color: vc.textPrimary,
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -2648,7 +2687,7 @@ class _AnalyticsTabState extends State<_AnalyticsTab> {
                             Text(
                               'View internal metrics',
                               style: TextStyle(
-                                color: VividColors.textMuted.withOpacity(0.7),
+                                color: vc.textMuted.withOpacity(0.7),
                                 fontSize: 12,
                               ),
                             ),
@@ -2678,7 +2717,7 @@ class _AnalyticsTabState extends State<_AnalyticsTab> {
                 ),
                 Expanded(
                   child: _selectedClient == null
-                      ? _buildEmptyState()
+                      ? _buildEmptyState(context)
                       : ClientAnalyticsView(client: _selectedClient!),
                 ),
               ],
@@ -2689,7 +2728,8 @@ class _AnalyticsTabState extends State<_AnalyticsTab> {
     );
   }
 
-  Widget _buildEmptyState() {
+  Widget _buildEmptyState(BuildContext context) {
+    final vc = context.vividColors;
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -2697,13 +2737,13 @@ class _AnalyticsTabState extends State<_AnalyticsTab> {
           Icon(
             Icons.insights_outlined,
             size: 64,
-            color: VividColors.textMuted.withOpacity(0.3),
+            color: vc.textMuted.withOpacity(0.3),
           ),
           const SizedBox(height: 16),
-          const Text(
+          Text(
             'Select a client to view analytics',
             style: TextStyle(
-              color: VividColors.textMuted,
+              color: vc.textMuted,
               fontSize: 16,
             ),
           ),
@@ -2711,7 +2751,7 @@ class _AnalyticsTabState extends State<_AnalyticsTab> {
           Text(
             'Choose from the list on the left',
             style: TextStyle(
-              color: VividColors.textMuted.withOpacity(0.7),
+              color: vc.textMuted.withOpacity(0.7),
               fontSize: 13,
             ),
           ),
@@ -2734,6 +2774,7 @@ class _ClientListItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return InkWell(
       onTap: onTap,
       child: Container(
@@ -2756,14 +2797,14 @@ class _ClientListItem extends StatelessWidget {
               decoration: BoxDecoration(
                 color: isSelected 
                     ? VividColors.cyan.withOpacity(0.2) 
-                    : VividColors.deepBlue,
+                    : vc.surfaceAlt,
                 borderRadius: BorderRadius.circular(10),
               ),
               alignment: Alignment.center,
               child: Text(
                 client.name.substring(0, 1).toUpperCase(),
                 style: TextStyle(
-                  color: isSelected ? VividColors.cyan : VividColors.textMuted,
+                  color: isSelected ? VividColors.cyan : vc.textMuted,
                   fontWeight: FontWeight.bold,
                   fontSize: 16,
                 ),
@@ -2779,7 +2820,7 @@ class _ClientListItem extends StatelessWidget {
                   Text(
                     client.name,
                     style: TextStyle(
-                      color: isSelected ? VividColors.textPrimary : VividColors.textMuted,
+                      color: isSelected ? vc.textPrimary : vc.textMuted,
                       fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
                     ),
                     overflow: TextOverflow.ellipsis,
@@ -2792,7 +2833,7 @@ class _ClientListItem extends StatelessWidget {
                             ? Icons.chat_bubble_outline 
                             : Icons.campaign_outlined,
                         size: 12,
-                        color: VividColors.textMuted.withOpacity(0.7),
+                        color: vc.textMuted.withOpacity(0.7),
                       ),
                       const SizedBox(width: 4),
                       Text(
@@ -2800,7 +2841,7 @@ class _ClientListItem extends StatelessWidget {
                             ? 'Conversations' 
                             : 'Broadcasts',
                         style: TextStyle(
-                          color: VividColors.textMuted.withOpacity(0.7),
+                          color: vc.textMuted.withOpacity(0.7),
                           fontSize: 11,
                         ),
                       ),
@@ -2813,7 +2854,7 @@ class _ClientListItem extends StatelessWidget {
             // Arrow
             Icon(
               Icons.chevron_right,
-              color: isSelected ? VividColors.cyan : VividColors.textMuted.withOpacity(0.3),
+              color: isSelected ? VividColors.cyan : vc.textMuted.withOpacity(0.3),
               size: 20,
             ),
           ],

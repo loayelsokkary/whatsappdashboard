@@ -971,7 +971,7 @@ class _ConversationsView extends StatelessWidget {
         if (compareEnabled && data.comparison != null)
           _buildPerformanceAlerts()
         else if (!compareEnabled)
-          _buildMutedNote(context, 'Enable comparison to see performance alerts'),
+          _buildMutedNote('Enable comparison to see performance alerts'),
       ],
     );
   }
@@ -986,12 +986,12 @@ class _ConversationsView extends StatelessWidget {
       _FunnelStage('Payments', m.paymentsDone, const Color(0xFF06B6D4)),
     ];
     final maxVal = stages.map((s) => s.count).fold<int>(0, (a, b) => a > b ? a : b);
-    if (maxVal == 0) return _buildMutedNote(context, 'No conversion data yet');
+    if (maxVal == 0) return _buildMutedNote('No conversion data yet', isDark: isDark);
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24),
-      decoration: _cardBoxDecoration(context),
+      decoration: _cardBoxDecoration(isDark: isDark),
       child: Column(
         children: stages.asMap().entries.map((entry) {
           final idx = entry.key;
@@ -1175,7 +1175,7 @@ class _ConversationsView extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      decoration: _cardBoxDecoration(context),
+      decoration: _cardBoxDecoration(isDark: isDark),
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: all.take(15).toList().asMap().entries.map((entry) {
@@ -1400,7 +1400,7 @@ class _EmployeeResponseTimeSectionState extends State<_EmployeeResponseTimeSecti
         const SizedBox(height: 20),
         // Cards — uniform fixed-height grid
         if (entries.isEmpty)
-          _buildMutedNote(context, 'No employees match your search')
+          _buildMutedNote('No employees match your search', isDark: isDark)
         else if (widget.isWide)
           _buildWideGrid(entries)
         else
@@ -1452,7 +1452,6 @@ class _EmployeeResponseTimeSectionState extends State<_EmployeeResponseTimeSecti
             : VividColors.statusUrgent;
 
     return Builder(builder: (context) {
-      final vc = context.vividColors;
       final isDark = Theme.of(context).brightness == Brightness.dark;
       final tp = isDark ? vc.textPrimary : const Color(0xFF1E293B);
       final tm = isDark ? vc.textMuted : const Color(0xFF94A3B8);
@@ -1535,7 +1534,6 @@ class _BroadcastsView extends StatelessWidget {
   }
 
   Widget _buildCampaignFilter(BuildContext context) {
-    final vc = context.vividColors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -1566,7 +1564,6 @@ class _BroadcastsView extends StatelessWidget {
   }
 
   Widget _buildAllCampaignsView(BuildContext context) {
-    final vc = context.vividColors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final totalLeads = data.campaigns.fold<int>(0, (s, c) => s + c.leads);
     final totalRevenue = data.campaigns.fold<double>(0, (s, c) => s + c.revenue);
@@ -1632,7 +1629,7 @@ class _BroadcastsView extends StatelessWidget {
           color: isDark ? vc.textPrimary : const Color(0xFF1E293B), fontSize: 20, fontWeight: FontWeight.bold)),
         const SizedBox(height: 20),
         if (data.campaigns.isEmpty)
-          _buildMutedNote(context, 'No campaigns yet')
+          _buildMutedNote('No campaigns yet')
         else
           _buildCampaignsTable(context),
       ],
@@ -1640,7 +1637,6 @@ class _BroadcastsView extends StatelessWidget {
   }
 
   Widget _buildCampaignsTable(BuildContext context) {
-    final vc = context.vividColors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final sorted = [...data.campaigns]..sort((a, b) {
         if (a.sentAt == null && b.sentAt == null) return 0;
@@ -1651,7 +1647,7 @@ class _BroadcastsView extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      decoration: _cardBoxDecoration(context),
+      decoration: _cardBoxDecoration(),
       clipBehavior: Clip.antiAlias,
       child: Column(children: [
         // Header
@@ -1690,14 +1686,14 @@ class _BroadcastsView extends StatelessWidget {
                         style: TextStyle(color: isDark ? vc.textMuted : const Color(0xFF64748B), fontSize: 11)),
                 ],
               )),
-              Expanded(flex: 1, child: _tableCell(context, '${c.sent}')),
-              Expanded(flex: 1, child: _tableCell(context, '${c.responded}')),
-              Expanded(flex: 1, child: _tableCell(context, '${c.leads}')),
-              Expanded(flex: 1, child: _tableCell(context,
+              Expanded(flex: 1, child: _tableCell('${c.sent}')),
+              Expanded(flex: 1, child: _tableCell('${c.responded}')),
+              Expanded(flex: 1, child: _tableCell('${c.leads}')),
+              Expanded(flex: 1, child: _tableCell(
                   c.revenue > 0 ? '${c.revenue.toStringAsFixed(0)} BHD' : '-')),
-              Expanded(flex: 1, child: _tableCell(context,
+              Expanded(flex: 1, child: _tableCell(
                   '${c.engagementRate.toStringAsFixed(1)}%')),
-              Expanded(flex: 1, child: _tableCell(context,
+              Expanded(flex: 1, child: _tableCell(
                   c.sent > 0 ? '${(c.leads / c.sent * 100).toStringAsFixed(1)}%' : '-')),
             ]),
           );
@@ -1707,10 +1703,9 @@ class _BroadcastsView extends StatelessWidget {
   }
 
   Widget _buildSingleCampaignView(BuildContext context) {
-    final vc = context.vividColors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final campaign = data.campaigns.where((c) => c.id == selectedCampaignId).firstOrNull;
-    if (campaign == null) return _buildMutedNote(context, 'Campaign not found');
+    if (campaign == null) return _buildMutedNote('Campaign not found');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1860,9 +1855,7 @@ class _BroadcastsView extends StatelessWidget {
 // SHARED HELPERS
 // ================================================================
 
-BoxDecoration _cardBoxDecoration(BuildContext context, {bool isHighlight = false, Color? highlightColor}) {
-  final vc = context.vividColors;
-  final isDark = Theme.of(context).brightness == Brightness.dark;
+BoxDecoration _cardBoxDecoration({required bool isDark, required VividColorScheme vc, bool isHighlight = false, Color? highlightColor}) {
   return BoxDecoration(
     color: isDark ? vc.surface : Colors.white,
     borderRadius: BorderRadius.circular(20),
@@ -1911,13 +1904,11 @@ Widget _buildStatusCard(String text, IconData icon, Color color) {
   );
 }
 
-Widget _buildMutedNote(BuildContext context, String text) {
-  final vc = context.vividColors;
-  final isDark = Theme.of(context).brightness == Brightness.dark;
+Widget _buildMutedNote(String text, {bool isDark = true}) {
   return Container(
     width: double.infinity,
     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-    decoration: _cardBoxDecoration(context),
+    decoration: _cardBoxDecoration(isDark: isDark),
     child: Center(
       child: Text(text, style: TextStyle(
         color: isDark ? vc.textMuted : const Color(0xFF94A3B8), fontSize: 13)),
@@ -1925,9 +1916,7 @@ Widget _buildMutedNote(BuildContext context, String text) {
   );
 }
 
-Widget _tableCell(BuildContext context, String text, {Color? color, bool bold = false}) {
-  final vc = context.vividColors;
-  final isDark = Theme.of(context).brightness == Brightness.dark;
+Widget _tableCell(String text, {Color? color, bool bold = false, bool isDark = true}) {
   return Text(text, textAlign: TextAlign.center, style: TextStyle(
     color: color ?? (isDark ? vc.textSecondary : const Color(0xFF475569)), fontSize: 13,
     fontWeight: bold ? FontWeight.w600 : FontWeight.w400,
@@ -2115,7 +2104,7 @@ class _MetricCard extends StatelessWidget {
     } else if (isBad) {
       indicatorColor = VividColors.statusUrgent;
     } else {
-      indicatorColor = isDark ? const Color(0xFF4A5568) : const Color(0xFF94A3B8);
+      indicatorColor = isDark ? vc.textMuted : const Color(0xFF94A3B8);
     }
     // Arrow shows actual direction of change; color shows good/bad
     final arrow = isPositive ? '\u25B2' : '\u25BC';
@@ -2128,8 +2117,8 @@ class _MetricCard extends StatelessWidget {
           Text.rich(
             TextSpan(
               children: [
-                TextSpan(text: ' vs. ', style: TextStyle(color: (isDark ? const Color(0xFF4A5568) : const Color(0xFF94A3B8)).withValues(alpha: 0.5), fontSize: 10)),
-                TextSpan(text: compareLabel!, style: TextStyle(color: (isDark ? const Color(0xFF4A5568) : const Color(0xFF64748B)).withValues(alpha: 0.7), fontSize: 10, fontWeight: FontWeight.w700)),
+                TextSpan(text: ' vs. ', style: TextStyle(color: (isDark ? vc.textMuted : const Color(0xFF94A3B8)).withValues(alpha: 0.5), fontSize: 10)),
+                TextSpan(text: compareLabel!, style: TextStyle(color: (isDark ? vc.textMuted : const Color(0xFF64748B)).withValues(alpha: 0.7), fontSize: 10, fontWeight: FontWeight.w700)),
               ],
             ),
             overflow: TextOverflow.ellipsis,
@@ -2220,7 +2209,7 @@ class _TrendChartState extends State<_TrendChart> {
         child: Container(
           width: double.infinity,
           padding: const EdgeInsets.all(24),
-          decoration: _cardBoxDecoration(context),
+          decoration: _cardBoxDecoration(isDark: isDark),
           child: Center(
             child: Text(_emptyStateMessage(widget.title),
                 style: TextStyle(color: isDark ? vc.textMuted.withValues(alpha: 0.5) : const Color(0xFF94A3B8), fontSize: 13),
@@ -2245,7 +2234,7 @@ class _TrendChartState extends State<_TrendChart> {
         child: Container(
           width: double.infinity,
           padding: const EdgeInsets.all(24),
-          decoration: _cardBoxDecoration(context),
+          decoration: _cardBoxDecoration(isDark: isDark),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -2270,7 +2259,7 @@ class _TrendChartState extends State<_TrendChart> {
       child: Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24),
-      decoration: _cardBoxDecoration(context),
+      decoration: _cardBoxDecoration(isDark: isDark),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2687,7 +2676,6 @@ class _CampaignLabeledDialogState extends State<_CampaignLabeledDialog> {
   }
 
   void _handleRemove(LabeledCustomer customer) async {
-    final vc = context.vividColors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -2994,7 +2982,6 @@ class _PipelineDialogState extends State<_PipelineDialog> {
     }
 
     return Builder(builder: (context) {
-      final vc = context.vividColors;
       final isDark = Theme.of(context).brightness == Brightness.dark;
       return Container(
         margin: const EdgeInsets.only(bottom: 12),
@@ -3051,7 +3038,6 @@ class _PipelineDialogState extends State<_PipelineDialog> {
         _handleDrop(details.data, targetLabel);
       },
       builder: (context, candidateData, rejectedData) {
-        final vc = context.vividColors;
         final isDark = Theme.of(context).brightness == Brightness.dark;
         final isHovering = candidateData.isNotEmpty;
         return AnimatedContainer(
@@ -3114,7 +3100,6 @@ class _PipelineDialogState extends State<_PipelineDialog> {
       data: customer,
       feedback: Builder(
         builder: (context) {
-          final vc = context.vividColors;
           final isDark = Theme.of(context).brightness == Brightness.dark;
           return Material(
             color: Colors.transparent,
@@ -3142,7 +3127,6 @@ class _PipelineDialogState extends State<_PipelineDialog> {
   }
 
   void _handleRemove(LabeledCustomer customer) async {
-    final vc = context.vividColors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -3310,7 +3294,6 @@ Widget _dialogHeader(BuildContext context, {
   required int count,
   String? subtitle,
 }) {
-  final vc = context.vividColors;
   final isDark = Theme.of(context).brightness == Brightness.dark;
   final textPrimary = isDark ? vc.textPrimary : const Color(0xFF1E293B);
   final textMuted = isDark ? vc.textMuted : const Color(0xFF94A3B8);
@@ -3346,19 +3329,12 @@ Widget _dialogHeader(BuildContext context, {
   );
 }
 
-Widget _emptyState(BuildContext context, String msg) {
-  final vc = context.vividColors;
-  final isDark = Theme.of(context).brightness == Brightness.dark;
-  return Center(
-    child: Text(msg, style: TextStyle(
-      color: isDark ? vc.textMuted : const Color(0xFF94A3B8), fontSize: 13)));
-}
+Widget _emptyState(String msg, {bool isDark = true}) => Center(
+  child: Text(msg, style: TextStyle(
+    color: isDark ? vc.textMuted : const Color(0xFF94A3B8), fontSize: 13)));
 
-Widget _dialogDivider(BuildContext context) {
-  final vc = context.vividColors;
-  final isDark = Theme.of(context).brightness == Brightness.dark;
-  return Divider(height: 1, color: isDark ? vc.borderSubtle : const Color(0xFFE2E8F0));
-}
+Widget _dialogDivider({bool isDark = true}) =>
+    Divider(height: 1, color: isDark ? vc.borderSubtle : const Color(0xFFE2E8F0));
 
 // ================================================================
 // ENGAGED CUSTOMERS DIALOG (Engagement Rate)
@@ -3391,10 +3367,10 @@ class _EngagedCustomersDialog extends StatelessWidget {
               subtitle: 'Campaign recipients who sent at least one reply'),
             const SizedBox(height: 16),
             Expanded(
-              child: sorted.isEmpty ? _emptyState(context, 'No engaged customers') :
+              child: sorted.isEmpty ? _emptyState('No engaged customers', isDark: isDark) :
               ListView.separated(
                 itemCount: sorted.length,
-                separatorBuilder: (_, __) => _dialogDivider(context),
+                separatorBuilder: (_, __) => _dialogDivider(isDark: isDark),
                 itemBuilder: (_, i) {
                   final c = sorted[i];
                   return Padding(
@@ -3452,10 +3428,10 @@ class _ResponseTimesDialog extends StatelessWidget {
               subtitle: 'Per-conversation first-reply times (sorted slowest first)'),
             const SizedBox(height: 16),
             Expanded(
-              child: sorted.isEmpty ? _emptyState(context, 'No response time data') :
+              child: sorted.isEmpty ? _emptyState('No response time data', isDark: isDark) :
               ListView.separated(
                 itemCount: sorted.length,
-                separatorBuilder: (_, __) => _dialogDivider(context),
+                separatorBuilder: (_, __) => _dialogDivider(isDark: isDark),
                 itemBuilder: (_, i) {
                   final e = sorted[i];
                   final isOver30m = e.responseTimeSeconds > 1800;
@@ -3528,11 +3504,11 @@ class _MessagesSentDialog extends StatelessWidget {
             const SizedBox(height: 16),
             Expanded(
               child: agents.isEmpty && automatedCount == 0
-                  ? _emptyState(context, 'No sent messages')
+                  ? _emptyState('No sent messages', isDark: isDark)
                   : ListView(children: [
-                      ...agents.map((e) => _agentRow(context, e.key, e.value, total, VividColors.cyan, textPrimary, isDark)),
+                      ...agents.map((e) => _agentRow(e.key, e.value, total, VividColors.cyan, textPrimary, isDark)),
                       if (automatedCount > 0)
-                        _agentRow(context, 'Automated (Broadcast)', automatedCount, total,
+                        _agentRow('Automated (Broadcast)', automatedCount, total,
                             isDark ? vc.textMuted : const Color(0xFF94A3B8), textPrimary, isDark),
                     ]),
             ),
@@ -3542,7 +3518,7 @@ class _MessagesSentDialog extends StatelessWidget {
     );
   }
 
-  Widget _agentRow(BuildContext context, String name, int count, int total, Color color, Color textPrimary, bool isDark) {
+  Widget _agentRow(String name, int count, int total, Color color, Color textPrimary, bool isDark) {
     final pct = total > 0 ? (count / total * 100) : 0.0;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
@@ -3563,7 +3539,7 @@ class _MessagesSentDialog extends StatelessWidget {
             minHeight: 4,
           ),
         ),
-        _dialogDivider(context),
+        _dialogDivider(isDark: isDark),
       ]),
     );
   }
@@ -3598,10 +3574,10 @@ class _InboundCustomersDialog extends StatelessWidget {
               subtitle: 'Customers who sent messages (sorted by volume)'),
             const SizedBox(height: 16),
             Expanded(
-              child: customers.isEmpty ? _emptyState(context, 'No inbound messages') :
+              child: customers.isEmpty ? _emptyState('No inbound messages', isDark: isDark) :
               ListView.separated(
                 itemCount: customers.length,
-                separatorBuilder: (_, __) => _dialogDivider(context),
+                separatorBuilder: (_, __) => _dialogDivider(isDark: isDark),
                 itemBuilder: (_, i) {
                   final c = customers[i];
                   return Padding(
@@ -3668,10 +3644,10 @@ class _OpenConversationsDialog extends StatelessWidget {
               subtitle: 'Sorted by longest wait time first'),
             const SizedBox(height: 16),
             Expanded(
-              child: sorted.isEmpty ? _emptyState(context, 'No conversations') :
+              child: sorted.isEmpty ? _emptyState('No conversations', isDark: isDark) :
               ListView.separated(
                 itemCount: sorted.length,
-                separatorBuilder: (_, __) => _dialogDivider(context),
+                separatorBuilder: (_, __) => _dialogDivider(isDark: isDark),
                 itemBuilder: (_, i) {
                   final c = sorted[i];
                   final name = c.customerName ?? c.customerPhone;
@@ -3748,10 +3724,10 @@ class _AllCampaignsLeadsDialog extends StatelessWidget {
               subtitle: 'All lead sessions across campaigns (may include duplicates across campaigns)'),
             const SizedBox(height: 16),
             Expanded(
-              child: all.isEmpty ? _emptyState(context, 'No leads yet') :
+              child: all.isEmpty ? _emptyState('No leads yet', isDark: isDark) :
               ListView.separated(
                 itemCount: all.length,
-                separatorBuilder: (_, __) => _dialogDivider(context),
+                separatorBuilder: (_, __) => _dialogDivider(isDark: isDark),
                 itemBuilder: (_, i) {
                   final l = all[i];
                   return Padding(
@@ -3822,10 +3798,10 @@ class _AllCampaignsRevenueDialog extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Expanded(
-              child: withRevenue.isEmpty ? _emptyState(context, 'No revenue yet') :
+              child: withRevenue.isEmpty ? _emptyState('No revenue yet', isDark: isDark) :
               ListView.separated(
                 itemCount: withRevenue.length,
-                separatorBuilder: (_, __) => _dialogDivider(context),
+                separatorBuilder: (_, __) => _dialogDivider(isDark: isDark),
                 itemBuilder: (_, i) {
                   final c = withRevenue[i];
                   return Padding(
@@ -3879,10 +3855,10 @@ class _AllCampaignsEngagementDialog extends StatelessWidget {
               subtitle: 'Replied / Sent  (sorted highest first)'),
             const SizedBox(height: 16),
             Expanded(
-              child: sorted.isEmpty ? _emptyState(context, 'No campaigns') :
+              child: sorted.isEmpty ? _emptyState('No campaigns', isDark: isDark) :
               ListView.separated(
                 itemCount: sorted.length,
-                separatorBuilder: (_, __) => _dialogDivider(context),
+                separatorBuilder: (_, __) => _dialogDivider(isDark: isDark),
                 itemBuilder: (_, i) {
                   final c = sorted[i];
                   final color = c.engagementRate >= 10 ? VividColors.statusSuccess
@@ -3942,10 +3918,10 @@ class _AllCampaignsListDialog extends StatelessWidget {
               subtitle: 'All campaigns, newest first'),
             const SizedBox(height: 16),
             Expanded(
-              child: sorted.isEmpty ? _emptyState(context, 'No campaigns') :
+              child: sorted.isEmpty ? _emptyState('No campaigns', isDark: isDark) :
               ListView.separated(
                 itemCount: sorted.length,
-                separatorBuilder: (_, __) => _dialogDivider(context),
+                separatorBuilder: (_, __) => _dialogDivider(isDark: isDark),
                 itemBuilder: (_, i) {
                   final c = sorted[i];
                   return Padding(
@@ -4013,10 +3989,10 @@ class _AllRespondedDialog extends StatelessWidget {
               subtitle: 'Unique customers who replied to any campaign'),
             const SizedBox(height: 16),
             Expanded(
-              child: all.isEmpty ? _emptyState(context, 'No responses yet') :
+              child: all.isEmpty ? _emptyState('No responses yet', isDark: isDark) :
               ListView.separated(
                 itemCount: all.length,
-                separatorBuilder: (_, __) => _dialogDivider(context),
+                separatorBuilder: (_, __) => _dialogDivider(isDark: isDark),
                 itemBuilder: (_, i) {
                   final c = all[i];
                   return Padding(
@@ -4074,10 +4050,10 @@ class _CampaignRecipientsDialog extends StatelessWidget {
               subtitle: campaignName),
             const SizedBox(height: 16),
             Expanded(
-              child: recipients.isEmpty ? _emptyState(context, 'No recipients') :
+              child: recipients.isEmpty ? _emptyState('No recipients', isDark: isDark) :
               ListView.separated(
                 itemCount: recipients.length,
-                separatorBuilder: (_, __) => _dialogDivider(context),
+                separatorBuilder: (_, __) => _dialogDivider(isDark: isDark),
                 itemBuilder: (_, i) {
                   final r = recipients[i];
                   return Padding(
@@ -4134,10 +4110,10 @@ class _CampaignRespondedDialog extends StatelessWidget {
               subtitle: campaignName),
             const SizedBox(height: 16),
             Expanded(
-              child: sorted.isEmpty ? _emptyState(context, 'No responses yet') :
+              child: sorted.isEmpty ? _emptyState('No responses yet', isDark: isDark) :
               ListView.separated(
                 itemCount: sorted.length,
-                separatorBuilder: (_, __) => _dialogDivider(context),
+                separatorBuilder: (_, __) => _dialogDivider(isDark: isDark),
                 itemBuilder: (_, i) {
                   final c = sorted[i];
                   return Padding(

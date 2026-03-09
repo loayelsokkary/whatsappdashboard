@@ -83,13 +83,14 @@ class _ConversationListPanelState extends State<ConversationListPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return Container(
       constraints: BoxConstraints(minWidth: MediaQuery.of(context).size.width < 600 ? 0 : 280),
       decoration: BoxDecoration(
-        color: VividColors.navy,
+        color: vc.surface,
         border: Border(
           right: BorderSide(
-            color: VividColors.tealBlue.withOpacity(0.15),
+            color: VividColors.tealBlue.withValues(alpha: 0.15),
             width: 1,
           ),
         ),
@@ -108,6 +109,7 @@ class _ConversationListPanelState extends State<ConversationListPanel> {
   }
 
   Widget _buildHeader(BuildContext context) {
+    final vc = context.vividColors;
     final provider = context.watch<ConversationsProvider>();
 
     return Container(
@@ -115,7 +117,7 @@ class _ConversationListPanelState extends State<ConversationListPanel> {
       decoration: BoxDecoration(
         border: Border(
           bottom: BorderSide(
-            color: VividColors.tealBlue.withOpacity(0.2),
+            color: vc.border,
             width: 1,
           ),
         ),
@@ -138,8 +140,8 @@ class _ConversationListPanelState extends State<ConversationListPanel> {
                 ),
                 child: Text(
                   provider.conversations.length.toString(),
-                  style: const TextStyle(
-                    color: VividColors.darkNavy,
+                  style: TextStyle(
+                    color: vc.background,
                     fontWeight: FontWeight.bold,
                     fontSize: 12,
                   ),
@@ -153,27 +155,27 @@ class _ConversationListPanelState extends State<ConversationListPanel> {
           TextField(
             controller: _searchController,
             onChanged: _onSearchChanged,
-            style: const TextStyle(color: VividColors.textPrimary, fontSize: 14),
+            style: TextStyle(color: vc.textPrimary, fontSize: 14),
             decoration: InputDecoration(
               hintText: 'Search messages, names, phones...',
-              hintStyle: TextStyle(color: VividColors.textMuted.withOpacity(0.6)),
-              prefixIcon: const Icon(Icons.search, color: VividColors.textMuted, size: 20),
+              hintStyle: TextStyle(color: vc.textMuted.withValues(alpha: 0.6)),
+              prefixIcon: Icon(Icons.search, color: vc.textMuted, size: 20),
               suffixIcon: _searchController.text.isNotEmpty
                   ? IconButton(
-                      icon: const Icon(Icons.close, color: VividColors.textMuted, size: 18),
+                      icon: Icon(Icons.close, color: vc.textMuted, size: 18),
                       onPressed: _clearSearch,
                     )
                   : null,
               contentPadding: const EdgeInsets.symmetric(vertical: 12),
               filled: true,
-              fillColor: VividColors.darkNavy,
+              fillColor: vc.background,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
-                borderSide: BorderSide(color: VividColors.tealBlue.withOpacity(0.3)),
+                borderSide: BorderSide(color: vc.popupBorder),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
-                borderSide: BorderSide(color: VividColors.tealBlue.withOpacity(0.3)),
+                borderSide: BorderSide(color: vc.popupBorder),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
@@ -212,6 +214,7 @@ class _ConversationListPanelState extends State<ConversationListPanel> {
   }
 
   Widget _buildSearchResults() {
+    final vc = context.vividColors;
     if (_isSearching) {
       return const Center(
         child: Padding(
@@ -231,7 +234,7 @@ class _ConversationListPanelState extends State<ConversationListPanel> {
           padding: const EdgeInsets.all(32),
           child: Text(
             'No results',
-            style: TextStyle(color: VividColors.textMuted.withOpacity(0.6), fontSize: 14),
+            style: TextStyle(color: vc.textMuted.withValues(alpha: 0.6), fontSize: 14),
           ),
         ),
       );
@@ -246,7 +249,7 @@ class _ConversationListPanelState extends State<ConversationListPanel> {
             child: Text(
               'Messages',
               style: TextStyle(
-                color: VividColors.textMuted.withOpacity(0.7),
+                color: vc.textMuted.withValues(alpha: 0.7),
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
                 letterSpacing: 0.5,
@@ -265,6 +268,7 @@ class _ConversationListPanelState extends State<ConversationListPanel> {
   }
 
   Widget _buildNeedsReplyChip(BuildContext context, ConversationsProvider provider) {
+    final vc = context.vividColors;
     final isActive = provider.statusFilter == ConversationStatus.needsReply;
     final count = provider.needsReplyCount;
 
@@ -277,13 +281,13 @@ class _ConversationListPanelState extends State<ConversationListPanel> {
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         decoration: BoxDecoration(
           color: isActive
-              ? VividColors.statusUrgent.withOpacity(0.15)
-              : VividColors.darkNavy,
+              ? VividColors.statusUrgent.withValues(alpha: 0.15)
+              : vc.background,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: isActive
                 ? VividColors.statusUrgent
-                : VividColors.tealBlue.withOpacity(0.3),
+                : vc.popupBorder,
             width: isActive ? 1.5 : 1,
           ),
         ),
@@ -293,13 +297,13 @@ class _ConversationListPanelState extends State<ConversationListPanel> {
             Icon(
               Icons.reply,
               size: 12,
-              color: isActive ? VividColors.statusUrgent : VividColors.textMuted,
+              color: isActive ? VividColors.statusUrgent : vc.textMuted,
             ),
             const SizedBox(width: 4),
             Text(
               'Needs Reply',
               style: TextStyle(
-                color: isActive ? VividColors.statusUrgent : VividColors.textMuted,
+                color: isActive ? VividColors.statusUrgent : vc.textMuted,
                 fontSize: 11,
                 fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
               ),
@@ -308,7 +312,7 @@ class _ConversationListPanelState extends State<ConversationListPanel> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
               decoration: BoxDecoration(
-                color: VividColors.statusUrgent.withOpacity(isActive ? 0.3 : 0.15),
+                color: VividColors.statusUrgent.withValues(alpha: isActive ? 0.3 : 0.15),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
@@ -332,6 +336,7 @@ class _ConversationListPanelState extends State<ConversationListPanel> {
     String? value,
     String display,
   ) {
+    final vc = context.vividColors;
     final isActive = provider.labelFilter == value;
     final color = value != null ? _ConversationCard._getLabelColor(value) : VividColors.cyan;
 
@@ -343,17 +348,17 @@ class _ConversationListPanelState extends State<ConversationListPanel> {
           duration: const Duration(milliseconds: 150),
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
           decoration: BoxDecoration(
-            color: isActive ? color.withOpacity(0.2) : VividColors.darkNavy,
+            color: isActive ? color.withValues(alpha: 0.2) : vc.background,
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: isActive ? color : VividColors.tealBlue.withOpacity(0.3),
+              color: isActive ? color : vc.popupBorder,
               width: isActive ? 1.5 : 1,
             ),
           ),
           child: Text(
             display,
             style: TextStyle(
-              color: isActive ? color : VividColors.textMuted,
+              color: isActive ? color : vc.textMuted,
               fontSize: 11,
               fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
             ),
@@ -364,6 +369,7 @@ class _ConversationListPanelState extends State<ConversationListPanel> {
   }
 
   Widget _buildConversationList(BuildContext context) {
+    final vc = context.vividColors;
     final provider = context.watch<ConversationsProvider>();
 
     if (provider.conversations.isEmpty) {
@@ -376,19 +382,19 @@ class _ConversationListPanelState extends State<ConversationListPanel> {
               height: 80,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: VividColors.deepBlue.withOpacity(0.3),
+                color: vc.surfaceAlt.withValues(alpha: 0.3),
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.forum_outlined,
                 size: 40,
-                color: VividColors.textMuted,
+                color: vc.textMuted,
               ),
             ),
             const SizedBox(height: 20),
             Text(
               'No conversations yet',
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: VividColors.textMuted,
+                    color: vc.textMuted,
                   ),
             ),
             const SizedBox(height: 8),
@@ -396,7 +402,7 @@ class _ConversationListPanelState extends State<ConversationListPanel> {
               'Messages will appear here when\ncustomers start chatting',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: VividColors.textMuted.withOpacity(0.7),
+                    color: vc.textMuted.withValues(alpha: 0.7),
                   ),
             ),
           ],
@@ -436,6 +442,7 @@ class _ConversationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     // Watch the AI settings provider for real-time updates
     final aiSettingsProvider = context.watch<AiSettingsProvider>();
     final aiEnabled = aiSettingsProvider.isAiEnabled(conversation.customerPhone);
@@ -449,7 +456,7 @@ class _ConversationCard extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           decoration: BoxDecoration(
             color: isSelected
-                ? VividColors.brightBlue.withOpacity(0.1)
+                ? VividColors.brightBlue.withValues(alpha: 0.1)
                 : Colors.transparent,
             border: Border(
               left: BorderSide(
@@ -457,7 +464,7 @@ class _ConversationCard extends StatelessWidget {
                 width: 3,
               ),
               bottom: BorderSide(
-                color: VividColors.tealBlue.withOpacity(0.1),
+                color: vc.borderSubtle,
                 width: 1,
               ),
             ),
@@ -465,9 +472,9 @@ class _ConversationCard extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildAvatar(),
+              _buildAvatar(vc),
               const SizedBox(width: 14),
-              Expanded(child: _buildContent(context, aiEnabled)),
+              Expanded(child: _buildContent(context, aiEnabled, vc)),
             ],
           ),
         ),
@@ -475,7 +482,7 @@ class _ConversationCard extends StatelessWidget {
     );
   }
 
-  Widget _buildAvatar() {
+  Widget _buildAvatar(VividColorScheme vc) {
     return Stack(
       children: [
         Container(
@@ -510,7 +517,7 @@ class _ConversationCard extends StatelessWidget {
               color: _getStatusColor(),
               shape: BoxShape.circle,
               border: Border.all(
-                color: VividColors.navy,
+                color: vc.surface,
                 width: 2,
               ),
             ),
@@ -525,7 +532,7 @@ class _ConversationCard extends StatelessWidget {
     );
   }
 
-  Widget _buildContent(BuildContext context, bool aiEnabled) {
+  Widget _buildContent(BuildContext context, bool aiEnabled, VividColorScheme vc) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -536,7 +543,7 @@ class _ConversationCard extends StatelessWidget {
               child: Text(
                 conversation.displayName,
                 style: TextStyle(
-                  color: VividColors.textPrimary,
+                  color: vc.textPrimary,
                   fontWeight: conversation.unreadCount > 0
                       ? FontWeight.w600
                       : FontWeight.normal,
@@ -551,7 +558,7 @@ class _ConversationCard extends StatelessWidget {
               style: TextStyle(
                 color: conversation.unreadCount > 0
                     ? VividColors.cyan
-                    : VividColors.textMuted,
+                    : vc.textMuted,
                 fontSize: 11,
                 fontWeight:
                     conversation.unreadCount > 0 ? FontWeight.w600 : FontWeight.normal,
@@ -565,8 +572,8 @@ class _ConversationCard extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             conversation.customerPhone,
-            style: const TextStyle(
-              color: VividColors.textMuted,
+            style: TextStyle(
+              color: vc.textMuted,
               fontSize: 12,
             ),
           ),
@@ -582,8 +589,8 @@ class _ConversationCard extends StatelessWidget {
                 conversation.lastMessage,
                 style: TextStyle(
                   color: conversation.unreadCount > 0
-                      ? VividColors.textSecondary
-                      : VividColors.textMuted,
+                      ? vc.textSecondary
+                      : vc.textMuted,
                   fontSize: 12,
                 ),
                 maxLines: 1,
@@ -603,8 +610,8 @@ class _ConversationCard extends StatelessWidget {
                 ),
                 child: Text(
                   conversation.unreadCount.toString(),
-                  style: const TextStyle(
-                    color: VividColors.darkNavy,
+                  style: TextStyle(
+                    color: vc.background,
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
                   ),
@@ -657,7 +664,7 @@ class _ConversationCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
+        color: color.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Row(
@@ -728,7 +735,7 @@ class _ConversationCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
+        color: color.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Row(
@@ -755,7 +762,7 @@ class _ConversationCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
+        color: color.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Row(
@@ -830,9 +837,9 @@ class _ConversationCard extends StatelessWidget {
     final colors = [
       VividColors.brightBlue,
       VividColors.purpleBlue,
-      VividColors.cyanBlue,
+      VividColors.cyan,
       VividColors.tealBlue,
-      VividColors.deepBlue,
+      VividColors.purpleBlue,
     ];
     final hash = conversation.customerPhone.hashCode.abs();
     return colors[hash % colors.length];
@@ -880,6 +887,7 @@ class _SearchResultRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return InkWell(
       onTap: onTap,
       child: Padding(
@@ -895,16 +903,16 @@ class _SearchResultRow extends StatelessWidget {
                       ? _buildHighlightedText(
                           result.displayName,
                           query,
-                          const TextStyle(
-                            color: VividColors.textPrimary,
+                          TextStyle(
+                            color: vc.textPrimary,
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                           ),
                         )
                       : Text(
                           result.displayName,
-                          style: const TextStyle(
-                            color: VividColors.textPrimary,
+                          style: TextStyle(
+                            color: vc.textPrimary,
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                           ),
@@ -915,20 +923,20 @@ class _SearchResultRow extends StatelessWidget {
                 const SizedBox(width: 8),
                 Text(
                   _formatSearchDate(result.date),
-                  style: const TextStyle(color: VividColors.textMuted, fontSize: 11),
+                  style: TextStyle(color: vc.textMuted, fontSize: 11),
                 ),
               ],
             ),
             const SizedBox(height: 4),
             // Message preview
-            _buildSnippet(),
+            _buildSnippet(vc),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildSnippet() {
+  Widget _buildSnippet(VividColorScheme vc) {
     if (_isNameMatch) {
       // Name/phone match: show last message as plain preview (no highlight)
       final preview = result.matchedText;
@@ -950,9 +958,9 @@ class _SearchResultRow extends StatelessWidget {
       return Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'You: ',
-            style: TextStyle(color: VividColors.textMuted, fontSize: 13, fontWeight: FontWeight.w500),
+            style: TextStyle(color: vc.textMuted, fontSize: 13, fontWeight: FontWeight.w500),
           ),
           Expanded(
             child: _buildHighlightedText(

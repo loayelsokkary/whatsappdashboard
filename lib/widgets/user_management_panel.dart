@@ -24,8 +24,9 @@ class _UserManagementPanelState extends State<UserManagementPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return Scaffold(
-      backgroundColor: VividColors.darkNavy,
+      backgroundColor: vc.background,
       body: Column(
         children: [
           _buildHeader(),
@@ -38,13 +39,14 @@ class _UserManagementPanelState extends State<UserManagementPanel> {
   }
 
   Widget _buildHeader() {
+    final vc = context.vividColors;
     final isMobile = MediaQuery.of(context).size.width < 600;
     return Container(
       padding: EdgeInsets.all(isMobile ? 12 : 24),
       decoration: BoxDecoration(
-        color: VividColors.navy,
+        color: vc.surface,
         border: Border(
-          bottom: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+          bottom: BorderSide(color: vc.border),
         ),
       ),
       child: Row(
@@ -65,7 +67,7 @@ class _UserManagementPanelState extends State<UserManagementPanel> {
                 Text(
                   'User Management',
                   style: TextStyle(
-                    color: VividColors.textPrimary,
+                    color: vc.textPrimary,
                     fontSize: isMobile ? 16 : 20,
                     fontWeight: FontWeight.bold,
                   ),
@@ -73,8 +75,8 @@ class _UserManagementPanelState extends State<UserManagementPanel> {
                 if (!isMobile)
                   Text(
                     'Manage team members for ${ClientConfig.businessName}',
-                    style: const TextStyle(
-                      color: VividColors.textMuted,
+                    style: TextStyle(
+                      color: vc.textMuted,
                       fontSize: 13,
                     ),
                   ),
@@ -106,6 +108,7 @@ class _UserManagementPanelState extends State<UserManagementPanel> {
   }
 
   Widget _buildContent() {
+    final vc = context.vividColors;
     return Consumer<UserManagementProvider>(
       builder: (context, provider, _) {
         if (provider.error != null) {
@@ -117,7 +120,7 @@ class _UserManagementPanelState extends State<UserManagementPanel> {
                 const SizedBox(height: 16),
                 Text(
                   provider.error!,
-                  style: const TextStyle(color: VividColors.textMuted),
+                  style: TextStyle(color: vc.textMuted),
                 ),
                 const SizedBox(height: 16),
                 ElevatedButton(
@@ -139,6 +142,7 @@ class _UserManagementPanelState extends State<UserManagementPanel> {
   }
 
   Widget _buildEmptyState() {
+    final vc = context.vividColors;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -156,18 +160,18 @@ class _UserManagementPanelState extends State<UserManagementPanel> {
             ),
           ),
           const SizedBox(height: 24),
-          const Text(
+          Text(
             'No team members yet',
             style: TextStyle(
-              color: VividColors.textPrimary,
+              color: vc.textPrimary,
               fontSize: 18,
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             'Add users to give them access to the dashboard',
-            style: TextStyle(color: VividColors.textMuted),
+            style: TextStyle(color: vc.textMuted),
           ),
           const SizedBox(height: 24),
           ElevatedButton.icon(
@@ -186,6 +190,7 @@ class _UserManagementPanelState extends State<UserManagementPanel> {
   }
 
   Widget _buildUsersList(UserManagementProvider provider) {
+    final vc = context.vividColors;
     final isMobile = MediaQuery.of(context).size.width < 600;
     final statCards = [
       _buildStatCard('Total Users', provider.users.length.toString(), Icons.people, VividColors.brightBlue),
@@ -220,9 +225,9 @@ class _UserManagementPanelState extends State<UserManagementPanel> {
           Expanded(
             child: Container(
               decoration: BoxDecoration(
-                color: VividColors.navy,
+                color: vc.surface,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: VividColors.tealBlue.withOpacity(0.2)),
+                border: Border.all(color: vc.border),
               ),
               child: Column(
                 children: [
@@ -231,18 +236,18 @@ class _UserManagementPanelState extends State<UserManagementPanel> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                       decoration: BoxDecoration(
-                        color: VividColors.deepBlue,
+                        color: vc.surfaceAlt,
                         borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
                       ),
                       child: Row(
                         children: [
-                          const Expanded(flex: 2, child: Text('User', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
-                          const Expanded(flex: 2, child: Text('Email', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
+                          Expanded(flex: 2, child: Text('User', style: TextStyle(color: vc.textMuted, fontWeight: FontWeight.w600))),
+                          Expanded(flex: 2, child: Text('Email', style: TextStyle(color: vc.textMuted, fontWeight: FontWeight.w600))),
                           if (ClientConfig.isClientAdmin)
-                            const Expanded(flex: 2, child: Text('Password', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
-                          const Expanded(flex: 1, child: Text('Role', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
-                          const Expanded(flex: 1, child: Text('Status', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
-                          const SizedBox(width: 100, child: Text('Actions', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600))),
+                            Expanded(flex: 2, child: Text('Password', style: TextStyle(color: vc.textMuted, fontWeight: FontWeight.w600))),
+                          Expanded(flex: 1, child: Text('Role', style: TextStyle(color: vc.textMuted, fontWeight: FontWeight.w600))),
+                          Expanded(flex: 1, child: Text('Status', style: TextStyle(color: vc.textMuted, fontWeight: FontWeight.w600))),
+                          SizedBox(width: 100, child: Text('Actions', style: TextStyle(color: vc.textMuted, fontWeight: FontWeight.w600))),
                         ],
                       ),
                     ),
@@ -253,7 +258,7 @@ class _UserManagementPanelState extends State<UserManagementPanel> {
                       itemCount: provider.users.length,
                       separatorBuilder: (_, __) => Divider(
                         height: 1,
-                        color: VividColors.tealBlue.withOpacity(0.1),
+                        color: vc.borderSubtle,
                       ),
                       itemBuilder: (context, index) {
                         final user = provider.users[index];
@@ -279,11 +284,12 @@ class _UserManagementPanelState extends State<UserManagementPanel> {
   }
 
   Widget _buildStatCard(String label, String value, IconData icon, Color color) {
+    final vc = context.vividColors;
     final isMobile = MediaQuery.of(context).size.width < 600;
     final card = Container(
       padding: EdgeInsets.all(isMobile ? 10 : 16),
       decoration: BoxDecoration(
-        color: VividColors.navy,
+        color: vc.surface,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: color.withOpacity(0.3)),
       ),
@@ -305,15 +311,15 @@ class _UserManagementPanelState extends State<UserManagementPanel> {
               Text(
                 value,
                 style: TextStyle(
-                  color: VividColors.textPrimary,
+                  color: vc.textPrimary,
                   fontSize: isMobile ? 16 : 20,
                   fontWeight: FontWeight.bold,
                 ),
               ),
               Text(
                 label,
-                style: const TextStyle(
-                  color: VividColors.textMuted,
+                style: TextStyle(
+                  color: vc.textMuted,
                   fontSize: 11,
                 ),
               ),
@@ -342,15 +348,16 @@ class _UserManagementPanelState extends State<UserManagementPanel> {
   }
 
   void _confirmToggleBlock(BuildContext context, AppUser user) {
+    final vc = context.vividColors;
     final isBlocking = !user.isBlocked;
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: VividColors.navy,
+        backgroundColor: vc.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
           isBlocking ? 'Block User' : 'Unblock User',
-          style: const TextStyle(color: VividColors.textPrimary),
+          style: TextStyle(color: vc.textPrimary),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -360,7 +367,7 @@ class _UserManagementPanelState extends State<UserManagementPanel> {
               isBlocking
                   ? 'Block "${user.name}"? They will no longer be able to log in.'
                   : 'Unblock "${user.name}"? They will be able to log in again.',
-              style: const TextStyle(color: VividColors.textMuted),
+              style: TextStyle(color: vc.textMuted),
             ),
             const SizedBox(height: 12),
             Container(
@@ -461,11 +468,12 @@ class _UserRowState extends State<_UserRow> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.isMobile) return _buildMobileCard();
-    return _buildDesktopRow();
+    final vc = context.vividColors;
+    if (widget.isMobile) return _buildMobileCard(vc);
+    return _buildDesktopRow(vc);
   }
 
-  Widget _buildMobileCard() {
+  Widget _buildMobileCard(VividColorScheme vc) {
     return Container(
       padding: const EdgeInsets.all(12),
       color: widget.isCurrentUser ? VividColors.brightBlue.withOpacity(0.05) : null,
@@ -474,10 +482,10 @@ class _UserRowState extends State<_UserRow> {
         children: [
           CircleAvatar(
             radius: 18,
-            backgroundColor: _getRoleColor(widget.user.role).withOpacity(0.2),
+            backgroundColor: _getRoleColor(widget.user.role, vc).withOpacity(0.2),
             child: Text(
               _getInitials(widget.user.name),
-              style: TextStyle(color: _getRoleColor(widget.user.role), fontWeight: FontWeight.w600, fontSize: 12),
+              style: TextStyle(color: _getRoleColor(widget.user.role, vc), fontWeight: FontWeight.w600, fontSize: 12),
             ),
           ),
           const SizedBox(width: 12),
@@ -490,7 +498,7 @@ class _UserRowState extends State<_UserRow> {
                     Expanded(
                       child: Text(
                         widget.user.name,
-                        style: const TextStyle(color: VividColors.textPrimary, fontWeight: FontWeight.w500),
+                        style: TextStyle(color: vc.textPrimary, fontWeight: FontWeight.w500),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -507,7 +515,7 @@ class _UserRowState extends State<_UserRow> {
                   ],
                 ),
                 const SizedBox(height: 2),
-                Text(widget.user.email, style: const TextStyle(color: VividColors.textMuted, fontSize: 12), overflow: TextOverflow.ellipsis),
+                Text(widget.user.email, style: TextStyle(color: vc.textMuted, fontSize: 12), overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 6),
                 Row(
                   children: [
@@ -534,7 +542,7 @@ class _UserRowState extends State<_UserRow> {
             children: [
               SizedBox(
                 width: 32, height: 32,
-                child: IconButton(onPressed: widget.onEdit, icon: const Icon(Icons.edit, size: 16), color: VividColors.textMuted, padding: EdgeInsets.zero),
+                child: IconButton(onPressed: widget.onEdit, icon: const Icon(Icons.edit, size: 16), color: vc.textMuted, padding: EdgeInsets.zero),
               ),
               if (widget.onToggleBlock != null)
                 SizedBox(
@@ -553,7 +561,7 @@ class _UserRowState extends State<_UserRow> {
     );
   }
 
-  Widget _buildDesktopRow() {
+  Widget _buildDesktopRow(VividColorScheme vc) {
     final showPasswordColumn = ClientConfig.isClientAdmin;
 
     return Container(
@@ -568,11 +576,11 @@ class _UserRowState extends State<_UserRow> {
               children: [
                 CircleAvatar(
                   radius: 18,
-                  backgroundColor: _getRoleColor(widget.user.role).withOpacity(0.2),
+                  backgroundColor: _getRoleColor(widget.user.role, vc).withOpacity(0.2),
                   child: Text(
                     _getInitials(widget.user.name),
                     style: TextStyle(
-                      color: _getRoleColor(widget.user.role),
+                      color: _getRoleColor(widget.user.role, vc),
                       fontWeight: FontWeight.w600,
                       fontSize: 12,
                     ),
@@ -587,8 +595,8 @@ class _UserRowState extends State<_UserRow> {
                         children: [
                           Text(
                             widget.user.name,
-                            style: const TextStyle(
-                              color: VividColors.textPrimary,
+                            style: TextStyle(
+                              color: vc.textPrimary,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -624,7 +632,7 @@ class _UserRowState extends State<_UserRow> {
             flex: 2,
             child: Text(
               widget.user.email,
-              style: const TextStyle(color: VividColors.textMuted, fontSize: 13),
+              style: TextStyle(color: vc.textMuted, fontSize: 13),
             ),
           ),
 
@@ -641,8 +649,8 @@ class _UserRowState extends State<_UserRow> {
                           : '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022',
                       style: TextStyle(
                         color: _isPasswordRevealed
-                            ? VividColors.textPrimary
-                            : VividColors.textMuted,
+                            ? vc.textPrimary
+                            : vc.textMuted,
                         fontSize: 13,
                         fontFamily: _isPasswordRevealed ? null : null,
                       ),
@@ -659,7 +667,7 @@ class _UserRowState extends State<_UserRow> {
                           _isPasswordRevealed ? Icons.visibility : Icons.visibility_off,
                           size: 16,
                         ),
-                        color: _isPasswordRevealed ? VividColors.cyan : VividColors.textMuted,
+                        color: _isPasswordRevealed ? VividColors.cyan : vc.textMuted,
                         tooltip: _isPasswordRevealed ? 'Hide password' : 'Show password',
                         padding: EdgeInsets.zero,
                       ),
@@ -716,7 +724,7 @@ class _UserRowState extends State<_UserRow> {
                 IconButton(
                   onPressed: widget.onEdit,
                   icon: const Icon(Icons.edit, size: 18),
-                  color: VividColors.textMuted,
+                  color: vc.textMuted,
                   tooltip: 'Edit',
                 ),
                 if (ClientConfig.isClientAdmin)
@@ -725,7 +733,7 @@ class _UserRowState extends State<_UserRow> {
                     icon: Icon(widget.user.isBlocked ? Icons.lock_open : Icons.block, size: 18),
                     color: widget.onToggleBlock != null
                         ? (widget.user.isBlocked ? VividColors.statusSuccess : Colors.red.withOpacity(0.7))
-                        : VividColors.textMuted.withOpacity(0.3),
+                        : vc.textMuted.withOpacity(0.3),
                     tooltip: widget.isCurrentUser
                         ? 'Cannot block yourself'
                         : (widget.user.isBlocked ? 'Unblock' : 'Block'),
@@ -740,7 +748,7 @@ class _UserRowState extends State<_UserRow> {
 
   String _getInitials(String name) => getInitials(name);
 
-  Color _getRoleColor(UserRole role) {
+  Color _getRoleColor(UserRole role, VividColorScheme vc) {
     switch (role) {
       case UserRole.admin:
         return VividColors.cyan;
@@ -749,7 +757,7 @@ class _UserRowState extends State<_UserRow> {
       case UserRole.agent:
         return Colors.green;
       case UserRole.viewer:
-        return VividColors.textMuted;
+        return vc.textMuted;
     }
   }
 }
@@ -765,8 +773,9 @@ class _RoleBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = _getColor();
-    
+    final vc = context.vividColors;
+    final color = _getColor(vc);
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
@@ -792,7 +801,7 @@ class _RoleBadge extends StatelessWidget {
     );
   }
 
-  Color _getColor() {
+  Color _getColor(VividColorScheme vc) {
     switch (role) {
       case UserRole.admin:
         return VividColors.cyan;
@@ -801,7 +810,7 @@ class _RoleBadge extends StatelessWidget {
       case UserRole.agent:
         return Colors.green;
       case UserRole.viewer:
-        return VividColors.textMuted;
+        return vc.textMuted;
     }
   }
 
@@ -861,8 +870,9 @@ class _UserDialogState extends State<_UserDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return Dialog(
-      backgroundColor: VividColors.navy,
+      backgroundColor: vc.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
         width: MediaQuery.of(context).size.width < 500
@@ -893,8 +903,8 @@ class _UserDialogState extends State<_UserDialog> {
                   const SizedBox(width: 12),
                   Text(
                     isEdit ? 'Edit User' : 'Add New User',
-                    style: const TextStyle(
-                      color: VividColors.textPrimary,
+                    style: TextStyle(
+                      color: vc.textPrimary,
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                     ),
@@ -934,10 +944,10 @@ class _UserDialogState extends State<_UserDialog> {
               const SizedBox(height: 20),
 
               // Role selector
-              const Text(
+              Text(
                 'Role',
                 style: TextStyle(
-                  color: VividColors.textPrimary,
+                  color: vc.textPrimary,
                   fontWeight: FontWeight.w500,
                 ),
               ),
@@ -949,7 +959,7 @@ class _UserDialogState extends State<_UserDialog> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: VividColors.deepBlue,
+                  color: vc.surfaceAlt,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Row(
@@ -957,14 +967,14 @@ class _UserDialogState extends State<_UserDialog> {
                     Icon(
                       Icons.info_outline,
                       size: 16,
-                      color: VividColors.textMuted,
+                      color: vc.textMuted,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         _selectedRole.description,
-                        style: const TextStyle(
-                          color: VividColors.textMuted,
+                        style: TextStyle(
+                          color: vc.textMuted,
                           fontSize: 12,
                         ),
                       ),
@@ -1019,20 +1029,21 @@ class _UserDialogState extends State<_UserDialog> {
     bool required = true,
     TextInputType? keyboardType,
   }) {
+    final vc = context.vividColors;
     return TextFormField(
       controller: controller,
       obscureText: obscure,
       keyboardType: keyboardType,
-      style: const TextStyle(color: VividColors.textPrimary),
+      style: TextStyle(color: vc.textPrimary),
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
-        prefixIcon: Icon(icon, color: VividColors.textMuted, size: 20),
-        labelStyle: const TextStyle(color: VividColors.textMuted),
-        hintStyle: TextStyle(color: VividColors.textMuted.withOpacity(0.5)),
+        prefixIcon: Icon(icon, color: vc.textMuted, size: 20),
+        labelStyle: TextStyle(color: vc.textMuted),
+        hintStyle: TextStyle(color: vc.textMuted.withOpacity(0.5)),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide(color: VividColors.tealBlue.withOpacity(0.3)),
+          borderSide: BorderSide(color: vc.popupBorder),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
@@ -1043,7 +1054,7 @@ class _UserDialogState extends State<_UserDialog> {
           borderSide: const BorderSide(color: Colors.red),
         ),
         filled: true,
-        fillColor: VividColors.deepBlue,
+        fillColor: vc.surfaceAlt,
       ),
       validator: required
           ? (v) => v?.isEmpty == true ? '$label is required' : null
@@ -1052,12 +1063,13 @@ class _UserDialogState extends State<_UserDialog> {
   }
 
   Widget _buildRoleSelector() {
+    final vc = context.vividColors;
     return Wrap(
       spacing: 8,
       runSpacing: 8,
       children: UserRole.values.map((role) {
         final isSelected = _selectedRole == role;
-        final color = _getRoleColor(role);
+        final color = _getRoleColor(role, vc);
 
         return InkWell(
           onTap: () => setState(() => _selectedRole = role),
@@ -1065,10 +1077,10 @@ class _UserDialogState extends State<_UserDialog> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             decoration: BoxDecoration(
-              color: isSelected ? color.withOpacity(0.15) : VividColors.deepBlue,
+              color: isSelected ? color.withOpacity(0.15) : vc.surfaceAlt,
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
-                color: isSelected ? color : VividColors.tealBlue.withOpacity(0.3),
+                color: isSelected ? color : vc.popupBorder,
                 width: isSelected ? 2 : 1,
               ),
             ),
@@ -1078,13 +1090,13 @@ class _UserDialogState extends State<_UserDialog> {
                 Icon(
                   _getRoleIcon(role),
                   size: 18,
-                  color: isSelected ? color : VividColors.textMuted,
+                  color: isSelected ? color : vc.textMuted,
                 ),
                 const SizedBox(width: 8),
                 Text(
                   role.displayName,
                   style: TextStyle(
-                    color: isSelected ? color : VividColors.textMuted,
+                    color: isSelected ? color : vc.textMuted,
                     fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
                   ),
                 ),
@@ -1096,7 +1108,7 @@ class _UserDialogState extends State<_UserDialog> {
     );
   }
 
-  Color _getRoleColor(UserRole role) {
+  Color _getRoleColor(UserRole role, VividColorScheme vc) {
     switch (role) {
       case UserRole.admin:
         return VividColors.cyan;
@@ -1105,7 +1117,7 @@ class _UserDialogState extends State<_UserDialog> {
       case UserRole.agent:
         return Colors.green;
       case UserRole.viewer:
-        return VividColors.textMuted;
+        return vc.textMuted;
     }
   }
 

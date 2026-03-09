@@ -4,6 +4,7 @@ import '../providers/conversations_provider.dart';
 import '../providers/agent_provider.dart';
 import '../providers/notification_provider.dart';
 import '../providers/user_management_provider.dart';
+import '../providers/theme_provider.dart';
 import '../models/models.dart';
 import '../theme/vivid_theme.dart';
 import '../utils/initials_helper.dart';
@@ -171,6 +172,19 @@ class Sidebar extends StatelessWidget {
           ),
 
           const Spacer(),
+
+          // Theme toggle
+          Consumer<ThemeProvider>(
+            builder: (context, themeProvider, _) => IconButton(
+              onPressed: () => themeProvider.toggleTheme(),
+              icon: Icon(
+                themeProvider.isDark ? Icons.light_mode : Icons.dark_mode,
+                color: VividColors.textSecondary,
+                size: 20,
+              ),
+              tooltip: themeProvider.isDark ? 'Light Mode' : 'Dark Mode',
+            ),
+          ),
 
           // Sound toggle (controls both notification and conversation sounds)
           IconButton(

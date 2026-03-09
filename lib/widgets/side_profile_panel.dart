@@ -56,12 +56,13 @@ class _SideProfilePanelState extends State<SideProfilePanel> {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return Container(
       width: 296,
       decoration: BoxDecoration(
-        color: VividColors.navy,
+        color: vc.surface,
         border: Border(
-          left: BorderSide(color: VividColors.tealBlue.withValues(alpha:0.2)),
+          left: BorderSide(color: vc.border),
         ),
       ),
       child: _loading
@@ -78,6 +79,7 @@ class _SideProfilePanelState extends State<SideProfilePanel> {
   }
 
   Widget _buildError() {
+    final vc = context.vividColors;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -86,10 +88,10 @@ class _SideProfilePanelState extends State<SideProfilePanel> {
           children: [
             const Icon(Icons.error_outline, color: VividColors.statusUrgent, size: 32),
             const SizedBox(height: 12),
-            const Text(
+            Text(
               'Could not load profile',
               style: TextStyle(
-                color: VividColors.textMuted,
+                color: vc.textMuted,
                 fontSize: 13,
               ),
             ),
@@ -146,6 +148,7 @@ class _SideProfilePanelState extends State<SideProfilePanel> {
   }
 
   Widget _buildProfileHeader(String name, String initials) {
+    final vc = context.vividColors;
     return Column(
       children: [
         Container(
@@ -171,8 +174,8 @@ class _SideProfilePanelState extends State<SideProfilePanel> {
         Text(
           name,
           textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: VividColors.textPrimary,
+          style: TextStyle(
+            color: vc.textPrimary,
             fontSize: 15,
             fontWeight: FontWeight.w600,
           ),
@@ -182,7 +185,7 @@ class _SideProfilePanelState extends State<SideProfilePanel> {
         const SizedBox(height: 2),
         Text(
           widget.customerPhone,
-          style: const TextStyle(color: VividColors.textMuted, fontSize: 12),
+          style: TextStyle(color: vc.textMuted, fontSize: 12),
         ),
       ],
     );
@@ -228,27 +231,28 @@ class _SideProfilePanelState extends State<SideProfilePanel> {
     required String value,
     bool highlight = false,
   }) {
+    final vc = context.vividColors;
     return Expanded(
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
         decoration: BoxDecoration(
-          color: VividColors.deepBlue,
+          color: vc.surfaceAlt,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
             color: highlight
                 ? VividColors.cyan.withValues(alpha:0.3)
-                : VividColors.tealBlue.withValues(alpha:0.2),
+                : vc.border,
           ),
         ),
         child: Column(
           children: [
             Icon(icon, size: 14,
-                color: highlight ? VividColors.cyan : VividColors.textSecondary),
+                color: highlight ? VividColors.cyan : vc.textSecondary),
             const SizedBox(height: 4),
             Text(
               value,
               style: TextStyle(
-                color: highlight ? VividColors.cyan : VividColors.textPrimary,
+                color: highlight ? VividColors.cyan : vc.textPrimary,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -256,8 +260,8 @@ class _SideProfilePanelState extends State<SideProfilePanel> {
             const SizedBox(height: 2),
             Text(
               label,
-              style: const TextStyle(
-                color: VividColors.textMuted,
+              style: TextStyle(
+                color: vc.textMuted,
                 fontSize: 9,
               ),
               textAlign: TextAlign.center,
@@ -270,13 +274,14 @@ class _SideProfilePanelState extends State<SideProfilePanel> {
   }
 
   Widget _buildSection({required String title, required Widget child}) {
+    final vc = context.vividColors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           title.toUpperCase(),
-          style: const TextStyle(
-            color: VividColors.textMuted,
+          style: TextStyle(
+            color: vc.textMuted,
             fontSize: 10,
             fontWeight: FontWeight.w600,
             letterSpacing: 0.8,
@@ -287,10 +292,10 @@ class _SideProfilePanelState extends State<SideProfilePanel> {
           width: double.infinity,
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: VividColors.deepBlue,
+            color: vc.surfaceAlt,
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
-              color: VividColors.tealBlue.withValues(alpha:0.2),
+              color: vc.border,
             ),
           ),
           child: child,
@@ -356,6 +361,7 @@ class _SideProfilePanelState extends State<SideProfilePanel> {
     required int count,
     required Color color,
   }) {
+    final vc = context.vividColors;
     return Expanded(
       child: Row(
         children: [
@@ -374,8 +380,8 @@ class _SideProfilePanelState extends State<SideProfilePanel> {
               ),
               Text(
                 label,
-                style: const TextStyle(
-                  color: VividColors.textMuted,
+                style: TextStyle(
+                  color: vc.textMuted,
                   fontSize: 11,
                 ),
               ),
@@ -420,6 +426,7 @@ class _SideProfilePanelState extends State<SideProfilePanel> {
   }
 
   Widget _buildLastCampaign(CustomerProfileStats stats) {
+    final vc = context.vividColors;
     final dateStr = _formatDate(stats.lastCampaignAt!);
     final responseRate = stats.broadcastCount > 0
         ? '${(stats.broadcastResponseRate * 100).toStringAsFixed(0)}% replied'
@@ -435,8 +442,8 @@ class _SideProfilePanelState extends State<SideProfilePanel> {
             children: [
               Text(
                 dateStr,
-                style: const TextStyle(
-                  color: VividColors.textPrimary,
+                style: TextStyle(
+                  color: vc.textPrimary,
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
                 ),
@@ -444,8 +451,8 @@ class _SideProfilePanelState extends State<SideProfilePanel> {
               if (responseRate != null)
                 Text(
                   responseRate,
-                  style: const TextStyle(
-                    color: VividColors.textMuted,
+                  style: TextStyle(
+                    color: vc.textMuted,
                     fontSize: 11,
                   ),
                 ),
@@ -454,8 +461,8 @@ class _SideProfilePanelState extends State<SideProfilePanel> {
         ),
         Text(
           '${stats.broadcastCount} sent',
-          style: const TextStyle(
-            color: VividColors.textMuted,
+          style: TextStyle(
+            color: vc.textMuted,
             fontSize: 11,
           ),
         ),
@@ -464,6 +471,7 @@ class _SideProfilePanelState extends State<SideProfilePanel> {
   }
 
   Widget _buildLastHandledBy(String handledBy) {
+    final vc = context.vividColors;
     final initials = getInitials(handledBy);
     return Row(
       children: [
@@ -477,8 +485,8 @@ class _SideProfilePanelState extends State<SideProfilePanel> {
           child: Center(
             child: Text(
               initials,
-              style: const TextStyle(
-                color: VividColors.textSecondary,
+              style: TextStyle(
+                color: vc.textSecondary,
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
               ),
@@ -488,8 +496,8 @@ class _SideProfilePanelState extends State<SideProfilePanel> {
         const SizedBox(width: 10),
         Text(
           _capitalize(handledBy),
-          style: const TextStyle(
-            color: VividColors.textPrimary,
+          style: TextStyle(
+            color: vc.textPrimary,
             fontSize: 13,
           ),
         ),

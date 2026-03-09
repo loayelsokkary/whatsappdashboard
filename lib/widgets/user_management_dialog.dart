@@ -24,6 +24,7 @@ class _UserManagementDialogState extends State<UserManagementDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return Dialog(
       backgroundColor: Colors.transparent,
       insetPadding: EdgeInsets.all(MediaQuery.of(context).size.width < 600 ? 8 : 40),
@@ -35,9 +36,9 @@ class _UserManagementDialogState extends State<UserManagementDialog> {
             ? MediaQuery.of(context).size.height * 0.85
             : 650,
         decoration: BoxDecoration(
-          color: VividColors.darkNavy,
+          color: vc.background,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: VividColors.tealBlue.withOpacity(0.3)),
+          border: Border.all(color: vc.popupBorder),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.5),
@@ -60,12 +61,13 @@ class _UserManagementDialogState extends State<UserManagementDialog> {
   }
 
   Widget _buildHeader() {
+    final vc = context.vividColors;
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: VividColors.navy,
+        color: vc.surface,
         border: Border(
-          bottom: BorderSide(color: VividColors.tealBlue.withOpacity(0.2)),
+          bottom: BorderSide(color: vc.border),
         ),
       ),
       child: Row(
@@ -83,18 +85,18 @@ class _UserManagementDialogState extends State<UserManagementDialog> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'User Management',
                   style: TextStyle(
-                    color: VividColors.textPrimary,
+                    color: vc.textPrimary,
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 Text(
                   'Manage team members for ${ClientConfig.businessName}',
-                  style: const TextStyle(
-                    color: VividColors.textMuted,
+                  style: TextStyle(
+                    color: vc.textMuted,
                     fontSize: 12,
                   ),
                 ),
@@ -117,7 +119,7 @@ class _UserManagementDialogState extends State<UserManagementDialog> {
           const SizedBox(width: 12),
           IconButton(
             onPressed: () => Navigator.pop(context),
-            icon: const Icon(Icons.close, color: VividColors.textMuted),
+            icon: Icon(Icons.close, color: vc.textMuted),
             tooltip: 'Close',
           ),
         ],
@@ -126,6 +128,7 @@ class _UserManagementDialogState extends State<UserManagementDialog> {
   }
 
   Widget _buildContent() {
+    final vc = context.vividColors;
     return Consumer<UserManagementProvider>(
       builder: (context, provider, _) {
         if (provider.error != null) {
@@ -137,7 +140,7 @@ class _UserManagementDialogState extends State<UserManagementDialog> {
                 const SizedBox(height: 16),
                 Text(
                   provider.error!,
-                  style: const TextStyle(color: VividColors.textMuted),
+                  style: TextStyle(color: vc.textMuted),
                 ),
                 const SizedBox(height: 16),
                 ElevatedButton(
@@ -159,6 +162,7 @@ class _UserManagementDialogState extends State<UserManagementDialog> {
   }
 
   Widget _buildEmptyState() {
+    final vc = context.vividColors;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -176,18 +180,18 @@ class _UserManagementDialogState extends State<UserManagementDialog> {
             ),
           ),
           const SizedBox(height: 20),
-          const Text(
+          Text(
             'No team members yet',
             style: TextStyle(
-              color: VividColors.textPrimary,
+              color: vc.textPrimary,
               fontSize: 16,
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             'Add users to give them access to the dashboard',
-            style: TextStyle(color: VividColors.textMuted, fontSize: 13),
+            style: TextStyle(color: vc.textMuted, fontSize: 13),
           ),
           const SizedBox(height: 20),
           ElevatedButton.icon(
@@ -205,6 +209,7 @@ class _UserManagementDialogState extends State<UserManagementDialog> {
   }
 
   Widget _buildUsersList(UserManagementProvider provider) {
+    final vc = context.vividColors;
     return Padding(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -228,9 +233,9 @@ class _UserManagementDialogState extends State<UserManagementDialog> {
           Expanded(
             child: Container(
               decoration: BoxDecoration(
-                color: VividColors.navy,
+                color: vc.surface,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: VividColors.tealBlue.withOpacity(0.2)),
+                border: Border.all(color: vc.border),
               ),
               child: Column(
                 children: [
@@ -239,22 +244,22 @@ class _UserManagementDialogState extends State<UserManagementDialog> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                       decoration: BoxDecoration(
-                        color: VividColors.deepBlue,
+                        color: vc.surfaceAlt,
                         borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
                       ),
                       child: Row(
                         children: [
-                          const Expanded(flex: 3, child: Text('User', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12))),
+                          Expanded(flex: 3, child: Text('User', style: TextStyle(color: vc.textMuted, fontWeight: FontWeight.w600, fontSize: 12))),
                           const SizedBox(width: 12),
-                          const Expanded(flex: 3, child: Text('Email', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12))),
+                          Expanded(flex: 3, child: Text('Email', style: TextStyle(color: vc.textMuted, fontWeight: FontWeight.w600, fontSize: 12))),
                           if (ClientConfig.isClientAdmin) ...[
                             const SizedBox(width: 12),
-                            const Expanded(flex: 2, child: Text('Password', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12))),
+                            Expanded(flex: 2, child: Text('Password', style: TextStyle(color: vc.textMuted, fontWeight: FontWeight.w600, fontSize: 12))),
                           ],
                           const SizedBox(width: 12),
-                          const Expanded(flex: 2, child: Text('Permissions', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12), textAlign: TextAlign.center)),
+                          Expanded(flex: 2, child: Text('Permissions', style: TextStyle(color: vc.textMuted, fontWeight: FontWeight.w600, fontSize: 12), textAlign: TextAlign.center)),
                           const SizedBox(width: 12),
-                          const Expanded(flex: 1, child: Text('Actions', style: TextStyle(color: VividColors.textMuted, fontWeight: FontWeight.w600, fontSize: 12), textAlign: TextAlign.right)),
+                          Expanded(flex: 1, child: Text('Actions', style: TextStyle(color: vc.textMuted, fontWeight: FontWeight.w600, fontSize: 12), textAlign: TextAlign.right)),
                         ],
                       ),
                     ),
@@ -266,7 +271,7 @@ class _UserManagementDialogState extends State<UserManagementDialog> {
                       itemCount: provider.users.length,
                       separatorBuilder: (_, __) => Divider(
                         height: 1,
-                        color: VividColors.tealBlue.withOpacity(0.1),
+                        color: vc.borderSubtle,
                       ),
                       itemBuilder: (context, index) {
                         final user = provider.users[index];
@@ -338,21 +343,22 @@ class _UserManagementDialogState extends State<UserManagementDialog> {
   }
 
   void _confirmToggleBlock(BuildContext context, AppUser user, UserManagementProvider provider) {
+    final vc = context.vividColors;
     final isBlocking = !user.isBlocked;
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: VividColors.navy,
+        backgroundColor: vc.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         title: Text(
           isBlocking ? 'Block User' : 'Unblock User',
-          style: const TextStyle(color: VividColors.textPrimary),
+          style: TextStyle(color: vc.textPrimary),
         ),
         content: Text(
           isBlocking
               ? 'Block "${user.name}"? They will no longer be able to log in.'
               : 'Unblock "${user.name}"? They will be able to log in again.',
-          style: const TextStyle(color: VividColors.textMuted),
+          style: TextStyle(color: vc.textMuted),
         ),
         actions: [
           TextButton(
@@ -413,11 +419,13 @@ class _UserRowState extends State<_UserRow> {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     if (widget.isMobile) return _buildMobileCard();
     return _buildDesktopRow();
   }
 
   Widget _buildMobileCard() {
+    final vc = context.vividColors;
     return Container(
       padding: const EdgeInsets.all(12),
       color: widget.isCurrentUser ? VividColors.brightBlue.withOpacity(0.05) : null,
@@ -440,7 +448,7 @@ class _UserRowState extends State<_UserRow> {
                 Row(
                   children: [
                     Expanded(
-                      child: Text(widget.user.name, style: const TextStyle(color: VividColors.textPrimary, fontWeight: FontWeight.w500, fontSize: 13), overflow: TextOverflow.ellipsis),
+                      child: Text(widget.user.name, style: TextStyle(color: vc.textPrimary, fontWeight: FontWeight.w500, fontSize: 13), overflow: TextOverflow.ellipsis),
                     ),
                     if (widget.isCurrentUser)
                       Container(
@@ -452,7 +460,7 @@ class _UserRowState extends State<_UserRow> {
                   ],
                 ),
                 const SizedBox(height: 2),
-                Text(widget.user.email, style: const TextStyle(color: VividColors.textMuted, fontSize: 11), overflow: TextOverflow.ellipsis),
+                Text(widget.user.email, style: TextStyle(color: vc.textMuted, fontSize: 11), overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 4),
                 Row(children: [_RoleBadge(role: widget.user.role)]),
               ],
@@ -461,7 +469,7 @@ class _UserRowState extends State<_UserRow> {
           Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              SizedBox(width: 28, height: 28, child: IconButton(onPressed: widget.onEdit, icon: const Icon(Icons.edit, size: 14), color: VividColors.textMuted, padding: EdgeInsets.zero)),
+              SizedBox(width: 28, height: 28, child: IconButton(onPressed: widget.onEdit, icon: const Icon(Icons.edit, size: 14), color: vc.textMuted, padding: EdgeInsets.zero)),
               if (widget.onToggleBlock != null)
                 SizedBox(width: 28, height: 28, child: IconButton(onPressed: widget.onToggleBlock, icon: Icon(widget.user.isBlocked ? Icons.lock_open : Icons.block, size: 14), color: widget.user.isBlocked ? VividColors.statusSuccess : Colors.red.withOpacity(0.7), padding: EdgeInsets.zero)),
             ],
@@ -472,6 +480,7 @@ class _UserRowState extends State<_UserRow> {
   }
 
   Widget _buildDesktopRow() {
+    final vc = context.vividColors;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       color: widget.isCurrentUser ? VividColors.brightBlue.withOpacity(0.05) : null,
@@ -501,8 +510,8 @@ class _UserRowState extends State<_UserRow> {
                       Flexible(
                         child: Text(
                           widget.user.name,
-                          style: const TextStyle(
-                            color: VividColors.textPrimary,
+                          style: TextStyle(
+                            color: vc.textPrimary,
                             fontWeight: FontWeight.w500,
                             fontSize: 13,
                           ),
@@ -536,7 +545,7 @@ class _UserRowState extends State<_UserRow> {
             flex: 3,
             child: Text(
               widget.user.email,
-              style: const TextStyle(color: VividColors.textMuted, fontSize: 12),
+              style: TextStyle(color: vc.textMuted, fontSize: 12),
               overflow: TextOverflow.ellipsis,
             ),
           ),
@@ -555,8 +564,8 @@ class _UserRowState extends State<_UserRow> {
                           : '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022',
                       style: TextStyle(
                         color: _isPasswordRevealed
-                            ? VividColors.textPrimary
-                            : VividColors.textMuted,
+                            ? vc.textPrimary
+                            : vc.textMuted,
                         fontSize: 12,
                       ),
                       overflow: TextOverflow.ellipsis,
@@ -569,7 +578,7 @@ class _UserRowState extends State<_UserRow> {
                         _isPasswordRevealed ? Icons.visibility_off : Icons.visibility,
                         size: 14,
                       ),
-                      color: VividColors.textMuted,
+                      color: vc.textMuted,
                       tooltip: _isPasswordRevealed ? 'Hide password' : 'Show password',
                       visualDensity: VisualDensity.compact,
                       padding: EdgeInsets.zero,
@@ -604,7 +613,7 @@ class _UserRowState extends State<_UserRow> {
                 IconButton(
                   onPressed: widget.onEdit,
                   icon: const Icon(Icons.edit, size: 16),
-                  color: VividColors.textMuted,
+                  color: vc.textMuted,
                   tooltip: 'Edit',
                   visualDensity: VisualDensity.compact,
                 ),
@@ -614,7 +623,7 @@ class _UserRowState extends State<_UserRow> {
                     icon: Icon(widget.user.isBlocked ? Icons.lock_open : Icons.block, size: 16),
                     color: widget.onToggleBlock != null
                         ? (widget.user.isBlocked ? VividColors.statusSuccess : Colors.red.withOpacity(0.7))
-                        : VividColors.textMuted.withOpacity(0.3),
+                        : vc.textMuted.withOpacity(0.3),
                     tooltip: widget.isCurrentUser
                         ? 'Cannot block yourself'
                         : (widget.user.isBlocked ? 'Unblock' : 'Block'),
@@ -631,6 +640,7 @@ class _UserRowState extends State<_UserRow> {
   String _getInitials(String name) => getInitials(name);
 
   Color _getRoleColor(UserRole role) {
+    final vc = context.vividColors;
     switch (role) {
       case UserRole.admin:
         return VividColors.cyan;
@@ -639,7 +649,7 @@ class _UserRowState extends State<_UserRow> {
       case UserRole.agent:
         return Colors.green;
       case UserRole.viewer:
-        return VividColors.textMuted;
+        return vc.textMuted;
     }
   }
 }
@@ -655,6 +665,7 @@ class _PermissionIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     final hasCustom = user.customPermissions != null && user.customPermissions!.isNotEmpty;
     final hasRevoked = user.revokedPermissions != null && user.revokedPermissions!.isNotEmpty;
 
@@ -662,7 +673,7 @@ class _PermissionIndicator extends StatelessWidget {
       return Text(
         'Default',
         style: TextStyle(
-          color: VividColors.textMuted.withOpacity(0.6),
+          color: vc.textMuted.withOpacity(0.6),
           fontSize: 11,
         ),
       );
@@ -720,8 +731,9 @@ class _RoleBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = _getColor();
-    
+    final vc = context.vividColors;
+    final color = _getColor(context);
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
@@ -739,7 +751,8 @@ class _RoleBadge extends StatelessWidget {
     );
   }
 
-  Color _getColor() {
+  Color _getColor(BuildContext context) {
+    final vc = context.vividColors;
     switch (role) {
       case UserRole.admin:
         return VividColors.cyan;
@@ -748,7 +761,7 @@ class _RoleBadge extends StatelessWidget {
       case UserRole.agent:
         return Colors.green;
       case UserRole.viewer:
-        return VividColors.textMuted;
+        return vc.textMuted;
     }
   }
 }
@@ -777,7 +790,7 @@ class _UserFormDialogState extends State<_UserFormDialog> {
   bool _showPassword = false;
   bool _showCurrentPassword = false;
   bool _showCustomPermissions = false;
-  
+
   // Permission overrides
   Set<Permission> _customPermissions = {};
   Set<Permission> _revokedPermissions = {};
@@ -792,7 +805,7 @@ class _UserFormDialogState extends State<_UserFormDialog> {
     _passwordController = TextEditingController();
     _confirmPasswordController = TextEditingController();
     _selectedRole = widget.user?.role ?? UserRole.agent;
-    
+
     // Load existing custom permissions
     if (widget.user != null) {
       _customPermissions = widget.user!.customPermissions ?? {};
@@ -847,8 +860,9 @@ class _UserFormDialogState extends State<_UserFormDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return Dialog(
-      backgroundColor: VividColors.navy,
+      backgroundColor: vc.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Container(
         width: MediaQuery.of(context).size.width < 550
@@ -873,8 +887,8 @@ class _UserFormDialogState extends State<_UserFormDialog> {
                     const SizedBox(width: 10),
                     Text(
                       isEdit ? 'Edit User' : 'Add New User',
-                      style: const TextStyle(
-                        color: VividColors.textPrimary,
+                      style: TextStyle(
+                        color: vc.textPrimary,
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                       ),
@@ -883,12 +897,12 @@ class _UserFormDialogState extends State<_UserFormDialog> {
                     IconButton(
                       onPressed: () => Navigator.pop(context),
                       icon: const Icon(Icons.close, size: 18),
-                      color: VividColors.textMuted,
+                      color: vc.textMuted,
                     ),
                   ],
                 ),
               ),
-              
+
               // Scrollable content
               Flexible(
                 child: SingleChildScrollView(
@@ -931,13 +945,13 @@ class _UserFormDialogState extends State<_UserFormDialog> {
                       const SizedBox(height: 16),
 
                       // Role
-                      const Text('Role', style: TextStyle(color: VividColors.textMuted, fontSize: 12)),
+                      Text('Role', style: TextStyle(color: vc.textMuted, fontSize: 12)),
                       const SizedBox(height: 8),
                       _buildRoleSelector(),
                       const SizedBox(height: 8),
                       Text(
                         _selectedRole.description,
-                        style: TextStyle(color: VividColors.textMuted.withOpacity(0.7), fontSize: 11),
+                        style: TextStyle(color: vc.textMuted.withOpacity(0.7), fontSize: 11),
                       ),
                       const SizedBox(height: 16),
 
@@ -988,27 +1002,28 @@ class _UserFormDialogState extends State<_UserFormDialog> {
     bool obscure = false,
     bool required = true,
   }) {
+    final vc = context.vividColors;
     return TextFormField(
       controller: controller,
       obscureText: obscure,
-      style: const TextStyle(color: VividColors.textPrimary, fontSize: 13),
+      style: TextStyle(color: vc.textPrimary, fontSize: 13),
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
-        prefixIcon: Icon(icon, color: VividColors.textMuted, size: 18),
-        labelStyle: const TextStyle(color: VividColors.textMuted, fontSize: 12),
-        hintStyle: TextStyle(color: VividColors.textMuted.withOpacity(0.5), fontSize: 12),
+        prefixIcon: Icon(icon, color: vc.textMuted, size: 18),
+        labelStyle: TextStyle(color: vc.textMuted, fontSize: 12),
+        hintStyle: TextStyle(color: vc.textMuted.withOpacity(0.5), fontSize: 12),
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: VividColors.tealBlue.withOpacity(0.3)),
+          borderSide: BorderSide(color: vc.popupBorder),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
           borderSide: const BorderSide(color: VividColors.cyan),
         ),
         filled: true,
-        fillColor: VividColors.deepBlue,
+        fillColor: vc.surfaceAlt,
       ),
       validator: required ? (v) => v?.isEmpty == true ? 'Required' : null : null,
     );
@@ -1020,62 +1035,64 @@ class _UserFormDialogState extends State<_UserFormDialog> {
     String hint, {
     bool required = true,
   }) {
+    final vc = context.vividColors;
     return TextFormField(
       controller: controller,
       obscureText: !_showPassword,
-      style: const TextStyle(color: VividColors.textPrimary, fontSize: 13),
+      style: TextStyle(color: vc.textPrimary, fontSize: 13),
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
-        prefixIcon: const Icon(Icons.lock, color: VividColors.textMuted, size: 18),
+        prefixIcon: Icon(Icons.lock, color: vc.textMuted, size: 18),
         suffixIcon: IconButton(
           icon: Icon(
             _showPassword ? Icons.visibility_off : Icons.visibility,
-            color: VividColors.textMuted,
+            color: vc.textMuted,
             size: 18,
           ),
           onPressed: () => setState(() => _showPassword = !_showPassword),
         ),
-        labelStyle: const TextStyle(color: VividColors.textMuted, fontSize: 12),
-        hintStyle: TextStyle(color: VividColors.textMuted.withOpacity(0.5), fontSize: 12),
+        labelStyle: TextStyle(color: vc.textMuted, fontSize: 12),
+        hintStyle: TextStyle(color: vc.textMuted.withOpacity(0.5), fontSize: 12),
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: VividColors.tealBlue.withOpacity(0.3)),
+          borderSide: BorderSide(color: vc.popupBorder),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
           borderSide: const BorderSide(color: VividColors.cyan),
         ),
         filled: true,
-        fillColor: VividColors.deepBlue,
+        fillColor: vc.surfaceAlt,
       ),
       validator: required ? (v) => v?.isEmpty == true ? 'Required' : null : null,
     );
   }
 
   Widget _buildCurrentPasswordField() {
+    final vc = context.vividColors;
     final currentPw = widget.user?.password;
     final hasPassword = currentPw != null && currentPw.isNotEmpty;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       decoration: BoxDecoration(
-        color: VividColors.deepBlue.withValues(alpha: 0.5),
+        color: vc.surfaceAlt.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: VividColors.tealBlue.withValues(alpha: 0.2)),
+        border: Border.all(color: vc.border),
       ),
       child: Row(
         children: [
-          const Icon(Icons.lock_outline, color: VividColors.textMuted, size: 18),
+          Icon(Icons.lock_outline, color: vc.textMuted, size: 18),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Current Password',
-                  style: TextStyle(color: VividColors.textMuted, fontSize: 11),
+                  style: TextStyle(color: vc.textMuted, fontSize: 11),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -1084,8 +1101,8 @@ class _UserFormDialogState extends State<_UserFormDialog> {
                       : 'Not available',
                   style: TextStyle(
                     color: hasPassword
-                        ? VividColors.textPrimary
-                        : VividColors.textMuted.withValues(alpha: 0.5),
+                        ? vc.textPrimary
+                        : vc.textMuted.withValues(alpha: 0.5),
                     fontSize: 13,
                     fontStyle: hasPassword ? FontStyle.normal : FontStyle.italic,
                   ),
@@ -1097,7 +1114,7 @@ class _UserFormDialogState extends State<_UserFormDialog> {
             IconButton(
               icon: Icon(
                 _showCurrentPassword ? Icons.visibility_off : Icons.visibility,
-                color: VividColors.textMuted,
+                color: vc.textMuted,
                 size: 18,
               ),
               onPressed: () => setState(() => _showCurrentPassword = !_showCurrentPassword),
@@ -1111,6 +1128,7 @@ class _UserFormDialogState extends State<_UserFormDialog> {
   }
 
   Widget _buildRoleSelector() {
+    final vc = context.vividColors;
     return Wrap(
       spacing: 6,
       runSpacing: 6,
@@ -1127,16 +1145,16 @@ class _UserFormDialogState extends State<_UserFormDialog> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: isSelected ? color.withOpacity(0.15) : VividColors.deepBlue,
+              color: isSelected ? color.withOpacity(0.15) : vc.surfaceAlt,
               borderRadius: BorderRadius.circular(6),
               border: Border.all(
-                color: isSelected ? color : VividColors.tealBlue.withOpacity(0.3),
+                color: isSelected ? color : vc.popupBorder,
               ),
             ),
             child: Text(
               role.displayName,
               style: TextStyle(
-                color: isSelected ? color : VividColors.textMuted,
+                color: isSelected ? color : vc.textMuted,
                 fontSize: 12,
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
               ),
@@ -1148,11 +1166,12 @@ class _UserFormDialogState extends State<_UserFormDialog> {
   }
 
   Widget _buildCustomPermissionsSection() {
+    final vc = context.vividColors;
     return Container(
       decoration: BoxDecoration(
-        color: VividColors.deepBlue,
+        color: vc.surfaceAlt,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: VividColors.tealBlue.withOpacity(0.3)),
+        border: Border.all(color: vc.popupBorder),
       ),
       child: Column(
         children: [
@@ -1166,14 +1185,14 @@ class _UserFormDialogState extends State<_UserFormDialog> {
                 children: [
                   Icon(
                     _showCustomPermissions ? Icons.expand_less : Icons.expand_more,
-                    color: VividColors.textMuted,
+                    color: vc.textMuted,
                     size: 20,
                   ),
                   const SizedBox(width: 8),
-                  const Text(
+                  Text(
                     'Custom Permissions',
                     style: TextStyle(
-                      color: VividColors.textPrimary,
+                      color: vc.textPrimary,
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
                     ),
@@ -1199,7 +1218,7 @@ class _UserFormDialogState extends State<_UserFormDialog> {
                   Text(
                     _showCustomPermissions ? 'Hide' : 'Show',
                     style: TextStyle(
-                      color: VividColors.textMuted.withOpacity(0.6),
+                      color: vc.textMuted.withOpacity(0.6),
                       fontSize: 11,
                     ),
                   ),
@@ -1207,10 +1226,10 @@ class _UserFormDialogState extends State<_UserFormDialog> {
               ),
             ),
           ),
-          
+
           // Permissions list
           if (_showCustomPermissions) ...[
-            Divider(height: 1, color: VividColors.tealBlue.withOpacity(0.2)),
+            Divider(height: 1, color: vc.border),
             Padding(
               padding: const EdgeInsets.all(12),
               child: Column(
@@ -1219,7 +1238,7 @@ class _UserFormDialogState extends State<_UserFormDialog> {
                   Text(
                     'Override default ${_selectedRole.displayName.toLowerCase()} permissions:',
                     style: TextStyle(
-                      color: VividColors.textMuted.withOpacity(0.7),
+                      color: vc.textMuted.withOpacity(0.7),
                       fontSize: 11,
                     ),
                   ),
@@ -1235,6 +1254,7 @@ class _UserFormDialogState extends State<_UserFormDialog> {
   }
 
   Widget _buildPermissionsList() {
+    final vc = context.vividColors;
     // Group permissions by category
     final categories = <String, List<Permission>>{};
     for (final perm in Permission.values) {
@@ -1254,12 +1274,12 @@ class _UserFormDialogState extends State<_UserFormDialog> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: VividColors.tealBlue.withOpacity(0.1),
+                  color: vc.borderSubtle,
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
                   entry.key,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: VividColors.tealBlue,
                     fontSize: 10,
                     fontWeight: FontWeight.w600,
@@ -1282,14 +1302,15 @@ class _UserFormDialogState extends State<_UserFormDialog> {
   }
 
   Widget _buildPermissionChip(Permission perm) {
+    final vc = context.vividColors;
     final roleDefaults = _getDefaultPermissions(_selectedRole);
     final isDefault = roleDefaults.contains(perm);
     final isCustom = _customPermissions.contains(perm);
     final isRevoked = _revokedPermissions.contains(perm);
-    
+
     // Determine current state
     final bool isEnabled = (isDefault && !isRevoked) || isCustom;
-    
+
     // Determine badge type
     String? badge;
     Color? badgeColor;
@@ -1301,7 +1322,7 @@ class _UserFormDialogState extends State<_UserFormDialog> {
       badgeColor = Colors.purple;
     } else if (isDefault) {
       badge = 'DEFAULT';
-      badgeColor = VividColors.textMuted;
+      badgeColor = vc.textMuted;
     }
 
     return InkWell(
@@ -1310,14 +1331,14 @@ class _UserFormDialogState extends State<_UserFormDialog> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
         decoration: BoxDecoration(
-          color: isEnabled 
+          color: isEnabled
               ? (isCustom ? Colors.purple.withOpacity(0.1) : VividColors.brightBlue.withOpacity(0.1))
-              : (isRevoked ? Colors.red.withOpacity(0.05) : VividColors.navy),
+              : (isRevoked ? Colors.red.withOpacity(0.05) : vc.surface),
           borderRadius: BorderRadius.circular(6),
           border: Border.all(
             color: isEnabled
                 ? (isCustom ? Colors.purple.withOpacity(0.3) : VividColors.brightBlue.withOpacity(0.3))
-                : (isRevoked ? Colors.red.withOpacity(0.3) : VividColors.tealBlue.withOpacity(0.2)),
+                : (isRevoked ? Colors.red.withOpacity(0.3) : vc.border),
           ),
         ),
         child: Row(
@@ -1328,13 +1349,13 @@ class _UserFormDialogState extends State<_UserFormDialog> {
               size: 14,
               color: isEnabled
                   ? (isCustom ? Colors.purple : VividColors.brightBlue)
-                  : (isRevoked ? Colors.red.withOpacity(0.5) : VividColors.textMuted.withOpacity(0.5)),
+                  : (isRevoked ? Colors.red.withOpacity(0.5) : vc.textMuted.withOpacity(0.5)),
             ),
             const SizedBox(width: 6),
             Text(
               perm.displayName,
               style: TextStyle(
-                color: isEnabled ? VividColors.textPrimary : VividColors.textMuted.withOpacity(0.6),
+                color: isEnabled ? vc.textPrimary : vc.textMuted.withOpacity(0.6),
                 fontSize: 11,
                 decoration: isRevoked ? TextDecoration.lineThrough : null,
               ),
@@ -1388,6 +1409,7 @@ class _UserFormDialogState extends State<_UserFormDialog> {
   }
 
   Color _getRoleColor(UserRole role) {
+    final vc = context.vividColors;
     switch (role) {
       case UserRole.admin:
         return VividColors.cyan;
@@ -1396,7 +1418,7 @@ class _UserFormDialogState extends State<_UserFormDialog> {
       case UserRole.agent:
         return Colors.green;
       case UserRole.viewer:
-        return VividColors.textMuted;
+        return vc.textMuted;
     }
   }
 
@@ -1445,11 +1467,11 @@ class _UserFormDialogState extends State<_UserFormDialog> {
     bool success;
 
     // Convert to string lists for storage
-    final customPermsList = _customPermissions.isNotEmpty 
-        ? _customPermissions.map((p) => p.value).toList() 
+    final customPermsList = _customPermissions.isNotEmpty
+        ? _customPermissions.map((p) => p.value).toList()
         : <String>[];
-    final revokedPermsList = _revokedPermissions.isNotEmpty 
-        ? _revokedPermissions.map((p) => p.value).toList() 
+    final revokedPermsList = _revokedPermissions.isNotEmpty
+        ? _revokedPermissions.map((p) => p.value).toList()
         : <String>[];
 
     if (isEdit) {
