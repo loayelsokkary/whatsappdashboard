@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/templates_provider.dart';
 import '../models/models.dart';
+import '../providers/templates_provider.dart';
 import '../theme/vivid_theme.dart';
 import 'new_template_screen.dart';
+import 'template_detail_screen.dart';
 
 class TemplatesScreen extends StatefulWidget {
   const TemplatesScreen({super.key});
@@ -17,7 +18,11 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
   void initState() {
     super.initState();
     Future.microtask(() {
-      if (mounted) context.read<TemplatesProvider>().fetchTemplates();
+      if (!mounted) return;
+      final provider = context.read<TemplatesProvider>();
+      final clientId = ClientConfig.currentClient?.id ?? '';
+      provider.fetchTemplates();
+      provider.fetchTemplateDbStatuses(clientId);
     });
   }
 
@@ -92,6 +97,45 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
                   )
                 : const Icon(Icons.sync_rounded, size: 16),
             label: const Text('Refresh'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: vc.textSecondary,
+              side: BorderSide(
+                  color: VividColors.tealBlue.withValues(alpha: 0.4)),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              textStyle:
+                  const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+            ),
+          ),
+          const SizedBox(width: 10),
+          // Sync to AI button
+          OutlinedButton.icon(
+            onPressed: provider.isSyncing
+                ? null
+                : () async {
+                    final error =
+                        await provider.syncTemplatesToSupabase();
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          error ?? 'Templates synced to AI ✓',
+                        ),
+                        backgroundColor:
+                            error == null ? Colors.green[700] : Colors.red[700],
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  },
+            icon: provider.isSyncing
+                ? SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: vc.textMuted),
+                  )
+                : const Icon(Icons.cloud_upload_rounded, size: 16),
+            label: const Text('Sync to AI'),
             style: OutlinedButton.styleFrom(
               foregroundColor: vc.textSecondary,
               side: BorderSide(
@@ -222,10 +266,12 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
         ),
         itemCount: provider.templates.length,
         itemBuilder: (context, index) {
+          final t = provider.templates[index];
           return _TemplateCard(
-            template: provider.templates[index],
+            template: t,
+            dbStatus: provider.templateDbStatuses[t.id],
             onDelete: (name, id) => _confirmDelete(context, provider, name, id),
-            onPreview: (t) => _showPreview(context, t),
+            onTap: () => _openDetail(context, t),
           );
         },
       );
@@ -247,10 +293,14 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
     );
   }
 
-  void _showPreview(BuildContext context, WhatsAppTemplate template) {
-    showDialog(
-      context: context,
-      builder: (_) => _TemplatePreviewDialog(template: template),
+  void _openDetail(BuildContext context, WhatsAppTemplate template) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ChangeNotifierProvider.value(
+          value: context.read<TemplatesProvider>(),
+          child: TemplateDetailScreen(template: template),
+        ),
+      ),
     );
   }
 
@@ -314,14 +364,38 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
 
 class _TemplateCard extends StatelessWidget {
   final WhatsAppTemplate template;
+  final Map<String, dynamic>? dbStatus;
   final void Function(String name, String id) onDelete;
-  final void Function(WhatsAppTemplate t) onPreview;
-
+  final VoidCallback onTap;
   const _TemplateCard({
     required this.template,
     required this.onDelete,
-    required this.onPreview,
+    required this.onTap,
+    this.dbStatus,
   });
+
+  // Compute validation state from DB status
+  // Returns 0=none, 1=green, 2=yellow, 3=red
+  int _validationLevel() {
+    if (dbStatus == null) return 0;
+    final varCount = (dbStatus!['body_variable_count'] as int?) ?? 0;
+    final rawLabels = dbStatus!['body_variable_labels'];
+    final headerType = (dbStatus!['header_type'] as String? ?? '').toLowerCase();
+    final imageUrl = dbStatus!['offer_image_url'] as String?;
+
+    if (varCount == 0) return 1; // no variables → trivially valid
+
+    final labels = rawLabels is List ? List<String>.from(rawLabels) : <String>[];
+    if (labels.isEmpty || labels.every((l) => l.trim().isEmpty)) return 3; // red
+
+    const standard = {'customer_name', 'service', 'price', 'date', 'provider', 'branch'};
+    final hasGeneric = labels.any((l) => !standard.contains(l) && l.trim().isNotEmpty);
+    final imageMissing = headerType == 'image' &&
+        (imageUrl == null || !imageUrl.contains('supabase.co/storage'));
+
+    if (hasGeneric || imageMissing) return 2; // yellow
+    return 1; // green
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -329,13 +403,21 @@ class _TemplateCard extends StatelessWidget {
     final hasImage = template.headerType == 'IMAGE' &&
         template.headerMediaUrl != null &&
         template.headerMediaUrl!.isNotEmpty;
+    final level = _validationLevel();
+    final dotColor = level == 1
+        ? VividColors.statusSuccess
+        : level == 2
+            ? VividColors.statusWarning
+            : level == 3
+                ? VividColors.statusUrgent
+                : null;
 
     return Material(
       color: vc.surface,
       borderRadius: BorderRadius.circular(12),
-      clipBehavior: Clip.antiAlias, // clips image to card border-radius
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => onPreview(template),
+        onTap: onTap,
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
@@ -417,6 +499,17 @@ class _TemplateCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 8),
                           _statusBadge(context, template.status),
+                          if (dotColor != null) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: dotColor,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                       const SizedBox(height: 8),
@@ -465,7 +558,7 @@ class _TemplateCard extends StatelessWidget {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    // Delete — stop propagation so it doesn't trigger card tap
+                    // Delete
                     TextButton.icon(
                       onPressed: () => onDelete(template.name, template.id),
                       icon: const Icon(Icons.delete_outline_rounded, size: 14),
@@ -555,279 +648,4 @@ class _TemplateCard extends StatelessWidget {
 
   String _capitalize(String s) =>
       s.isEmpty ? s : s[0].toUpperCase() + s.substring(1).toLowerCase();
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// PREVIEW DIALOG
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _TemplatePreviewDialog extends StatelessWidget {
-  final WhatsAppTemplate template;
-
-  const _TemplatePreviewDialog({required this.template});
-
-  @override
-  Widget build(BuildContext context) {
-    final vc = context.vividColors;
-    return Dialog(
-      backgroundColor: vc.surface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Container(
-        width: 400,
-        constraints: const BoxConstraints(maxHeight: 600),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Dialog header
-            Container(
-              padding: const EdgeInsets.fromLTRB(20, 16, 12, 16),
-              decoration: BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(
-                      color: vc.border),
-                ),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.phone_android_rounded,
-                      color: VividColors.cyan, size: 18),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text('Preview',
-                        style: TextStyle(
-                            color: vc.textPrimary,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 15)),
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.close_rounded,
-                        color: vc.textMuted, size: 20),
-                    onPressed: () => Navigator.pop(context),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-                ],
-              ),
-            ),
-
-            // WhatsApp mock area
-            Flexible(
-              child: Container(
-                color: const Color(0xFFEAE0D5),
-                child: ListView(
-                  padding: const EdgeInsets.all(16),
-                  shrinkWrap: true,
-                  children: [
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: _buildBubble(context),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBubble(BuildContext context) {
-    return Container(
-      constraints: const BoxConstraints(maxWidth: 300),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(0),
-          topRight: Radius.circular(12),
-          bottomLeft: Radius.circular(12),
-          bottomRight: Radius.circular(12),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Header bar (green)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: const BoxDecoration(
-              color: Color(0xFF25D366),
-              borderRadius: BorderRadius.only(
-                topRight: Radius.circular(12),
-              ),
-            ),
-            child: Text(
-              template.name,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-
-          // Header text/image
-          if (template.headerType == 'TEXT' &&
-              template.headerText != null) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-              child: Text(
-                template.headerText!,
-                style: const TextStyle(
-                  color: Color(0xFF111111),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ],
-          if (template.headerType == 'IMAGE') ...[
-            if (template.headerMediaUrl != null &&
-                template.headerMediaUrl!.isNotEmpty)
-              Image.network(
-                template.headerMediaUrl!,
-                width: double.infinity,
-                fit: BoxFit.contain, // show full image without cropping
-                errorBuilder: (_, __, ___) => Container(
-                  height: 120,
-                  color: const Color(0xFFDDE3EA),
-                  child: const Icon(Icons.broken_image_outlined,
-                      size: 40, color: Color(0xFF90A4AE)),
-                ),
-                loadingBuilder: (_, child, progress) => progress == null
-                    ? child
-                    : Container(
-                        height: 120,
-                        color: const Color(0xFFDDE3EA),
-                        child: const Center(
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Color(0xFF90A4AE))),
-                      ),
-              )
-            else
-              Container(
-                height: 120,
-                width: double.infinity,
-                color: const Color(0xFFDDE3EA),
-                child: const Icon(Icons.image_outlined,
-                    size: 40, color: Color(0xFF90A4AE)),
-              ),
-          ],
-          if (template.headerType == 'VIDEO') ...[
-            Container(
-              height: 120,
-              width: double.infinity,
-              color: const Color(0xFFDDE3EA),
-              child: const Icon(Icons.play_circle_outline_rounded,
-                  size: 40, color: Color(0xFF90A4AE)),
-            ),
-          ],
-
-          // Body
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
-            child: _buildBodyText(template.body),
-          ),
-
-          // Footer
-          if (template.footer != null && template.footer!.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-              child: Text(
-                template.footer!,
-                style: const TextStyle(
-                    color: Color(0xFF9E9E9E), fontSize: 11),
-              ),
-            ),
-
-          // Timestamp stub
-          const Padding(
-            padding: EdgeInsets.fromLTRB(0, 0, 10, 6),
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: Text('9:41',
-                  style: TextStyle(
-                      color: Color(0xFF9E9E9E), fontSize: 10)),
-            ),
-          ),
-
-          // Buttons
-          if (template.buttons.isNotEmpty) ...[
-            const Divider(height: 1, color: Color(0xFFEEEEEE)),
-            ...template.buttons.map((b) => _buildButton(b)),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBodyText(String text) {
-    // Highlight {{n}} variables in cyan
-    final spans = <TextSpan>[];
-    final re = RegExp(r'\{\{(\d+)\}\}');
-    int last = 0;
-    for (final match in re.allMatches(text)) {
-      if (match.start > last) {
-        spans.add(TextSpan(
-          text: text.substring(last, match.start),
-          style: const TextStyle(color: Color(0xFF111111), fontSize: 13),
-        ));
-      }
-      spans.add(TextSpan(
-        text: match.group(0),
-        style: const TextStyle(
-          color: VividColors.cyan,
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-        ),
-      ));
-      last = match.end;
-    }
-    if (last < text.length) {
-      spans.add(TextSpan(
-        text: text.substring(last),
-        style: const TextStyle(color: Color(0xFF111111), fontSize: 13),
-      ));
-    }
-    return RichText(
-        text: TextSpan(
-            children: spans,
-            style: const TextStyle(height: 1.5)));
-  }
-
-  Widget _buildButton(TemplateButton button) {
-    final icon = switch (button.type.toUpperCase()) {
-      'URL' => Icons.open_in_new_rounded,
-      'PHONE_NUMBER' => Icons.phone_rounded,
-      _ => Icons.reply_rounded,
-    };
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 14, color: const Color(0xFF0088CC)),
-          const SizedBox(width: 6),
-          Text(
-            button.text,
-            style: const TextStyle(
-                color: Color(0xFF0088CC),
-                fontSize: 13,
-                fontWeight: FontWeight.w500),
-          ),
-        ],
-      ),
-    );
-  }
 }

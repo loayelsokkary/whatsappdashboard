@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import '../models/models.dart';
 import '../providers/templates_provider.dart';
 import '../theme/vivid_theme.dart';
 
@@ -32,6 +33,19 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
 
   // Variable example controllers keyed by variable number ({{1}} → key 1)
   final Map<int, TextEditingController> _varControllers = {};
+  // AI metadata: label and source per variable
+  final Map<int, TextEditingController> _varLabelControllers = {};
+  final Map<int, String> _varLabels = {};
+  final Map<int, String> _varSources = {};
+  static const _labelOptions = [
+    'customer_name',
+    'service',
+    'price',
+    'date',
+    'provider',
+    'branch',
+  ];
+  static const _sourceOptions = ['customer_data', 'ai_extracted', 'static'];
 
   // Buttons
   final List<_ButtonEntry> _buttons = [];
@@ -69,6 +83,9 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
     for (final c in _varControllers.values) {
       c.dispose();
     }
+    for (final c in _varLabelControllers.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -86,10 +103,26 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
       }
       return false;
     });
+    _varLabelControllers.removeWhere((k, v) {
+      if (!nums.contains(k)) {
+        v.dispose();
+        return true;
+      }
+      return false;
+    });
+    _varSources.removeWhere((k, _) => !nums.contains(k));
+    _varLabels.removeWhere((k, _) => !nums.contains(k));
 
     // Add missing controllers
     for (final n in nums) {
       _varControllers.putIfAbsent(n, () => TextEditingController());
+      final defaultLabel = (n - 1) < _labelOptions.length
+          ? _labelOptions[n - 1]
+          : _labelOptions[0];
+      _varLabels.putIfAbsent(n, () => defaultLabel);
+      _varLabelControllers.putIfAbsent(
+          n, () => TextEditingController(text: defaultLabel));
+      _varSources.putIfAbsent(n, () => 'customer_data');
     }
   }
 
@@ -99,6 +132,27 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     final provider = context.read<TemplatesProvider>();
+    final templateName =
+        _nameController.text.trim().toLowerCase().replaceAll(' ', '_');
+
+    // ── Step 1: Upload image to Supabase Storage FIRST ─────────────────────
+    // Must happen before any Meta API call so the permanent URL is always
+    // captured. Throws with a specific message on failure.
+    String? offerImageUrl;
+    if (_headerType == 'IMAGE' && _imageBytes != null && _imageMimeType != null) {
+      try {
+        offerImageUrl = await provider.uploadOfferImageToStorage(
+          _imageBytes!,
+          templateName,
+          _imageMimeType!,
+        );
+      } catch (e) {
+        if (!mounted) return;
+        _showError(e.toString().replaceFirst('Exception: ', ''));
+        return;
+      }
+    }
+
     final components = <Map<String, dynamic>>[];
 
     // Header component
@@ -115,7 +169,7 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
             await provider.uploadImage(_imageBytes!, _imageMimeType!);
         if (handle == null) {
           if (!mounted) return;
-          _showError('Image upload failed. Please try again.');
+          _showError('Image upload to Meta failed. Please try again.');
           return;
         }
       }
@@ -174,8 +228,8 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
       components.add({'type': 'BUTTONS', 'buttons': btnList});
     }
 
-    final error = await provider.createTemplate(
-      name: _nameController.text.trim().toLowerCase().replaceAll(' ', '_'),
+    final (:error, :templateId) = await provider.createTemplate(
+      name: templateName,
       language: _language,
       category: _category,
       components: components,
@@ -185,15 +239,54 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
 
     if (error != null) {
       _showError(error);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Template submitted for Meta approval'),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: VividColors.statusSuccess,
-      ));
-      await provider.fetchTemplates();
-      if (mounted) Navigator.pop(context);
+      return;
     }
+
+    // ── Sync to Supabase in background (non-blocking) ──────────────────────
+    // Build a stub WhatsAppTemplate to pass to syncSingleTemplate
+    final varNums = (_varControllers.keys.toList()..sort());
+    final variableLabels = varNums
+        .map((n) => _varLabelControllers[n]?.text.trim() ?? '')
+        .toList();
+    final variableSources =
+        varNums.map((n) => _varSources[n] ?? 'customer_data').toList();
+
+    // Build a minimal WhatsAppTemplate stub for the sync call
+    if (templateId != null) {
+      final stubTemplate = WhatsAppTemplate(
+        id: templateId,
+        name: templateName,
+        status: 'PENDING',
+        language: _language,
+        category: _category,
+        headerType: _headerType,
+        body: _bodyController.text.trim(),
+        buttons: _buttons
+            .map((b) => TemplateButton(type: b.type, text: b.textController.text.trim()))
+            .toList(),
+        componentsJson: components,
+      );
+
+      final syncError = await provider.syncSingleTemplate(
+        stubTemplate,
+        targetServices: '',
+        variableLabels: variableLabels,
+        variableSources: variableSources,
+        offerImageUrl: offerImageUrl,
+      );
+      if (syncError != null) {
+        debugPrint('[_submit] syncSingleTemplate error: $syncError');
+      }
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('Template submitted for Meta approval'),
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: VividColors.statusSuccess,
+    ));
+    await provider.fetchTemplates();
+    if (mounted) Navigator.pop(context);
   }
 
   void _showError(String msg) {
@@ -357,6 +450,7 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
               child: Column(
                 children: [
                   _buildField(
+                    context,
                     label: 'Template Name *',
                     helper:
                         'Type naturally — spaces become underscores, text auto-lowercased',
@@ -384,6 +478,7 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
                     children: [
                       Expanded(
                         child: _buildField(
+                          context,
                           label: 'Language',
                           child: _buildDropdown(
                             context,
@@ -403,6 +498,7 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
                       const SizedBox(width: 14),
                       Expanded(
                         child: _buildField(
+                          context,
                           label: 'Category',
                           child: _buildDropdown(
                             context,
@@ -433,6 +529,7 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
                 children: [
                   // Header
                   _buildField(
+                    context,
                     label: 'Header (optional)',
                     child: _buildDropdown(
                       context,
@@ -469,6 +566,7 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
                   if (_headerType == 'TEXT') ...[
                     const SizedBox(height: 14),
                     _buildField(
+                      context,
                       label: 'Header Text',
                       child: TextFormField(
                         controller: _headerTextController,
@@ -488,6 +586,7 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
 
                   // Body
                   _buildField(
+                    context,
                     label: 'Body *',
                     helper:
                         'Use {{1}}, {{2}} etc. for variables. Meta requires example values.',
@@ -512,6 +611,10 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
                             if (v == null || v.trim().isEmpty) {
                               return 'Body text is required';
                             }
+                            final trimmed = v.trim();
+                            if (trimmed.startsWith('{{') || trimmed.endsWith('}}')) {
+                              return "Variables can't be at the start or end of the message body.";
+                            }
                             return null;
                           },
                           onChanged: (v) {
@@ -533,28 +636,16 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
                     ),
                   ),
 
-                  // Variable examples (shown when body has {{n}})
+                  // Variable rows (shown when body has {{n}})
                   if (_varControllers.isNotEmpty) ...[
                     const SizedBox(height: 14),
                     _buildField(
-                      label: 'Variable Examples *',
-                      helper:
-                          'Meta requires sample values for each {{n}} variable',
+                      context,
+                      label: 'Variables *',
+                      helper: 'Example value is sent to Meta for approval · Label & source are stored for AI',
                       child: Column(
                         children: (_varControllers.keys.toList()..sort())
-                            .map((n) => Padding(
-                                  padding: const EdgeInsets.only(bottom: 8),
-                                  child: TextFormField(
-                                    controller: _varControllers[n],
-                                    style: _inputTextStyle(context),
-                                    decoration: _inputDecoration(context, 'Value for {{$n}}'),
-                                    validator: (v) => (v == null ||
-                                            v.trim().isEmpty)
-                                        ? 'Example for {{$n}} is required'
-                                        : null,
-                                    onChanged: (_) => setState(() {}),
-                                  ),
-                                ))
+                            .map((n) => _buildVarRow(context, n))
                             .toList(),
                       ),
                     ),
@@ -564,6 +655,7 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
 
                   // Footer
                   _buildField(
+                    context,
                     label: 'Footer (optional)',
                     helper: 'Footer note or unsubscribe text',
                     child: TextFormField(
@@ -1064,6 +1156,85 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
     );
   }
 
+  // ─── Variable row (example + label + source) ───────────────────────────────
+
+  Widget _buildVarRow(BuildContext context, int n) {
+    final vc = context.vividColors;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Tag label
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: VividColors.cyan.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(5),
+            ),
+            child: Text(
+              '{{$n}}',
+              style: const TextStyle(
+                color: VividColors.cyan,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          // Variable label dropdown (feeds body_variable_labels)
+          DropdownButtonFormField<String>(
+            value: _varLabels[n] ?? _labelOptions[0],
+            items: _labelOptions
+                .map((l) => DropdownMenuItem(
+                      value: l,
+                      child: Text(l, style: TextStyle(color: vc.textPrimary, fontSize: 13)),
+                    ))
+                .toList(),
+            onChanged: (v) {
+              if (v == null) return;
+              setState(() {
+                _varLabels[n] = v;
+                _varLabelControllers[n]?.text = v;
+              });
+            },
+            style: _inputTextStyle(context),
+            dropdownColor: vc.surfaceAlt,
+            decoration: _inputDecoration(context, 'Variable Label'),
+            icon: Icon(Icons.keyboard_arrow_down_rounded, color: vc.textMuted, size: 18),
+          ),
+          const SizedBox(height: 6),
+          // Example value field
+          TextFormField(
+            controller: _varControllers[n],
+            style: _inputTextStyle(context),
+            decoration: _inputDecoration(context, 'Example value (required by Meta)'),
+            validator: (v) => (v == null || v.trim().isEmpty)
+                ? 'Example for {{$n}} is required'
+                : null,
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 6),
+          // Source dropdown
+          DropdownButtonFormField<String>(
+            value: _varSources[n] ?? 'customer_data',
+            items: _sourceOptions
+                .map((s) => DropdownMenuItem(
+                      value: s,
+                      child: Text(s, style: TextStyle(color: vc.textPrimary, fontSize: 12)),
+                    ))
+                .toList(),
+            onChanged: (v) => setState(() => _varSources[n] = v ?? 'customer_data'),
+            style: _inputTextStyle(context),
+            dropdownColor: vc.surfaceAlt,
+            decoration: _inputDecoration(context, 'Data Source'),
+            icon: Icon(Icons.keyboard_arrow_down_rounded, color: vc.textMuted, size: 18),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ─── Shared UI helpers ─────────────────────────────────────────────────────
 
   Widget _buildSection(
@@ -1089,7 +1260,7 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
                 Text(
                   title.toUpperCase(),
                   style: TextStyle(
-                    color: vc.textSecondary,
+                    color: vc.textPrimary,
                     fontSize: 10,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0.8,
@@ -1115,17 +1286,19 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
     );
   }
 
-  Widget _buildField({
+  Widget _buildField(
+    BuildContext context, {
     required String label,
     required Widget child,
     String? helper,
   }) {
+    final vc = context.vividColors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label,
-            style: const TextStyle(
-                color: Color(0xFFE2E8F0),
+            style: TextStyle(
+                color: vc.textPrimary,
                 fontSize: 12,
                 fontWeight: FontWeight.w500)),
         const SizedBox(height: 6),

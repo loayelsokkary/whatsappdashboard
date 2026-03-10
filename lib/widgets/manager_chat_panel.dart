@@ -573,7 +573,7 @@ class _MessageBubble extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
                     color: isUser
-                        ? VividColors.brightBlue
+                        ? const Color(0xFF2563EB)
                         : vc.surfaceAlt,
                     borderRadius: BorderRadius.only(
                       topLeft: const Radius.circular(16),
@@ -598,7 +598,7 @@ class _MessageBubble extends StatelessWidget {
                       SelectableText(
                         item.text,
                         style: TextStyle(
-                          color: vc.textPrimary,
+                          color: isUser ? Colors.white : vc.textPrimary,
                           fontSize: 15,
                           height: 1.4,
                         ),
@@ -607,7 +607,9 @@ class _MessageBubble extends StatelessWidget {
                       Text(
                         _formatTime(item.createdAt),
                         style: TextStyle(
-                          color: vc.textPrimary.withValues(alpha: 0.5),
+                          color: isUser
+                              ? Colors.white.withValues(alpha: 0.7)
+                              : vc.textPrimary.withValues(alpha: 0.5),
                           fontSize: 10,
                         ),
                       ),

@@ -22,6 +22,19 @@ class SupabaseService {
   
   static const String _supabaseUrl = 'https://zxvjzaowvzvfgrzdimbm.supabase.co';
   static const String _supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp4dmp6YW93dnp2ZmdyemRpbWJtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU1NjM2MjUsImV4cCI6MjA4MTEzOTYyNX0.NkVPCRTLcQOdkzIhfsnvPBWJ1vcfeMQOysAuq6Erryg';
+
+  // WARNING: Service role key bypasses ALL RLS — internal dashboard use only.
+  // Get from: Supabase → Project Settings → API → service_role secret key.
+  // TODO: Replace the placeholder below with your actual service role key.
+  static const String _supabaseServiceRoleKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp4dmp6YW93dnp2ZmdyemRpbWJtIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTU2MzYyNSwiZXhwIjoyMDgxMTM5NjI1fQ.Fn-X_nwqm9pUtnn6vhKm_p11sXL7R4gtn1Q7H6e24Y4';
+
+  // Lazy admin client — created once on first use, used only for Storage uploads.
+  static SupabaseClient? _adminClient;
+  static SupabaseClient get adminClient {
+    _adminClient ??= SupabaseClient(_supabaseUrl, _supabaseServiceRoleKey);
+    return _adminClient!;
+  }
+
   // Webhook URL is now loaded from ClientConfig
 
   // ============================================
@@ -31,7 +44,7 @@ class SupabaseService {
   static String metaApiVersion = 'v21.0';
   static String metaAccessToken = 'EAAbZB1YmaTZBgBQ9VyQAhCOumHulultZAfCeC7srDnVTFH7VpPDmywE50zYi6Eq5uOVnVSjAL24ZASRNYZARFdH429CKEhcafZBhS5o4gAZCAF5YRoMWIV0kfwZBScUp7au1TDji2fSVvUMifGQqmjgxlxjYIpiRainEV1gSCO7EYeuY1PFcAtfB1fzsiP0eiwZDZD';
   static String metaWabaId = '699577226572846';
-  static String metaAppId = '';
+  static String metaAppId = '1969042950344680';
 
   // ============================================
   // SINGLETON

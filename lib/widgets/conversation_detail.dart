@@ -1541,7 +1541,9 @@ class _MessageBubbleState extends State<_MessageBubble>
                                             widget.isPending ? 'Sending...' : _formatTime(widget.message.createdAt),
                                             key: ValueKey(widget.isPending ? 'pending' : 'sent'),
                                             style: TextStyle(
-                                              color: vc.textPrimary.withValues(alpha: 0.5),
+                                              color: isManager
+                                                  ? Colors.white.withValues(alpha: 0.7)
+                                                  : vc.textPrimary.withValues(alpha: 0.5),
                                               fontSize: 10,
                                             ),
                                           ),
@@ -1696,7 +1698,7 @@ class _MessageBubbleState extends State<_MessageBubble>
       case SenderType.ai:
         return vc.aiBubble;
       case SenderType.manager:
-        return VividColors.brightBlue.withValues(alpha: widget.isPending ? 0.6 : 0.8);
+        return Color(widget.isPending ? 0xCC2563EB : 0xFF2563EB);
     }
   }
 

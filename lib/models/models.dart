@@ -458,7 +458,11 @@ enum Permission {
   viewBookingReminders,
   
   // Activity Logs
-  viewActivityLogs;
+  viewActivityLogs,
+
+  // Templates
+  viewTemplates,
+  manageTemplates;
 
   /// Convert permission to snake_case string for database storage
   String get value {
@@ -475,6 +479,8 @@ enum Permission {
       case Permission.manageUsers: return 'manage_users';
       case Permission.viewBookingReminders: return 'view_booking_reminders';
       case Permission.viewActivityLogs: return 'view_activity_logs';
+      case Permission.viewTemplates: return 'view_templates';
+      case Permission.manageTemplates: return 'manage_templates';
     }
   }
 
@@ -493,6 +499,8 @@ enum Permission {
       case Permission.manageUsers: return 'Manage Users';
       case Permission.viewBookingReminders: return 'View Booking Reminders';
       case Permission.viewActivityLogs: return 'View Activity Logs';
+      case Permission.viewTemplates: return 'View Templates';
+      case Permission.manageTemplates: return 'Manage Templates';
     }
   }
 
@@ -518,6 +526,9 @@ enum Permission {
         return 'Booking Reminders';
       case Permission.viewActivityLogs:
         return 'Activity Logs';
+      case Permission.viewTemplates:
+      case Permission.manageTemplates:
+        return 'Templates';
     }
   }
 
@@ -560,6 +571,8 @@ class Permissions {
       Permission.manageUsers,
       Permission.viewBookingReminders,
       Permission.viewActivityLogs,
+      Permission.viewTemplates,
+      Permission.manageTemplates,
     },
     UserRole.manager: {
       Permission.viewDashboard,
@@ -571,6 +584,8 @@ class Permissions {
       Permission.viewManagerChat,
       Permission.useManagerChat,
       Permission.viewBookingReminders,
+      Permission.viewTemplates,
+      Permission.manageTemplates,
     },
     UserRole.agent: {
       Permission.viewDashboard,
@@ -1388,6 +1403,7 @@ class WhatsAppTemplate {
   final String body;
   final String? footer;
   final List<TemplateButton> buttons;
+  final List<dynamic> componentsJson;
 
   const WhatsAppTemplate({
     required this.id,
@@ -1401,10 +1417,12 @@ class WhatsAppTemplate {
     required this.body,
     this.footer,
     required this.buttons,
+    this.componentsJson = const [],
   });
 
   factory WhatsAppTemplate.fromJson(Map<String, dynamic> json) {
     final components = json['components'] as List<dynamic>? ?? [];
+    final componentsJson = components;
     String headerType = '';
     String? headerText;
     String? headerMediaUrl;
@@ -1448,6 +1466,7 @@ class WhatsAppTemplate {
       body: body,
       footer: footer,
       buttons: buttons,
+      componentsJson: componentsJson,
     );
   }
 }
