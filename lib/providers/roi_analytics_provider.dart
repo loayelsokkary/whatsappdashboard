@@ -273,6 +273,7 @@ class RoiAnalyticsProvider extends ChangeNotifier {
         agentMessageCounts: current.agentMessageCounts,
         automatedMessageCount: current.automatedMessageCount,
         inboundCustomers: current.inboundCustomers,
+        employeePerformance: current.employeePerformance,
       );
     } catch (e, st) {
       _error = 'Failed to load analytics: $e';
@@ -612,6 +613,68 @@ class RoiAnalyticsProvider extends ChangeNotifier {
       }
     }
 
+    // ---- EMPLOYEE PERFORMANCE ----
+    // Per-phone, per-employee message count (to find primary handler)
+    final Map<String, Map<String, int>> phoneEmpMsgCount = {};
+    for (final entry in byPhone.entries) {
+      final phone = entry.key;
+      for (final m in entry.value) {
+        if (!_isHumanOutbound(m)) continue;
+        final emp = (m['sent_by']?.toString() ?? '').trim();
+        if (emp.isEmpty) continue;
+        final phoneMap = phoneEmpMsgCount.putIfAbsent(phone, () => {});
+        phoneMap[emp] = (phoneMap[emp] ?? 0) + 1;
+      }
+    }
+
+    // Primary handler per phone = employee with the most messages
+    final Map<String, String> phonePrimaryHandler = {};
+    for (final e in phoneEmpMsgCount.entries) {
+      if (e.value.isEmpty) continue;
+      final primary = e.value.entries.reduce((a, b) => a.value >= b.value ? a : b);
+      phonePrimaryHandler[e.key] = primary.key;
+    }
+
+    // Employee accumulators
+    final Map<String, _EmpAccumulator> empAcc = {};
+    // Fill conversationsHandled from all employees who replied to each phone
+    for (final e in phoneEmpMsgCount.entries) {
+      final phone = e.key;
+      for (final emp in e.value.keys) {
+        empAcc.putIfAbsent(emp, () => _EmpAccumulator()).handledPhones.add(phone);
+      }
+    }
+    // Fill messagesSent from agentMessageCounts
+    for (final e in agentMessageCounts.entries) {
+      empAcc.putIfAbsent(e.key, () => _EmpAccumulator()).messagesSent = e.value;
+    }
+    // Credit appointments/payments to primary handler
+    for (final lc in labeledCustomers) {
+      final handler = phonePrimaryHandler[lc.phone];
+      if (handler == null) continue;
+      final acc = empAcc.putIfAbsent(handler, () => _EmpAccumulator());
+      if (lc.label == 'appointment booked') acc.appointmentsBooked++;
+      if (lc.label == 'payment done') {
+        acc.paymentsCollected++;
+        acc.revenueAttributed += lc.offerAmount;
+      }
+    }
+    final List<EmployeePerformance> employeePerformance = [
+      for (final e in empAcc.entries)
+        EmployeePerformance(
+          name: e.key,
+          messagesSent: e.value.messagesSent,
+          conversationsHandled: e.value.handledPhones.length,
+          avgResponseTimeSeconds: employeeAvgResponseTime[e.key] ?? 0,
+          appointmentsBooked: e.value.appointmentsBooked,
+          paymentsCollected: e.value.paymentsCollected,
+          conversionRate: e.value.handledPhones.isEmpty
+              ? 0.0
+              : (e.value.appointmentsBooked / e.value.handledPhones.length) * 100,
+          revenueAttributed: e.value.revenueAttributed,
+        ),
+    ]..sort((a, b) => b.conversionRate.compareTo(a.conversionRate));
+
     // ---- DAILY BREAKDOWN (UTC+3 Bahrain) ----
     final Map<String, _DayAccumulator> dailyAcc = {};
     final Map<String, DateTime?> phoneDailyLastCM = {};
@@ -747,6 +810,7 @@ class RoiAnalyticsProvider extends ChangeNotifier {
       agentMessageCounts: agentMessageCounts,
       automatedMessageCount: automatedMessageCount,
       inboundCustomers: inboundCustomers,
+      employeePerformance: employeePerformance,
     );
   }
 
@@ -1013,6 +1077,14 @@ class _PhoneResponseAcc {
   _PhoneResponseAcc(this.name);
 }
 
+class _EmpAccumulator {
+  int messagesSent = 0;
+  final Set<String> handledPhones = {};
+  int appointmentsBooked = 0;
+  int paymentsCollected = 0;
+  double revenueAttributed = 0;
+}
+
 class _ComputedMetrics {
   final OverviewMetrics overview;
   final List<DailyBreakdown> daily;
@@ -1029,6 +1101,7 @@ class _ComputedMetrics {
   final Map<String, int> agentMessageCounts;
   final int automatedMessageCount;
   final List<InboundCustomer> inboundCustomers;
+  final List<EmployeePerformance> employeePerformance;
 
   _ComputedMetrics({
     required this.overview,
@@ -1046,6 +1119,7 @@ class _ComputedMetrics {
     this.agentMessageCounts = const {},
     this.automatedMessageCount = 0,
     this.inboundCustomers = const [],
+    this.employeePerformance = const [],
   });
 }
 
@@ -1089,6 +1163,7 @@ class AnalyticsData {
   final Map<String, int> agentMessageCounts;
   final int automatedMessageCount;
   final List<InboundCustomer> inboundCustomers;
+  final List<EmployeePerformance> employeePerformance;
 
   AnalyticsData({
     required this.current,
@@ -1106,6 +1181,7 @@ class AnalyticsData {
     this.agentMessageCounts = const {},
     this.automatedMessageCount = 0,
     this.inboundCustomers = const [],
+    this.employeePerformance = const [],
   });
 }
 
@@ -1274,5 +1350,27 @@ class CampaignRecipient {
     required this.phone,
     this.name,
     required this.displayName,
+  });
+}
+
+class EmployeePerformance {
+  final String name;
+  final int messagesSent;
+  final int conversationsHandled;
+  final double avgResponseTimeSeconds;
+  final int appointmentsBooked;
+  final int paymentsCollected;
+  final double conversionRate; // 0-100
+  final double revenueAttributed;
+
+  EmployeePerformance({
+    required this.name,
+    required this.messagesSent,
+    required this.conversationsHandled,
+    required this.avgResponseTimeSeconds,
+    required this.appointmentsBooked,
+    required this.paymentsCollected,
+    required this.conversionRate,
+    required this.revenueAttributed,
   });
 }
