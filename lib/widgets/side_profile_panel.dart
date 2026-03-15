@@ -599,8 +599,9 @@ class _SideProfilePanelState extends State<SideProfilePanel>
             color: Color(0xFFE2E8F0), fontSize: 15, fontWeight: FontWeight.w700),
             overflow: TextOverflow.ellipsis, maxLines: 1),
           const SizedBox(height: 3),
-          Text(phone, style: const TextStyle(
-            color: Color(0xFF4B6584), fontSize: 12)),
+          Text(phone,
+            overflow: TextOverflow.ellipsis, maxLines: 1,
+            style: const TextStyle(color: Color(0xFF4B6584), fontSize: 12)),
           if (topLabel != null) ...[
             const SizedBox(height: 6),
             _labelPill(topLabel, small: true),
@@ -774,11 +775,13 @@ class _SideProfilePanelState extends State<SideProfilePanel>
         Row(children: [
           const _Dot(color: Color(0xFF0EA5E9)),
           const SizedBox(width: 5),
-          Text('${d.receivedCount} received',
-            style: const TextStyle(color: Color(0xFF4B6584), fontSize: 11)),
+          Flexible(child: Text('${d.receivedCount} received',
+            overflow: TextOverflow.ellipsis, maxLines: 1,
+            style: const TextStyle(color: Color(0xFF4B6584), fontSize: 11))),
           const Spacer(),
-          Text('${d.sentCount} sent',
-            style: const TextStyle(color: Color(0xFF4B6584), fontSize: 11)),
+          Flexible(child: Text('${d.sentCount} sent',
+            overflow: TextOverflow.ellipsis, maxLines: 1,
+            style: const TextStyle(color: Color(0xFF4B6584), fontSize: 11))),
           const SizedBox(width: 5),
           _Dot(color: Colors.white.withValues(alpha: 0.25)),
         ]),
@@ -807,8 +810,9 @@ class _SideProfilePanelState extends State<SideProfilePanel>
           horizontal: small ? 8 : 14, vertical: small ? 3 : 6),
       decoration: BoxDecoration(
         color: bg, borderRadius: BorderRadius.circular(20)),
-      child: Text(label, style: TextStyle(
-        color: fg, fontSize: 11, fontWeight: FontWeight.w500)),
+      child: Text(label,
+        overflow: TextOverflow.ellipsis, maxLines: 1,
+        style: TextStyle(color: fg, fontSize: 11, fontWeight: FontWeight.w500)),
     );
   }
 
@@ -991,17 +995,23 @@ class _SideProfilePanelState extends State<SideProfilePanel>
                 color: Color(0xFFE2E8F0), fontSize: 13, fontWeight: FontWeight.w500),
               overflow: TextOverflow.ellipsis, maxLines: 1)),
             const SizedBox(width: 10),
-            Column(crossAxisAlignment: CrossAxisAlignment.end,
-              mainAxisSize: MainAxisSize.min, children: [
-              Text(dateStr, style: const TextStyle(
-                color: Color(0xFF4B6584), fontSize: 10)),
-              const SizedBox(height: 2),
-              Text(b.responded ? 'Replied' : 'No response',
-                style: TextStyle(
-                  color: b.responded
-                      ? const Color(0xFF34D399) : const Color(0xFF4B6584),
-                  fontSize: 10, fontWeight: FontWeight.w500)),
-            ]),
+            SizedBox(
+              width: 72,
+              child: Column(crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min, children: [
+                Text(dateStr,
+                  overflow: TextOverflow.ellipsis, maxLines: 1,
+                  style: const TextStyle(
+                    color: Color(0xFF4B6584), fontSize: 10)),
+                const SizedBox(height: 2),
+                Text(b.responded ? 'Replied' : 'No response',
+                  overflow: TextOverflow.ellipsis, maxLines: 1,
+                  style: TextStyle(
+                    color: b.responded
+                        ? const Color(0xFF34D399) : const Color(0xFF4B6584),
+                    fontSize: 10, fontWeight: FontWeight.w500)),
+              ]),
+            ),
           ]),
         ),
       ]),
@@ -1044,16 +1054,23 @@ class _SideProfilePanelState extends State<SideProfilePanel>
   @override
   Widget build(BuildContext context) {
     final vc = context.vividColors;
-    return Container(
-      width: 296,
-      decoration: BoxDecoration(
-        // Match the header/sidebar surface color, not the chat background
-        color: vc.surface,
-        border: Border(
-          left: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
+    // OverflowBox ensures the inner layout always uses the full 296px width
+    // even when the parent AnimatedContainer is narrower during slide animation.
+    // The parent ClipRect clips the visual overflow so nothing is shown outside.
+    return OverflowBox(
+      maxWidth: 296,
+      minWidth: 296,
+      alignment: Alignment.topLeft,
+      child: Container(
+        width: 296,
+        decoration: BoxDecoration(
+          color: vc.surface,
+          border: Border(
+            left: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
+          ),
         ),
+        child: _loading ? _buildShimmer() : _buildContent(),
       ),
-      child: _loading ? _buildShimmer() : _buildContent(),
     );
   }
 
