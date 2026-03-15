@@ -5,6 +5,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 // ROI ANALYTICS PROVIDER v4 — Full Rewrite
 // ============================================================
 
+/// How many hours after a broadcast a customer response is still
+/// attributed to that broadcast.  Beyond this window the lead is
+/// considered organic.
+const int _kAttributionWindowHours = 72;
+
 class RoiAnalyticsProvider extends ChangeNotifier {
   final SupabaseClient _supabase = Supabase.instance.client;
 
@@ -220,6 +225,7 @@ class RoiAnalyticsProvider extends ChangeNotifier {
         messages: filtered,
         campaignById: campaignById,
         campaignPhones: campaignPhones,
+        phoneCampaigns: phoneCampaigns,
         campaignSentAt: campaignSentAt,
       );
 
@@ -306,7 +312,6 @@ class RoiAnalyticsProvider extends ChangeNotifier {
     for (final entry in byPhone.entries) {
       final phone = entry.key;
       final msgs = entry.value;
-      final isFromBroadcast = phoneCampaigns.containsKey(phone);
       DateTime? lastCM;
       String? nameAttr;
       for (final m in msgs) {
@@ -316,7 +321,18 @@ class RoiAnalyticsProvider extends ChangeNotifier {
         if (createdAt == null) continue;
         if (lastCM == null || createdAt.difference(lastCM).inHours >= 24) {
           totalLeads++;
-          if (!isFromBroadcast) organicLeads++;
+          // Last-touch attribution: a lead is "from broadcast" only if the
+          // most recent broadcast to this phone was within the attribution window.
+          final lastCampaign = _lastCampaignBefore(
+              phone, createdAt, phoneCampaigns, campaignSentAt);
+          final lastSentAt =
+              lastCampaign != null ? campaignSentAt[lastCampaign] : null;
+          final isFromBroadcast = lastSentAt != null &&
+              createdAt.difference(lastSentAt).inHours <=
+                  _kAttributionWindowHours;
+          if (!isFromBroadcast) {
+            organicLeads++;
+          }
           final lc = LeadContributor(
             phone: phone,
             name: nameAttr,
@@ -366,29 +382,41 @@ class RoiAnalyticsProvider extends ChangeNotifier {
     }
 
     final List<LabeledCustomer> labeledCustomers = [];
+    // Dedup: same phone + label + calendar day counts as one pipeline event.
+    final Set<String> seenPipelineKeys = {};
     for (final evt in labelEvents) {
       final label = evt['label'] as String;
       final phone = evt['phone'] as String;
       final msg = evt['message'] as Map<String, dynamic>;
       final attrDate = evt['attribution_date'] as DateTime?;
+      final dateForKey = attrDate ?? DateTime.now();
+      final dedupKey =
+          '$phone|$label|${dateForKey.year}-${dateForKey.month}-${dateForKey.day}';
+      if (!seenPipelineKeys.add(dedupKey)) continue; // already counted
       if (label == 'appointment booked') appointmentsBooked++;
       if (label == 'payment done') paymentsDone++;
 
-      // Compute offer amount and campaign name before creating LabeledCustomer
-      final cIds = phoneCampaigns[phone] ?? [];
+      // Compute offer amount and campaign name using last-touch attribution.
+      // Use the customer's first message time as the attribution anchor so we
+      // pick the campaign that was most recently sent before they first engaged.
       double offer = 0;
       String? campaignNameAttr;
-      for (final cId in cIds) {
-        final sentAt = campaignSentAt[cId];
-        final firstMsg = phoneFirstMsg[phone];
-        if (sentAt != null &&
-            firstMsg != null &&
-            firstMsg.isAfter(sentAt)) {
-          offer = double.tryParse(
-                  campaignById[cId]?['offer_amount']?.toString() ?? '0') ??
-              0;
-          campaignNameAttr = campaignById[cId]?['name']?.toString();
-          break;
+      final firstMsg = phoneFirstMsg[phone];
+      if (firstMsg != null) {
+        final lastCampaign = _lastCampaignBefore(
+            phone, firstMsg, phoneCampaigns, campaignSentAt);
+        if (lastCampaign != null) {
+          final lastSentAt = campaignSentAt[lastCampaign];
+          if (lastSentAt != null &&
+              firstMsg.difference(lastSentAt).inHours <=
+                  _kAttributionWindowHours) {
+            offer = double.tryParse(
+                    campaignById[lastCampaign]?['offer_amount']?.toString() ??
+                        '0') ??
+                0;
+            campaignNameAttr =
+                campaignById[lastCampaign]?['name']?.toString();
+          }
         }
       }
 
@@ -652,16 +680,21 @@ class RoiAnalyticsProvider extends ChangeNotifier {
           '${bahrainTime.year}-${bahrainTime.month.toString().padLeft(2, '0')}-${bahrainTime.day.toString().padLeft(2, '0')}';
       dailyAcc.putIfAbsent(dayKey, () => _DayAccumulator());
       final acc = dailyAcc[dayKey]!;
-      final cIds = phoneCampaigns[phone] ?? [];
       double offer = 0;
-      for (final cId in cIds) {
-        final sentAt = campaignSentAt[cId];
-        final firstMsg = phoneFirstMsg[phone];
-        if (sentAt != null && firstMsg != null && firstMsg.isAfter(sentAt)) {
-          offer = double.tryParse(
-                  campaignById[cId]?['offer_amount']?.toString() ?? '0') ??
-              0;
-          break;
+      final dailyFirstMsg = phoneFirstMsg[phone];
+      if (dailyFirstMsg != null) {
+        final lastCampaign = _lastCampaignBefore(
+            phone, dailyFirstMsg, phoneCampaigns, campaignSentAt);
+        if (lastCampaign != null) {
+          final lastSentAt = campaignSentAt[lastCampaign];
+          if (lastSentAt != null &&
+              dailyFirstMsg.difference(lastSentAt).inHours <=
+                  _kAttributionWindowHours) {
+            offer = double.tryParse(
+                    campaignById[lastCampaign]?['offer_amount']?.toString() ??
+                        '0') ??
+                0;
+          }
         }
       }
       acc.revenue += offer;
@@ -737,6 +770,29 @@ class RoiAnalyticsProvider extends ChangeNotifier {
         sbL != 'broadcast';
   }
 
+  /// Returns the campaign ID of the most recently sent broadcast to [phone]
+  /// whose send time is at or before [responseTime].
+  /// Returns null if [phone] received no broadcasts before [responseTime].
+  String? _lastCampaignBefore(
+    String phone,
+    DateTime responseTime,
+    Map<String, List<String>> phoneCampaigns,
+    Map<String, DateTime> campaignSentAt,
+  ) {
+    String? bestId;
+    DateTime? bestTime;
+    for (final cId in phoneCampaigns[phone] ?? []) {
+      final sentAt = campaignSentAt[cId];
+      if (sentAt == null) continue;
+      if (sentAt.isAfter(responseTime)) continue; // sent after response — ignore
+      if (bestTime == null || sentAt.isAfter(bestTime)) {
+        bestTime = sentAt;
+        bestId = cId;
+      }
+    }
+    return bestId;
+  }
+
   DateTime? _parseDate(Map<String, dynamic> m) {
     return DateTime.tryParse(m['created_at']?.toString() ?? '');
   }
@@ -788,6 +844,7 @@ class RoiAnalyticsProvider extends ChangeNotifier {
     required List<Map<String, dynamic>> messages,
     required Map<String, Map<String, dynamic>> campaignById,
     required Map<String, Set<String>> campaignPhones,
+    required Map<String, List<String>> phoneCampaigns,
     required Map<String, DateTime> campaignSentAt,
   }) {
     final Map<String, List<Map<String, dynamic>>> msgByPhone = {};
@@ -837,6 +894,18 @@ class RoiAnalyticsProvider extends ChangeNotifier {
           final createdAt = _parseDate(m);
           if (createdAt == null) continue;
           if (sentAt != null && createdAt.isBefore(sentAt)) continue;
+
+          // Last-touch attribution: only credit this campaign if it was the
+          // most recently sent broadcast to this phone before the response.
+          final lastCampaign = _lastCampaignBefore(
+              phone, createdAt, phoneCampaigns, campaignSentAt);
+          if (lastCampaign != cId) continue;
+
+          // 72-hour cap: ignore responses that arrive more than 72h after send.
+          if (sentAt != null &&
+              createdAt.difference(sentAt).inHours > _kAttributionWindowHours) {
+            continue;
+          }
 
           hasReplied = true;
           firstReplyDate ??= createdAt;
