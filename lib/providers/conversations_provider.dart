@@ -334,13 +334,8 @@ class ConversationsProvider extends ChangeNotifier {
           ? ConversationStatus.needsReply
           : ConversationStatus.replied;
 
-      // Determine last message to show (use customerInput to handle voice messages)
-      String lastMessage = lastEx.customerInput;
-      if (lastEx.managerResponse != null && lastEx.managerResponse!.trim().isNotEmpty) {
-        lastMessage = lastEx.managerResponse!;
-      } else if (lastEx.aiResponse.trim().isNotEmpty) {
-        lastMessage = lastEx.aiResponse;
-      }
+      // Determine last message to show (media-aware)
+      final String lastMessage = _buildMessagePreview(lastEx);
 
       // Get the most recent label (from latest exchange with a label)
       String? label;
@@ -869,6 +864,74 @@ class ConversationsProvider extends ChangeNotifier {
   // ============================================
   // HELPERS
   // ============================================
+
+  /// Build the preview text for a conversation list item, with media type indicators.
+  String _buildMessagePreview(RawExchange ex) {
+    // Priority 1: Manager text response
+    final managerText = ex.managerResponse?.trim() ?? '';
+    if (managerText.isNotEmpty) return managerText;
+
+    // Priority 2: Non-handoff AI response
+    final aiText = ex.aiResponse.trim();
+    if (aiText.isNotEmpty && !_isHandoffMessage(aiText)) return aiText;
+
+    // Priority 3: Voice message from customer
+    if (ex.isVoiceMessage) {
+      final transcription = ex.voiceResponse?.trim() ?? '';
+      return transcription.isNotEmpty ? '🎵 $transcription' : '🎵 Voice message';
+    }
+
+    // Priority 4: Media attachment from customer
+    if (ex.hasMedia) {
+      final caption = ex.customerMessage.trim();
+      final label = _mediaPreviewLabel(ex.mediaType, ex.mediaUrl);
+      if (caption.isNotEmpty && !_looksLikeUrl(caption)) {
+        // "📷 Caption text here"
+        final emoji = label.split(' ').first;
+        return '$emoji $caption';
+      }
+      return label;
+    }
+
+    // Priority 5: Plain customer text
+    return ex.customerMessage.trim();
+  }
+
+  /// Return an emoji + label for a media type, with URL-extension fallback.
+  String _mediaPreviewLabel(String? mediaType, String? mediaUrl) {
+    switch (mediaType?.toLowerCase()) {
+      case 'image':    return '📷 Photo';
+      case 'video':    return '🎥 Video';
+      case 'audio':    return '🎵 Audio';
+      case 'document': return '📄 Document';
+      case 'pdf':      return '📄 Document';
+      case 'location': return '📍 Location';
+      case 'sticker':  return '🏷️ Sticker';
+      case 'contact':  return '👤 Contact';
+      default:         break;
+    }
+    // Fallback: infer from URL extension
+    final url = (mediaUrl ?? '').toLowerCase();
+    if (url.contains('.jpg') || url.contains('.jpeg') || url.contains('.png') ||
+        url.contains('.webp') || url.contains('.gif')  || url.contains('.heic')) {
+      return '📷 Photo';
+    }
+    if (url.contains('.mp4') || url.contains('.mov') || url.contains('.avi')) {
+      return '🎥 Video';
+    }
+    if (url.contains('.mp3') || url.contains('.ogg') || url.contains('.opus') ||
+        url.contains('.m4a') || url.contains('.wav')  || url.contains('.aac')) {
+      return '🎵 Audio';
+    }
+    if (url.contains('.pdf')  || url.contains('.doc')  || url.contains('.docx') ||
+        url.contains('.xls')  || url.contains('.xlsx')) {
+      return '📄 Document';
+    }
+    return '📎 Attachment';
+  }
+
+  bool _looksLikeUrl(String text) =>
+      text.startsWith('http://') || text.startsWith('https://');
 
   /// Check if a message is an automated handoff message (manager takeover)
   bool _isHandoffMessage(String message) {
