@@ -4,6 +4,7 @@ import '../../providers/user_management_provider.dart';
 import '../../models/models.dart';
 import '../../theme/vivid_theme.dart';
 import '../utils/initials_helper.dart';
+import '../utils/toast_service.dart';
 
 /// User Management Dialog - Opens from avatar menu for client admins
 class UserManagementDialog extends StatefulWidget {
@@ -370,13 +371,11 @@ class _UserManagementDialogState extends State<UserManagementDialog> {
               Navigator.pop(ctx);
               final success = await provider.toggleUserStatus(user.id);
               if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(success
-                        ? 'User ${isBlocking ? "blocked" : "unblocked"}'
-                        : 'Failed to ${isBlocking ? "block" : "unblock"} user'),
-                    backgroundColor: success ? VividColors.statusSuccess : Colors.red,
-                  ),
+                VividToast.show(context,
+                  message: success
+                      ? 'User ${isBlocking ? "blocked" : "unblocked"}'
+                      : 'Failed to ${isBlocking ? "block" : "unblock"} user',
+                  type: success ? ToastType.success : ToastType.error,
                 );
               }
             },
@@ -838,7 +837,6 @@ class _UserFormDialogState extends State<_UserFormDialog> {
           Permission.sendBroadcasts,
           Permission.viewManagerChat,
           Permission.useManagerChat,
-          Permission.viewBookingReminders,
           Permission.viewActivityLogs,
         };
       case UserRole.agent:
@@ -853,7 +851,6 @@ class _UserFormDialogState extends State<_UserFormDialog> {
           Permission.viewAnalytics,
           Permission.viewConversations,
           Permission.viewBroadcasts,
-          Permission.viewBookingReminders,
         };
     }
   }
@@ -1430,21 +1427,17 @@ class _UserFormDialogState extends State<_UserFormDialog> {
     // Password validation for new users
     if (!isEdit) {
       if (password.length < 8) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Password must be at least 8 characters'),
-            backgroundColor: VividColors.statusUrgent,
-          ),
+        VividToast.show(context,
+          message: 'Password must be at least 8 characters',
+          type: ToastType.error,
         );
         return;
       }
 
       if (password != _confirmPasswordController.text) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Passwords do not match'),
-            backgroundColor: VividColors.statusUrgent,
-          ),
+        VividToast.show(context,
+          message: 'Passwords do not match',
+          type: ToastType.error,
         );
         return;
       }
@@ -1452,11 +1445,9 @@ class _UserFormDialogState extends State<_UserFormDialog> {
 
     // Password length check for edit mode (only if password is provided)
     if (isEdit && password.isNotEmpty && password.length < 8) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Password must be at least 8 characters'),
-          backgroundColor: VividColors.statusUrgent,
-        ),
+      VividToast.show(context,
+        message: 'Password must be at least 8 characters',
+        type: ToastType.error,
       );
       return;
     }
@@ -1499,11 +1490,9 @@ class _UserFormDialogState extends State<_UserFormDialog> {
 
     if (success && mounted) {
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(isEdit ? 'User updated successfully' : 'User created successfully'),
-          backgroundColor: VividColors.statusSuccess,
-        ),
+      VividToast.show(context,
+        message: isEdit ? 'User updated successfully' : 'User created successfully',
+        type: ToastType.success,
       );
     }
   }

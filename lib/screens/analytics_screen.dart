@@ -6,6 +6,7 @@ import '../models/models.dart';
 import '../theme/vivid_theme.dart';
 import '../utils/analytics_exporter.dart';
 import '../services/supabase_service.dart';
+import '../utils/toast_service.dart';
 
 // ================================================================
 // DATE RANGE FILTER
@@ -692,16 +693,18 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             AnalyticsExporter.exportAnalyticsCsv(data: data, clientName: clientName, dateRange: dateRange);
           } catch (e) {
             if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('CSV export failed: $e'), backgroundColor: Colors.red),
+              VividToast.show(context,
+                message: 'CSV export failed: $e',
+                type: ToastType.error,
               );
             }
           }
         } else {
           AnalyticsExporter.exportAnalyticsPdf(data: data, clientName: clientName, dateRange: dateRange).catchError((e) {
             if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('PDF export failed: $e'), backgroundColor: Colors.red),
+              VividToast.show(context,
+                message: 'PDF export failed: $e',
+                type: ToastType.error,
               );
             }
           });
@@ -2720,19 +2723,18 @@ class _CampaignLabeledDialogState extends State<_CampaignLabeledDialog> {
         label: '',
       );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Entry removed from analytics'),
-          behavior: SnackBarBehavior.floating,
-        ));
+        VividToast.show(context,
+          message: 'Entry removed from analytics',
+          type: ToastType.success,
+        );
       }
     } catch (_) {
       if (mounted) {
         setState(() => _customers = List.of(widget.customers));
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Failed to remove entry'),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: VividColors.statusUrgent,
-        ));
+        VividToast.show(context,
+          message: 'Failed to remove entry',
+          type: ToastType.error,
+        );
       }
     }
   }

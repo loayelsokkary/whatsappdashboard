@@ -48,8 +48,8 @@ class AnalyticsProvider extends ChangeNotifier {
     final tableName = ClientConfig.messagesTableName;
     final businessPhone = ClientConfig.conversationsPhone!;
 
-    // Fetch all messages from dynamic table
-    final messagesResponse = await SupabaseService.client
+    // Fetch all messages from dynamic table (adminClient bypasses RLS on per-client tables)
+    final messagesResponse = await SupabaseService.adminClient
         .from(tableName)
         .select('id, ai_phone, customer_phone, customer_name, customer_message, ai_response, manager_response, created_at')
         .eq('ai_phone', businessPhone)
@@ -205,8 +205,8 @@ class AnalyticsProvider extends ChangeNotifier {
 
     final tableName = ClientConfig.broadcastsTableName;
 
-    // Fetch broadcasts from dynamic table
-    final broadcastsResponse = await SupabaseService.client
+    // Fetch broadcasts from dynamic table (adminClient bypasses RLS on per-client tables)
+    final broadcastsResponse = await SupabaseService.adminClient
         .from(tableName)
         .select('id, campaign_name, message_content, total_recipients, sent_at')
         .order('sent_at', ascending: false);
@@ -274,11 +274,13 @@ class AnalyticsProvider extends ChangeNotifier {
     int totalSent = 0;
     int totalFailed = 0;
     try {
-      final recipientsTable = tableName != 'broadcasts'
-          ? '${tableName.replaceAll('_broadcasts', '')}_broadcast_recipients'
-          : 'broadcast_recipients';
+      final recipientsTable = ClientConfig.broadcastRecipientsTable;
+      if (recipientsTable == null || recipientsTable.isEmpty) {
+        throw StateError('broadcast_recipients_table not configured');
+      }
 
-      final recipientsResponse = await SupabaseService.client
+      // adminClient bypasses RLS on per-client tables
+      final recipientsResponse = await SupabaseService.adminClient
           .from(recipientsTable)
           .select('status');
 

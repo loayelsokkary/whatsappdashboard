@@ -4,6 +4,7 @@ import '../providers/manager_chat_provider.dart';
 import '../models/models.dart';
 import '../theme/vivid_theme.dart';
 import '../utils/date_formatter.dart';
+import '../services/impersonate_service.dart';
 
 /// Manager Chatbot Panel - styled like conversation detail
 class ManagerChatPanel extends StatefulWidget {
@@ -46,6 +47,7 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
   }
 
   void _sendMessage() {
+    if (ImpersonateService.isImpersonating) return;
     final text = _messageController.text.trim();
     if (text.isEmpty) return;
 
@@ -390,6 +392,26 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
       builder: (context, provider, _) {
         final vc = context.vividColors;
         final isSending = provider.isWaitingForResponse;
+
+        if (ImpersonateService.isImpersonating)
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: VividColors.statusWarning.withValues(alpha: 0.08),
+              border: Border(top: BorderSide(color: VividColors.statusWarning.withValues(alpha: 0.3))),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.visibility, size: 16, color: VividColors.statusWarning),
+                const SizedBox(width: 8),
+                Text(
+                  'Read-only preview — messages cannot be sent',
+                  style: TextStyle(color: VividColors.statusWarning, fontSize: 13, fontWeight: FontWeight.w500),
+                ),
+              ],
+            ),
+          );
 
         return Container(
           padding: const EdgeInsets.all(16),

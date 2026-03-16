@@ -139,12 +139,11 @@ class BroadcastsProvider extends ChangeNotifier {
   }
 
   String get _recipientsTable {
-    final broadcastsTable = _broadcastsTable;
-    if (broadcastsTable != 'broadcasts') {
-      final prefix = broadcastsTable.replaceAll('_broadcasts', '');
-      return '${prefix}_broadcast_recipients';
+    final table = ClientConfig.broadcastRecipientsTable;
+    if (table == null || table.isEmpty) {
+      throw StateError('broadcast_recipients_table not configured for this client');
     }
-    return 'broadcast_recipients';
+    return table;
   }
 
   void initialize() {
@@ -275,7 +274,8 @@ class BroadcastsProvider extends ChangeNotifier {
     try {
       print('📢 Fetching from table: $_broadcastsTable');
       
-      final response = await SupabaseService.client
+      // Use adminClient to bypass RLS on per-client tables
+      final response = await SupabaseService.adminClient
           .from(_broadcastsTable)
           .select()
           .order('sent_at', ascending: false);
@@ -320,7 +320,8 @@ class BroadcastsProvider extends ChangeNotifier {
       List<Map<String, dynamic>> allRows = [];
       int from = 0;
       while (true) {
-        final response = await SupabaseService.client
+        // Use adminClient to bypass RLS on per-client tables
+        final response = await SupabaseService.adminClient
             .from(_recipientsTable)
             .select()
             .eq('broadcast_id', broadcastId)
@@ -347,7 +348,8 @@ class BroadcastsProvider extends ChangeNotifier {
       final now = DateTime.now();
       final startOfMonth = DateTime(now.year, now.month, 1).toIso8601String();
 
-      final response = await SupabaseService.client
+      // Use adminClient to bypass RLS on per-client tables
+      final response = await SupabaseService.adminClient
           .from(_broadcastsTable)
           .select('total_recipients')
           .gte('sent_at', startOfMonth);
@@ -363,13 +365,14 @@ class BroadcastsProvider extends ChangeNotifier {
   /// Rename a broadcast campaign
   Future<void> renameBroadcast(String broadcastId, String newName) async {
     try {
-      await SupabaseService.client
+      // Use adminClient to bypass RLS on per-client tables
+      await SupabaseService.adminClient
           .from(_broadcastsTable)
           .update({'campaign_name': newName})
           .eq('id', broadcastId);
 
-      // Verify the update actually persisted (RLS may silently block)
-      final verify = await SupabaseService.client
+      // Verify the update actually persisted
+      final verify = await SupabaseService.adminClient
           .from(_broadcastsTable)
           .select('campaign_name')
           .eq('id', broadcastId)

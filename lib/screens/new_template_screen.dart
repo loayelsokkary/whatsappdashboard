@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../models/models.dart';
 import '../providers/templates_provider.dart';
 import '../theme/vivid_theme.dart';
+import '../utils/toast_service.dart';
 
 class NewTemplateScreen extends StatefulWidget {
   const NewTemplateScreen({super.key});
@@ -280,11 +281,10 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
     }
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content: Text('Template submitted for Meta approval'),
-      behavior: SnackBarBehavior.floating,
-      backgroundColor: VividColors.statusSuccess,
-    ));
+    VividToast.show(context,
+      message: 'Template submitted for Meta approval',
+      type: ToastType.success,
+    );
     await provider.fetchTemplates();
     if (mounted) Navigator.pop(context);
   }
@@ -326,11 +326,10 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
     if (file.bytes == null) return;
     if (file.bytes!.lengthInBytes > 5 * 1024 * 1024) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Image exceeds 5 MB limit'),
-        backgroundColor: VividColors.statusUrgent,
-        behavior: SnackBarBehavior.floating,
-      ));
+      VividToast.show(context,
+        message: 'Image exceeds 5 MB limit',
+        type: ToastType.error,
+      );
       return;
     }
     final ext = (file.extension ?? 'jpg').toLowerCase();

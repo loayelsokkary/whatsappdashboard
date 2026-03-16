@@ -212,13 +212,8 @@ class AdminAnalyticsProvider extends ChangeNotifier {
   }
 
   /// Get broadcast recipients table name for a client
-  String _getRecipientsTable(Client client) {
-    final broadcastsTable = _getBroadcastsTable(client);
-    final prefix = broadcastsTable.replaceAll('_broadcasts', '');
-    if (prefix.isNotEmpty && prefix != broadcastsTable) {
-      return '${prefix}_broadcast_recipients';
-    }
-    return 'broadcast_recipients';
+  String? _getRecipientsTable(Client client) {
+    return client.broadcastRecipientsTable;
   }
 
   /// Get the phone number to use for conversation queries
@@ -475,6 +470,7 @@ class AdminAnalyticsProvider extends ChangeNotifier {
   Future<void> _processBroadcasts(Client client, List broadcasts) async {
     final supabase = SupabaseService.client;
     final recipientsTable = _getRecipientsTable(client);
+    if (recipientsTable == null) return;
 
     // Fetch all recipients for this client's broadcasts
     final broadcastIds = broadcasts.map((b) => b['id'] as String).toList();
@@ -567,18 +563,20 @@ class AdminAnalyticsProvider extends ChangeNotifier {
         .subscribe();
 
     // Also subscribe to recipient status changes
-    supabase
-        .channel('admin_recipients_${client.id}')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.update,
-          schema: 'public',
-          table: recipientsTable,
-          callback: (payload) {
-            print('📊 Real-time recipient update for ${client.name}');
-            _refetchBroadcastAnalytics(client);
-          },
-        )
-        .subscribe();
+    if (recipientsTable != null) {
+      supabase
+          .channel('admin_recipients_${client.id}')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.update,
+            schema: 'public',
+            table: recipientsTable,
+            callback: (payload) {
+              print('📊 Real-time recipient update for ${client.name}');
+              _refetchBroadcastAnalytics(client);
+            },
+          )
+          .subscribe();
+    }
 
     print('📊 Subscribed to real-time broadcast analytics for ${client.name} on table: $broadcastsTable');
   }
@@ -810,7 +808,7 @@ class AdminAnalyticsProvider extends ChangeNotifier {
 
             // Fetch recipients and count delivery statuses
             final broadcastIds = broadcasts.map((b) => b['id'] as String).toList();
-            if (broadcastIds.isNotEmpty) {
+            if (broadcastIds.isNotEmpty && recipientsTable != null) {
               final recipientsResponse = await supabase
                   .from(recipientsTable)
                   .select()
@@ -882,24 +880,28 @@ class AdminAnalyticsProvider extends ChangeNotifier {
         clientName: e.value['clientName'] as String,
       )).toList();
 
-      // Fetch AI chat settings
+      // Fetch AI chat settings from each client's per-client table
       int aiEnabledCount = 0;
       int aiDisabledCount = 0;
-      try {
-        final aiSettingsResponse = await supabase
-            .from('ai_chat_settings')
-            .select('ai_enabled');
-        final settings = aiSettingsResponse as List;
-        for (final setting in settings) {
-          final enabled = setting['ai_enabled'] as bool? ?? true;
-          if (enabled) {
-            aiEnabledCount++;
-          } else {
-            aiDisabledCount++;
+      for (final client in clients) {
+        final aiTable = client.aiSettingsTable;
+        if (aiTable == null || aiTable.isEmpty) continue;
+        try {
+          final aiSettingsResponse = await supabase
+              .from(aiTable)
+              .select('ai_enabled');
+          final settings = aiSettingsResponse as List;
+          for (final setting in settings) {
+            final enabled = setting['ai_enabled'] as bool? ?? true;
+            if (enabled) {
+              aiEnabledCount++;
+            } else {
+              aiDisabledCount++;
+            }
           }
+        } catch (e) {
+          print('Error fetching AI settings from $aiTable: $e');
         }
-      } catch (e) {
-        print('Error fetching AI chat settings: $e');
       }
 
       _companyAnalytics = VividCompanyAnalytics(

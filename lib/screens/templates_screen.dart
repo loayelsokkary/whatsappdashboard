@@ -5,6 +5,7 @@ import '../providers/templates_provider.dart';
 import '../theme/vivid_theme.dart';
 import 'new_template_screen.dart';
 import 'template_detail_screen.dart';
+import '../utils/toast_service.dart';
 
 class TemplatesScreen extends StatefulWidget {
   const TemplatesScreen({super.key});
@@ -30,6 +31,28 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
   Widget build(BuildContext context) {
     final vc = context.vividColors;
     final provider = context.watch<TemplatesProvider>();
+
+    // Check if templates table is configured
+    final table = ClientConfig.templatesTable;
+    if (table == null || table.isEmpty) {
+      return Container(
+        color: vc.background,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.description_outlined, size: 64, color: vc.textMuted),
+              const SizedBox(height: 16),
+              Text('Templates Not Configured',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: vc.textPrimary)),
+              const SizedBox(height: 8),
+              Text('Please contact your administrator to set up the templates table.',
+                  style: TextStyle(color: vc.textSecondary, fontSize: 14)),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Container(
       color: vc.background,
@@ -116,15 +139,9 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
                     final error =
                         await provider.syncTemplatesToSupabase();
                     if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          error ?? 'Templates synced to AI ✓',
-                        ),
-                        backgroundColor:
-                            error == null ? Colors.green[700] : Colors.red[700],
-                        behavior: SnackBarBehavior.floating,
-                      ),
+                    VividToast.show(context,
+                      message: error ?? 'Templates synced to AI',
+                      type: error == null ? ToastType.success : ToastType.error,
                     );
                   },
             icon: provider.isSyncing
@@ -343,17 +360,15 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
     final err = await provider.deleteTemplate(name, id);
     if (!context.mounted) return;
     if (err != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Delete failed: $err'),
-        backgroundColor: VividColors.statusUrgent,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      ));
+      VividToast.show(context,
+        message: 'Delete failed: $err',
+        type: ToastType.error,
+      );
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Template deleted successfully'),
-        behavior: SnackBarBehavior.floating,
-      ));
+      VividToast.show(context,
+        message: 'Template deleted successfully',
+        type: ToastType.success,
+      );
     }
   }
 }

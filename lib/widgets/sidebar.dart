@@ -17,7 +17,6 @@ enum NavDestination {
   templates,
   analytics,
   managerChat,
-  bookingReminders,
   activityLogs,
 }
 
@@ -108,7 +107,7 @@ class Sidebar extends StatelessWidget {
               isReadOnly: !ClientConfig.canPerformAction('send_broadcast'),
             ),
 
-          if (ClientConfig.hasFeature('broadcasts'))
+          if (ClientConfig.hasFeature('whatsapp_templates') || ClientConfig.hasFeature('broadcasts'))
             _NavItem(
               icon: Icons.article_outlined,
               label: 'Templates',
@@ -116,14 +115,6 @@ class Sidebar extends StatelessWidget {
               onTap: () => onDestinationChanged(NavDestination.templates),
             ),
 
-          if (ClientConfig.hasFeature('booking_reminders'))
-            _NavItem(
-              icon: Icons.calendar_month,
-              label: 'Bookings',
-              isSelected: currentDestination == NavDestination.bookingReminders,
-              onTap: () => onDestinationChanged(NavDestination.bookingReminders),
-            ),
-          
           if (ClientConfig.hasFeature('analytics'))
             _NavItem(
               icon: Icons.analytics,

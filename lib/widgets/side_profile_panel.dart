@@ -397,7 +397,7 @@ class _SideProfilePanelState extends State<SideProfilePanel> {
       spacing: 6,
       runSpacing: 6,
       children: labels.map((label) {
-        final (color, icon) = _labelStyle(label);
+        final (color, icon) = _labelStyle(context, label);
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: BoxDecoration(
@@ -525,7 +525,7 @@ class _SideProfilePanelState extends State<SideProfilePanel> {
     return s[0].toUpperCase() + s.substring(1);
   }
 
-  (Color, IconData) _labelStyle(String label) {
+  (Color, IconData) _labelStyle(BuildContext context, String label) {
     final l = label.toLowerCase();
     if (l.contains('payment') || l.contains('paid')) {
       return (VividColors.cyan, Icons.payments_outlined);
@@ -548,7 +548,7 @@ class _SideProfilePanelState extends State<SideProfilePanel> {
     if (l.contains('needs') || l.contains('urgent')) {
       return (VividColors.statusUrgent, Icons.priority_high_rounded);
     }
-    return (VividColors.textSecondary, Icons.label_outline_rounded);
+    return (context.vividColors.textSecondary, Icons.label_outline_rounded);
   }
 }
 

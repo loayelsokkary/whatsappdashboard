@@ -11,6 +11,9 @@ class AdminProvider extends ChangeNotifier {
   bool _isLoading = false;
   String? _error;
 
+  // Last login per client (cached)
+  Map<String, DateTime?> _lastLogins = {};
+
   // Getters
   List<Client> get clients => _clients;
   List<Map<String, dynamic>> get allUsers => _allUsers;
@@ -18,6 +21,7 @@ class AdminProvider extends ChangeNotifier {
   List<AppUser> get selectedClientUsers => _selectedClientUsers;
   bool get isLoading => _isLoading;
   String? get error => _error;
+  Map<String, DateTime?> get lastLogins => _lastLogins;
 
   // ============================================
   // CLIENTS
@@ -46,7 +50,12 @@ class AdminProvider extends ChangeNotifier {
     required String slug,
     List<String> enabledFeatures = const [],
     bool hasAiConversations = true,
-    String? bookingsTable,
+    String? messagesTable,
+    String? broadcastsTable,
+    String? templatesTable,
+    String? managerChatsTable,
+    String? broadcastRecipientsTable,
+    String? aiSettingsTable,
     String? conversationsPhone,
     String? conversationsWebhookUrl,
     String? broadcastsPhone,
@@ -62,7 +71,12 @@ class AdminProvider extends ChangeNotifier {
       slug: slug,
       enabledFeatures: enabledFeatures,
       hasAiConversations: hasAiConversations,
-      bookingsTable: bookingsTable,
+      messagesTable: messagesTable,
+      broadcastsTable: broadcastsTable,
+      templatesTable: templatesTable,
+      managerChatsTable: managerChatsTable,
+      broadcastRecipientsTable: broadcastRecipientsTable,
+      aiSettingsTable: aiSettingsTable,
       conversationsPhone: conversationsPhone,
       conversationsWebhookUrl: conversationsWebhookUrl,
       broadcastsPhone: broadcastsPhone,
@@ -90,7 +104,12 @@ class AdminProvider extends ChangeNotifier {
     String? slug,
     List<String>? enabledFeatures,
     bool? hasAiConversations,
-    String? bookingsTable,
+    String? messagesTable,
+    String? broadcastsTable,
+    String? templatesTable,
+    String? managerChatsTable,
+    String? broadcastRecipientsTable,
+    String? aiSettingsTable,
     String? conversationsPhone,
     String? conversationsWebhookUrl,
     String? broadcastsPhone,
@@ -107,7 +126,12 @@ class AdminProvider extends ChangeNotifier {
       slug: slug,
       enabledFeatures: enabledFeatures,
       hasAiConversations: hasAiConversations,
-      bookingsTable: bookingsTable,
+      messagesTable: messagesTable,
+      broadcastsTable: broadcastsTable,
+      templatesTable: templatesTable,
+      managerChatsTable: managerChatsTable,
+      broadcastRecipientsTable: broadcastRecipientsTable,
+      aiSettingsTable: aiSettingsTable,
       conversationsPhone: conversationsPhone,
       conversationsWebhookUrl: conversationsWebhookUrl,
       broadcastsPhone: broadcastsPhone,
@@ -131,21 +155,28 @@ class AdminProvider extends ChangeNotifier {
   Future<bool> deleteClient(String clientId) async {
     _error = null;
 
-    final success = await SupabaseService.instance.deleteClient(clientId);
+    try {
+      final success = await SupabaseService.instance.deleteClient(clientId);
 
-    if (success) {
-      _clients.removeWhere((c) => c.id == clientId);
-      if (_selectedClient?.id == clientId) {
-        _selectedClient = null;
-        _selectedClientUsers = [];
+      if (success) {
+        _clients.removeWhere((c) => c.id == clientId);
+        if (_selectedClient?.id == clientId) {
+          _selectedClient = null;
+          _selectedClientUsers = [];
+        }
+        await fetchAllUsers(); // Refresh users list
+        notifyListeners();
+        return true;
       }
-      notifyListeners();
-      return true;
-    }
 
-    _error = 'Failed to delete client';
-    notifyListeners();
-    return false;
+      _error = 'Failed to delete client';
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _error = 'Failed to delete client: $e';
+      notifyListeners();
+      return false;
+    }
   }
 
   /// Select a client to view/edit users
@@ -305,13 +336,65 @@ class AdminProvider extends ChangeNotifier {
     return false;
   }
 
+  // ============================================
+  // CLIENT HEALTH (login activity)
+  // ============================================
+
+  /// Fetch last login timestamp per client from activity_logs.
+  /// Single lightweight query, cached in provider.
+  Future<void> fetchLastLoginPerClient() async {
+    try {
+      final response = await SupabaseService.client
+          .from('activity_logs')
+          .select('client_id, created_at')
+          .eq('action_type', 'login')
+          .order('created_at', ascending: false);
+
+      final logins = <String, DateTime?>{};
+      for (final log in response) {
+        final clientId = log['client_id'] as String?;
+        if (clientId != null && !logins.containsKey(clientId)) {
+          logins[clientId] = DateTime.parse(log['created_at'] as String);
+        }
+      }
+      _lastLogins = logins;
+      notifyListeners();
+    } catch (e) {
+      // Silently fail — health dots just won't show
+    }
+  }
+
+  /// Get health status for a client based on last login.
+  /// 0 = active (login <24h), 1 = recent (login <7d), 2 = inactive (7d+ or never).
+  int getHealthStatus(String clientId) {
+    final lastLogin = _lastLogins[clientId];
+    if (lastLogin == null) return 2;
+    final hours = DateTime.now().difference(lastLogin).inHours;
+    if (hours < 24) return 0;
+    if (hours < 168) return 1;
+    return 2;
+  }
+
+  /// Get a human-readable label for last login time.
+  String getLastLoginLabel(String clientId) {
+    final lastLogin = _lastLogins[clientId];
+    if (lastLogin == null) return 'Never logged in';
+    final diff = DateTime.now().difference(lastLogin);
+    if (diff.inMinutes < 60) return 'Last login: ${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return 'Last login: ${diff.inHours}h ago';
+    if (diff.inDays < 7) return 'Last login: ${diff.inDays}d ago';
+    return 'Last login: ${diff.inDays}d ago';
+  }
+
   /// Get available features
   List<String> get availableFeatures => [
     'conversations',
-    'broadcasts', 
+    'broadcasts',
     'analytics',
     'manager_chat',
-    'booking_reminders',
+    'whatsapp_templates',
+    'media',
+    'labels',
   ];
 
   /// Get available roles for client users

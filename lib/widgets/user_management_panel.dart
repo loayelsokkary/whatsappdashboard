@@ -4,6 +4,7 @@ import '../providers/user_management_provider.dart';
 import '../models/models.dart';
 import '../theme/vivid_theme.dart';
 import '../utils/initials_helper.dart';
+import '../utils/toast_service.dart';
 
 /// User Management Panel - For client admins to manage their team
 class UserManagementPanel extends StatefulWidget {
@@ -406,25 +407,11 @@ class _UserManagementPanelState extends State<UserManagementPanel> {
               final success = await provider.toggleUserStatus(user.id);
 
               if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Row(
-                      children: [
-                        Icon(
-                          success ? Icons.check_circle : Icons.error,
-                          color: Colors.white,
-                          size: 18,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(success
-                            ? 'User "${user.name}" ${isBlocking ? "blocked" : "unblocked"} successfully'
-                            : 'Failed to ${isBlocking ? "block" : "unblock"} user'),
-                      ],
-                    ),
-                    backgroundColor: success ? VividColors.statusSuccess : Colors.red,
-                    behavior: SnackBarBehavior.floating,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
+                VividToast.show(context,
+                  message: success
+                      ? 'User "${user.name}" ${isBlocking ? "blocked" : "unblocked"} successfully'
+                      : 'Failed to ${isBlocking ? "block" : "unblock"} user',
+                  type: success ? ToastType.success : ToastType.error,
                 );
               }
             },
@@ -1163,34 +1150,14 @@ class _UserDialogState extends State<_UserDialog> {
 
     if (success && mounted) {
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(Icons.check_circle, color: Colors.white, size: 18),
-              const SizedBox(width: 8),
-              Text(isEdit ? 'User updated successfully' : 'User created successfully'),
-            ],
-          ),
-          backgroundColor: VividColors.statusSuccess,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        ),
+      VividToast.show(context,
+        message: isEdit ? 'User updated successfully' : 'User created successfully',
+        type: ToastType.success,
       );
     } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(Icons.error, color: Colors.white, size: 18),
-              const SizedBox(width: 8),
-              Text(provider.error ?? 'Operation failed'),
-            ],
-          ),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        ),
+      VividToast.show(context,
+        message: provider.error ?? 'Operation failed',
+        type: ToastType.error,
       );
     }
   }

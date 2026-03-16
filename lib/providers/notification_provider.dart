@@ -3,6 +3,7 @@ import 'dart:html' as html;
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/models.dart';
+import '../services/supabase_service.dart';
 
 /// Notification for manager
 class ManagerNotification {
@@ -110,9 +111,12 @@ class NotificationProvider extends ChangeNotifier {
 
   /// Check if AI is disabled for customer
   Future<bool> _checkAiDisabled(String customerPhone) async {
+    final aiTable = ClientConfig.aiSettingsTable;
+    if (aiTable == null || aiTable.isEmpty) return false;
     try {
-      final response = await _client
-          .from('ai_chat_settings')
+      // Use adminClient to bypass RLS on per-client dynamic tables
+      final response = await SupabaseService.adminClient
+          .from(aiTable)
           .select('ai_enabled')
           .eq('ai_phone', ClientConfig.businessPhone)
           .eq('customer_phone', customerPhone)

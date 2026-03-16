@@ -2,14 +2,28 @@ import 'package:flutter/foundation.dart';
 import '../models/models.dart';
 import '../services/supabase_service.dart';
 
-/// Provider for managing activity logs
+/// Provider for managing activity logs with pagination and filtering.
 class ActivityLogsProvider extends ChangeNotifier {
   List<ActivityLog> _logs = [];
   bool _isLoading = false;
+  bool _isLoadingMore = false;
   String? _error;
   Set<String> _blockedUserIds = {};
 
+  // Pagination (server-side)
+  static const _pageSize = 1000;
+  int _offset = 0;
+  bool _hasMore = true;
+
+  // Display limit (client-side lazy rendering)
+  int _displayLimit = 50;
+  static const _displayIncrement = 50;
+
+  // The clientId used for fetching (null = all clients)
+  String? _fetchClientId;
+
   // Filters
+  String? _selectedClientId; // admin-only: filter by client
   String? _selectedUserId;
   ActionType? _selectedActionType;
   DateTime? _startDate;
@@ -19,9 +33,24 @@ class ActivityLogsProvider extends ChangeNotifier {
 
   // Getters
   List<ActivityLog> get logs => _filteredLogs;
+  /// The displayed slice (up to _displayLimit) of filtered logs.
+  List<ActivityLog> get displayedLogs {
+    final filtered = _filteredLogs;
+    if (_displayLimit >= filtered.length) return filtered;
+    return filtered.sublist(0, _displayLimit);
+  }
+  /// Total count of all filtered logs (for header display).
+  int get filteredCount => _filteredLogs.length;
+  /// Total count of all fetched logs (unfiltered).
+  int get totalFetchedCount => _logs.length;
+  /// Whether there are more filtered logs to display locally.
+  bool get hasMoreToDisplay => _displayLimit < _filteredLogs.length;
   List<ActivityLog> get allLogs => _logs;
   bool get isLoading => _isLoading;
+  bool get isLoadingMore => _isLoadingMore;
   String? get error => _error;
+  bool get hasMore => _hasMore;
+  String? get selectedClientId => _selectedClientId;
   String? get selectedUserId => _selectedUserId;
   ActionType? get selectedActionType => _selectedActionType;
   DateTime? get startDate => _startDate;
@@ -30,7 +59,9 @@ class ActivityLogsProvider extends ChangeNotifier {
   bool get filterAiOnly => _filterAiOnly;
   Set<String> get blockedUserIds => _blockedUserIds;
 
-  /// Get filtered logs based on current filter settings
+  /// Get filtered logs based on current filter settings.
+  /// Server-side filters (client, dates, action types) are applied at fetch time.
+  /// Client-side filters (search, user, AI-only) are applied here.
   List<ActivityLog> get _filteredLogs {
     var filtered = _logs;
 
@@ -39,12 +70,12 @@ class ActivityLogsProvider extends ChangeNotifier {
       filtered = filtered.where((log) => log.userId == _selectedUserId).toList();
     }
 
-    // Filter by action type
+    // Filter by action type (client-side fallback when not server-filtered)
     if (_selectedActionType != null) {
       filtered = filtered.where((log) => log.actionType == _selectedActionType).toList();
     }
 
-    // Filter by date range
+    // Filter by date range (client-side fallback)
     if (_startDate != null) {
       filtered = filtered.where((log) => log.createdAt.isAfter(_startDate!)).toList();
     }
@@ -91,15 +122,41 @@ class ActivityLogsProvider extends ChangeNotifier {
     }
   }
 
-  /// Fetch activity logs for a client
+  /// Build the server-side filter parameters.
+  Map<String, dynamic> get _serverFilters => {
+    'clientId': _selectedClientId ?? _fetchClientId,
+    'actionTypes': _selectedActionType != null ? [_selectedActionType!.value] : null,
+    'startDate': _startDate,
+    'endDate': _endDate != null
+        ? DateTime(_endDate!.year, _endDate!.month, _endDate!.day, 23, 59, 59)
+        : null,
+  };
+
+  /// Fetch activity logs (first page). Resets pagination.
+  ///
+  /// [clientId] — scope to a specific client. Null fetches all (for Vivid admins).
   Future<void> fetchLogs({String? clientId}) async {
+    _fetchClientId = clientId;
+    _offset = 0;
+    _hasMore = true;
+    _displayLimit = 50;
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      _logs = await SupabaseService.instance.fetchActivityLogs(clientId: clientId);
-      await _fetchBlockedUserIds(clientId: clientId);
+      final filters = _serverFilters;
+      _logs = await SupabaseService.instance.fetchActivityLogs(
+        clientId: filters['clientId'] as String?,
+        actionTypes: (filters['actionTypes'] as List<String>?),
+        startDate: filters['startDate'] as DateTime?,
+        endDate: filters['endDate'] as DateTime?,
+        offset: 0,
+        limit: _pageSize,
+      );
+      _hasMore = _logs.length >= _pageSize;
+      _offset = _logs.length;
+      await _fetchBlockedUserIds(clientId: filters['clientId'] as String?);
       _error = null;
     } catch (e) {
       _error = 'Failed to fetch activity logs: $e';
@@ -110,66 +167,99 @@ class ActivityLogsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Fetch all logs (for Vivid admins)
-  Future<void> fetchAllLogs() async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
+  /// Fetch all logs (for Vivid admins). Alias for fetchLogs(clientId: null).
+  Future<void> fetchAllLogs() => fetchLogs();
 
-    try {
-      _logs = await SupabaseService.instance.fetchActivityLogs();
-      await _fetchBlockedUserIds();
-      _error = null;
-    } catch (e) {
-      _error = 'Failed to fetch activity logs: $e';
-      debugPrint(_error);
-    }
-
-    _isLoading = false;
+  /// Show more items from the already-fetched filtered list.
+  void showMore() {
+    _displayLimit += _displayIncrement;
     notifyListeners();
   }
 
-  /// Set user filter
+  /// Load the next page of results from the server. Appends to existing logs.
+  Future<void> loadMore() async {
+    if (!_hasMore || _isLoadingMore) return;
+
+    _isLoadingMore = true;
+    notifyListeners();
+
+    try {
+      final filters = _serverFilters;
+      final newLogs = await SupabaseService.instance.fetchActivityLogs(
+        clientId: filters['clientId'] as String?,
+        actionTypes: (filters['actionTypes'] as List<String>?),
+        startDate: filters['startDate'] as DateTime?,
+        endDate: filters['endDate'] as DateTime?,
+        offset: _offset,
+        limit: _pageSize,
+      );
+
+      _logs.addAll(newLogs);
+      _hasMore = newLogs.length >= _pageSize;
+      _offset += newLogs.length;
+    } catch (e) {
+      debugPrint('Failed to load more logs: $e');
+    }
+
+    _isLoadingMore = false;
+    notifyListeners();
+  }
+
+  // ── Filter setters ──────────────────────────────────
+
+  /// Set client filter (admin-only). Re-fetches from server.
+  void setClientFilter(String? clientId) {
+    _selectedClientId = clientId;
+    fetchLogs(clientId: _fetchClientId);
+  }
+
+  /// Set user filter (client-side)
   void setUserFilter(String? userId) {
     _selectedUserId = userId;
+    _displayLimit = 50;
     notifyListeners();
   }
 
-  /// Set action type filter
+  /// Set action type filter. Re-fetches from server for efficiency.
   void setActionTypeFilter(ActionType? actionType) {
     _selectedActionType = actionType;
-    notifyListeners();
+    fetchLogs(clientId: _fetchClientId);
   }
 
-  /// Set date range filter
+  /// Set date range filter. Re-fetches from server.
   void setDateRange(DateTime? start, DateTime? end) {
     _startDate = start;
     _endDate = end;
-    notifyListeners();
+    fetchLogs(clientId: _fetchClientId);
   }
 
-  /// Set search query
+  /// Set search query (client-side)
   void setSearchQuery(String query) {
     _searchQuery = query;
+    _displayLimit = 50;
     notifyListeners();
   }
 
-  /// Set AI-only filter
+  /// Set AI-only filter (client-side)
   void setAiFilter(bool value) {
     _filterAiOnly = value;
+    _displayLimit = 50;
     notifyListeners();
   }
 
-  /// Clear all filters
+  /// Clear all filters and re-fetch
   void clearFilters() {
+    _selectedClientId = null;
     _selectedUserId = null;
     _selectedActionType = null;
     _startDate = null;
     _endDate = null;
     _searchQuery = '';
     _filterAiOnly = false;
-    notifyListeners();
+    fetchLogs(clientId: _fetchClientId);
   }
+
+  // ── Computed getters ────────────────────────────────
 
   /// Get unique users from logs (for filter dropdown)
   List<Map<String, String>> get uniqueUsers {

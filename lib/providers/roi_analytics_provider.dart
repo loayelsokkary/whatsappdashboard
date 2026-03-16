@@ -1,12 +1,15 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../models/models.dart';
+import '../services/supabase_service.dart';
 
 // ============================================================
 // ROI ANALYTICS PROVIDER v4 — Full Rewrite
 // ============================================================
 
 class RoiAnalyticsProvider extends ChangeNotifier {
-  final SupabaseClient _supabase = Supabase.instance.client;
+  /// Use adminClient to bypass RLS on per-client dynamic tables
+  final SupabaseClient _supabase = SupabaseService.adminClient;
 
   bool _isLoading = false;
   String? _error;
@@ -68,8 +71,10 @@ class RoiAnalyticsProvider extends ChangeNotifier {
         );
 
         if (campaigns.isNotEmpty) {
-          final recipientsTable =
-              broadcastsTable.replaceAll('broadcasts', 'broadcast_recipients');
+          final recipientsTable = ClientConfig.broadcastRecipientsTable;
+          if (recipientsTable == null || recipientsTable.isEmpty) {
+            throw StateError('broadcast_recipients_table not configured');
+          }
           final cIds = campaigns.map((c) => c['id']).toList();
           // Paginate recipients (can exceed 1000)
           const rPageSize = 1000;

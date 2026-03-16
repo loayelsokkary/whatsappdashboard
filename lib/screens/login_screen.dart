@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../providers/agent_provider.dart';
 import '../services/supabase_service.dart';
 import '../theme/vivid_theme.dart';
+import '../utils/toast_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -66,18 +67,19 @@ class _LoginScreenState extends State<LoginScreen>
     );
 
     if (!success && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(provider.error ?? 'Login failed'),
-          backgroundColor: VividColors.statusUrgent,
-        ),
+      VividToast.show(context,
+        message: provider.error ?? 'Login failed',
+        type: ToastType.error,
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    final vc = context.vividColors;
+    return Theme(
+      data: VividTheme.darkTheme,
+      child: Scaffold(
       body: Container(
         decoration: const BoxDecoration(
           gradient: VividColors.darkGradient,
@@ -124,14 +126,14 @@ class _LoginScreenState extends State<LoginScreen>
                           constraints: const BoxConstraints(maxWidth: 440),
                           padding: EdgeInsets.all(padding),
                           decoration: BoxDecoration(
-                            color: VividColors.navy,
+                            color: vc.surface,
                             borderRadius: BorderRadius.circular(24),
                             border: Border.all(
-                              color: VividColors.tealBlue.withOpacity(0.3),
+                              color: vc.border,
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: VividColors.darkNavy.withOpacity(0.8),
+                                color: vc.shadow,
                                 blurRadius: 60,
                                 offset: const Offset(0, 20),
                               ),
@@ -203,7 +205,7 @@ class _LoginScreenState extends State<LoginScreen>
                                                 width: 20,
                                                 child: CircularProgressIndicator(
                                                   strokeWidth: 2,
-                                                  color: VividColors.darkNavy,
+                                                  color: Colors.white,
                                                 ),
                                               )
                                             : const Text(
@@ -211,7 +213,7 @@ class _LoginScreenState extends State<LoginScreen>
                                                 style: TextStyle(
                                                   fontSize: 16,
                                                   fontWeight: FontWeight.w600,
-                                                  color: VividColors.darkNavy,
+                                                  color: Colors.white,
                                                 ),
                                               ),
                                       ),
@@ -227,7 +229,7 @@ class _LoginScreenState extends State<LoginScreen>
                                 child: TextButton(
                                   onPressed: _showForgotPasswordDialog,
                                   style: TextButton.styleFrom(
-                                    foregroundColor: VividColors.textMuted,
+                                    foregroundColor: vc.textMuted,
                                   ),
                                   child: const Text(
                                     'Forgot Password?',
@@ -247,17 +249,19 @@ class _LoginScreenState extends State<LoginScreen>
           ],
         ),
       ),
+    ),
     );
   }
 
   Widget _buildPasswordField() {
+    final vc = context.vividColors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           'PASSWORD',
           style: TextStyle(
-            color: VividColors.textSecondary,
+            color: vc.textSecondary,
             fontSize: 11,
             letterSpacing: 1,
             fontWeight: FontWeight.w500,
@@ -267,14 +271,14 @@ class _LoginScreenState extends State<LoginScreen>
         TextField(
           controller: _passwordController,
           obscureText: !_showPassword,
-          style: const TextStyle(color: VividColors.textPrimary),
+          style: TextStyle(color: vc.textPrimary),
           decoration: InputDecoration(
             hintText: 'Enter your password',
-            prefixIcon: const Icon(Icons.lock_outline, color: VividColors.textMuted, size: 20),
+            prefixIcon: Icon(Icons.lock_outline, color: vc.textMuted, size: 20),
             suffixIcon: IconButton(
               icon: Icon(
                 _showPassword ? Icons.visibility_off : Icons.visibility,
-                color: VividColors.textMuted,
+                color: vc.textMuted,
                 size: 20,
               ),
               onPressed: () => setState(() => _showPassword = !_showPassword),
@@ -304,13 +308,14 @@ class _LoginScreenState extends State<LoginScreen>
     bool isPassword = false,
     TextInputType? keyboardType,
   }) {
+    final vc = context.vividColors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
           style: TextStyle(
-            color: VividColors.textSecondary,
+            color: vc.textSecondary,
             fontSize: 11,
             letterSpacing: 1,
             fontWeight: FontWeight.w500,
@@ -321,10 +326,10 @@ class _LoginScreenState extends State<LoginScreen>
           controller: controller,
           obscureText: isPassword,
           keyboardType: keyboardType,
-          style: const TextStyle(color: VividColors.textPrimary),
+          style: TextStyle(color: vc.textPrimary),
           decoration: InputDecoration(
             hintText: hint,
-            prefixIcon: Icon(icon, color: VividColors.textMuted, size: 20),
+            prefixIcon: Icon(icon, color: vc.textMuted, size: 20),
           ),
           onSubmitted: (_) => _handleLogin(),
         ),
@@ -545,25 +550,24 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
 
     if (mounted) {
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Password reset successfully! You can now sign in.'),
-          backgroundColor: VividColors.statusSuccess,
-        ),
+      VividToast.show(context,
+        message: 'Password reset successfully! You can now sign in.',
+        type: ToastType.success,
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
     return AlertDialog(
-      backgroundColor: VividColors.navy,
+      backgroundColor: vc.popupBg,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       title: Row(
         children: [
           if (_step != _ResetStep.email)
             IconButton(
-              icon: const Icon(Icons.arrow_back, color: VividColors.textMuted, size: 20),
+              icon: Icon(Icons.arrow_back, color: vc.textMuted, size: 20),
               onPressed: _isLoading
                   ? null
                   : () {
@@ -586,7 +590,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                 : _step == _ResetStep.code
                     ? 'Enter Code'
                     : 'New Password',
-            style: const TextStyle(color: VividColors.textPrimary, fontSize: 18),
+            style: TextStyle(color: vc.textPrimary, fontSize: 18),
           ),
         ],
       ),
@@ -654,22 +658,23 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
   }
 
   Widget _buildEmailStep() {
+    final vc = context.vividColors;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Enter your email and we\'ll send you a verification code to reset your password.',
-          style: TextStyle(color: VividColors.textMuted, fontSize: 13),
+          style: TextStyle(color: vc.textMuted, fontSize: 13),
         ),
         const SizedBox(height: 16),
         TextField(
           controller: _emailController,
           keyboardType: TextInputType.emailAddress,
-          style: const TextStyle(color: VividColors.textPrimary),
-          decoration: const InputDecoration(
+          style: TextStyle(color: vc.textPrimary),
+          decoration: InputDecoration(
             hintText: 'Enter your email',
-            prefixIcon: Icon(Icons.email_outlined, color: VividColors.textMuted, size: 20),
+            prefixIcon: Icon(Icons.email_outlined, color: vc.textMuted, size: 20),
           ),
           onSubmitted: (_) => _handleSendCode(),
         ),
@@ -678,13 +683,14 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
   }
 
   Widget _buildCodeStep() {
+    final vc = context.vividColors;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           'A 6-digit code has been sent to $_email',
-          style: const TextStyle(color: VividColors.textMuted, fontSize: 13),
+          style: TextStyle(color: vc.textMuted, fontSize: 13),
         ),
         const SizedBox(height: 20),
         Row(
@@ -698,8 +704,8 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                 keyboardType: TextInputType.number,
                 textAlign: TextAlign.center,
                 maxLength: 1,
-                style: const TextStyle(
-                  color: VividColors.textPrimary,
+                style: TextStyle(
+                  color: vc.textPrimary,
                   fontSize: 22,
                   fontWeight: FontWeight.bold,
                 ),
@@ -709,18 +715,18 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                   contentPadding: const EdgeInsets.symmetric(vertical: 12),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(color: VividColors.tealBlue.withOpacity(0.3)),
+                    borderSide: BorderSide(color: vc.border),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(color: VividColors.tealBlue.withOpacity(0.3)),
+                    borderSide: BorderSide(color: vc.border),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
                     borderSide: const BorderSide(color: VividColors.brightBlue, width: 2),
                   ),
                   filled: true,
-                  fillColor: VividColors.deepBlue,
+                  fillColor: vc.surfaceAlt,
                 ),
                 onChanged: (value) {
                   if (value.isNotEmpty && i < 5) {
@@ -747,7 +753,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                   ? 'Resend code in ${_resendCooldown}s'
                   : 'Resend Code',
               style: TextStyle(
-                color: _resendCooldown > 0 ? VividColors.textMuted : VividColors.brightBlue,
+                color: _resendCooldown > 0 ? vc.textMuted : VividColors.brightBlue,
                 fontSize: 13,
               ),
             ),
@@ -758,26 +764,27 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
   }
 
   Widget _buildNewPasswordStep() {
+    final vc = context.vividColors;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Create a new password for your account.',
-          style: TextStyle(color: VividColors.textMuted, fontSize: 13),
+          style: TextStyle(color: vc.textMuted, fontSize: 13),
         ),
         const SizedBox(height: 16),
         TextField(
           controller: _newPasswordController,
           obscureText: !_showNewPassword,
-          style: const TextStyle(color: VividColors.textPrimary),
+          style: TextStyle(color: vc.textPrimary),
           decoration: InputDecoration(
             hintText: 'New password (min 6 characters)',
-            prefixIcon: const Icon(Icons.lock_outline, color: VividColors.textMuted, size: 20),
+            prefixIcon: Icon(Icons.lock_outline, color: vc.textMuted, size: 20),
             suffixIcon: IconButton(
               icon: Icon(
                 _showNewPassword ? Icons.visibility_off : Icons.visibility,
-                color: VividColors.textMuted,
+                color: vc.textMuted,
                 size: 20,
               ),
               onPressed: () => setState(() => _showNewPassword = !_showNewPassword),
@@ -788,14 +795,14 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
         TextField(
           controller: _confirmPasswordController,
           obscureText: !_showConfirmPassword,
-          style: const TextStyle(color: VividColors.textPrimary),
+          style: TextStyle(color: vc.textPrimary),
           decoration: InputDecoration(
             hintText: 'Confirm new password',
-            prefixIcon: const Icon(Icons.lock_outline, color: VividColors.textMuted, size: 20),
+            prefixIcon: Icon(Icons.lock_outline, color: vc.textMuted, size: 20),
             suffixIcon: IconButton(
               icon: Icon(
                 _showConfirmPassword ? Icons.visibility_off : Icons.visibility,
-                color: VividColors.textMuted,
+                color: vc.textMuted,
                 size: 20,
               ),
               onPressed: () => setState(() => _showConfirmPassword = !_showConfirmPassword),

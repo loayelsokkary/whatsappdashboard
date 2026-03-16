@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/broadcast_analytics_provider.dart';
 import '../theme/vivid_theme.dart';
 import '../utils/analytics_exporter.dart';
+import '../utils/toast_service.dart';
 
 /// Analytics screen for broadcast campaigns
 class BroadcastAnalyticsScreen extends StatefulWidget {
@@ -56,31 +57,17 @@ class _BroadcastAnalyticsScreenState extends State<BroadcastAnalyticsScreen> {
   }
 
   void _showExportSuccess(String format) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Row(children: [
-        const Icon(Icons.check_circle, color: Colors.white, size: 20),
-        const SizedBox(width: 12),
-        Text('$format exported successfully'),
-      ]),
-      backgroundColor: VividColors.statusSuccess,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      margin: const EdgeInsets.all(16),
-    ));
+    VividToast.show(context,
+      message: '$format exported successfully',
+      type: ToastType.success,
+    );
   }
 
   void _showExportError(String error) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Row(children: [
-        const Icon(Icons.error, color: Colors.white, size: 20),
-        const SizedBox(width: 12),
-        Expanded(child: Text('Export failed: $error')),
-      ]),
-      backgroundColor: Colors.red,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      margin: const EdgeInsets.all(16),
-    ));
+    VividToast.show(context,
+      message: 'Export failed: $error',
+      type: ToastType.error,
+    );
   }
 
   Widget _buildExportButton(BuildContext context, BroadcastAnalyticsData data) {

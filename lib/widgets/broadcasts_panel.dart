@@ -4,6 +4,8 @@ import '../providers/broadcasts_provider.dart';
 import '../models/models.dart';
 import '../theme/vivid_theme.dart';
 import '../utils/initials_helper.dart';
+import '../utils/toast_service.dart';
+import '../services/impersonate_service.dart';
 
 /// Broadcasts panel - shows campaign list and recipient details
 class BroadcastsPanel extends StatefulWidget {
@@ -149,6 +151,7 @@ class _BroadcastsList extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 12),
+                if (!ImpersonateService.isImpersonating)
                 GestureDetector(
                   onTap: provider.isAtLimit
                       ? null
@@ -498,8 +501,9 @@ class _RecipientDetailsState extends State<_RecipientDetails> {
     } catch (e) {
       setState(() => _isSaving = false);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to rename: $e'), backgroundColor: Colors.red),
+        VividToast.show(context,
+          message: 'Failed to rename: $e',
+          type: ToastType.error,
         );
       }
     }
@@ -1078,19 +1082,9 @@ class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
 
     if (success) {
       Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(Icons.check_circle, color: Colors.white, size: 18),
-              const SizedBox(width: 8),
-              const Text('Broadcast sent! Processing recipients...'),
-            ],
-          ),
-          backgroundColor: VividColors.statusSuccess,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        ),
+      VividToast.show(context,
+        message: 'Broadcast sent! Processing recipients...',
+        type: ToastType.success,
       );
     }
     // On failure, dialog stays open and provider.sendError is shown inline

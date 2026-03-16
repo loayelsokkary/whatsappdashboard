@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/models.dart';
+import '../services/supabase_service.dart';
 
 /// AI Settings for a customer
 class AiChatSetting {
@@ -44,10 +45,14 @@ class AiSettingsProvider extends ChangeNotifier {
   bool _isLoading = false;
   String? _error;
 
+  /// Per-client AI settings table. Returns null if not configured.
+  String? get _aiTable => ClientConfig.aiSettingsTable;
+
   bool get isLoading => _isLoading;
   String? get error => _error;
 
-  SupabaseClient get _client => Supabase.instance.client;
+  /// Use adminClient to bypass RLS on per-client dynamic tables
+  SupabaseClient get _client => SupabaseService.adminClient;
 
   /// Get AI enabled status for a customer
   /// For non-AI clients, always returns false (no AI)
@@ -66,7 +71,7 @@ class AiSettingsProvider extends ChangeNotifier {
   /// Fetch all AI settings for this business
   /// Skips fetching for non-AI clients
   Future<void> fetchAllSettings() async {
-    if (!ClientConfig.hasAiConversations) {
+    if (!ClientConfig.hasAiConversations || _aiTable == null) {
       _settings.clear();
       return;
     }
@@ -76,7 +81,7 @@ class AiSettingsProvider extends ChangeNotifier {
 
     try {
       final response = await _client
-          .from('ai_chat_settings')
+          .from(_aiTable!)
           .select()
           .eq('ai_phone', ClientConfig.businessPhone);
 
@@ -100,7 +105,7 @@ class AiSettingsProvider extends ChangeNotifier {
   Future<AiChatSetting?> fetchSetting(String customerPhone) async {
     try {
       final response = await _client
-          .from('ai_chat_settings')
+          .from(_aiTable!)
           .select()
           .eq('ai_phone', ClientConfig.businessPhone)
           .eq('customer_phone', customerPhone)
@@ -122,7 +127,7 @@ class AiSettingsProvider extends ChangeNotifier {
   /// Toggle AI for a customer
   /// No-op for non-AI clients
   Future<bool> toggleAi(String customerPhone, bool enabled) async {
-    if (!ClientConfig.hasAiConversations) return false;
+    if (!ClientConfig.hasAiConversations || _aiTable == null) return false;
 
     // Immediately update local cache for instant UI response
     final oldSetting = _settings[customerPhone];
@@ -140,7 +145,7 @@ class AiSettingsProvider extends ChangeNotifier {
       if (oldSetting != null) {
         // Update existing
         await _client
-            .from('ai_chat_settings')
+            .from(_aiTable!)
             .update({
               'ai_enabled': enabled,
               'last_changed_by': 'manager',
@@ -149,7 +154,7 @@ class AiSettingsProvider extends ChangeNotifier {
             .eq('id', oldSetting.id);
       } else {
         // Create new
-        await _client.from('ai_chat_settings').insert({
+        await _client.from(_aiTable!).insert({
           'ai_phone': ClientConfig.businessPhone,
           'customer_phone': customerPhone,
           'ai_enabled': enabled,

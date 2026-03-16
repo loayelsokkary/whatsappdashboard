@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:web/web.dart' as web;
 import '../providers/conversations_provider.dart';
 import '../providers/ai_settings_provider.dart';
+import '../utils/toast_service.dart';
 import '../models/models.dart';
 import '../theme/vivid_theme.dart';
 import '../utils/time_utils.dart';
@@ -15,6 +16,7 @@ import '../utils/date_formatter.dart';
 import '../utils/audio_controller.dart';
 import 'voice_message_bubble.dart';
 import '../utils/initials_helper.dart';
+import '../services/impersonate_service.dart';
 
 class ConversationDetailPanel extends StatefulWidget {
   final Conversation conversation;
@@ -70,25 +72,11 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
     if (mounted) {
       setState(() => _aiToggleLoading = false);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              Icon(
-                success ? Icons.check_circle : Icons.error,
-                color: Colors.white,
-                size: 18,
-              ),
-              const SizedBox(width: 8),
-              Text(success
-                  ? 'AI ${value ? "enabled" : "disabled"} for this customer'
-                  : 'Failed to update AI status'),
-            ],
-          ),
-          backgroundColor: success ? VividColors.statusSuccess : VividColors.statusUrgent,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        ),
+      VividToast.show(context,
+        message: success
+            ? 'AI ${value ? "enabled" : "disabled"} for this customer'
+            : 'Failed to update AI status',
+        type: success ? ToastType.success : ToastType.error,
       );
     }
   }
@@ -139,6 +127,7 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
   }
 
   Future<void> _handleSend() async {
+    if (ImpersonateService.isImpersonating) return;
     final text = _messageController.text.trim();
     if (text.isEmpty) return;
 
@@ -158,19 +147,9 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
     );
 
     if (!success && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(Icons.error_outline, color: Colors.white, size: 18),
-              const SizedBox(width: 8),
-              Text(provider.error ?? 'Failed to send'),
-            ],
-          ),
-          backgroundColor: VividColors.statusUrgent,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        ),
+      VividToast.show(context,
+        message: provider.error ?? 'Failed to send',
+        type: ToastType.error,
       );
     }
 
@@ -196,13 +175,9 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
 
       if (bytes == null) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Could not read file'),
-              backgroundColor: VividColors.statusUrgent,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
+          VividToast.show(context,
+            message: 'Could not read file',
+            type: ToastType.error,
           );
         }
         return;
@@ -220,13 +195,9 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
       if (url == null) {
         if (mounted) {
           setState(() => _isUploading = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Upload failed'),
-              backgroundColor: VividColors.statusUrgent,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
+          VividToast.show(context,
+            message: 'Upload failed',
+            type: ToastType.error,
           );
         }
         return;
@@ -247,13 +218,9 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: VividColors.statusUrgent,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          ),
+        VividToast.show(context,
+          message: 'Error: $e',
+          type: ToastType.error,
         );
       }
     }
@@ -938,6 +905,26 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
             ),
           ),
 
+        if (ImpersonateService.isImpersonating)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: VividColors.statusWarning.withValues(alpha: 0.08),
+              border: Border(top: BorderSide(color: VividColors.statusWarning.withValues(alpha: 0.3))),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.visibility, size: 16, color: VividColors.statusWarning),
+                const SizedBox(width: 8),
+                Text(
+                  'Read-only preview — messages cannot be sent',
+                  style: TextStyle(color: VividColors.statusWarning, fontSize: 13, fontWeight: FontWeight.w500),
+                ),
+              ],
+            ),
+          )
+        else
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -1881,22 +1868,11 @@ class _MessageBubbleState extends State<_MessageBubble>
   }
 
   Future<void> _downloadFile(String fileUrl) async {
-    final vc = context.vividColors;
     try {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Row(
-            children: [
-              SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
-              SizedBox(width: 12),
-              Text('Downloading...'),
-            ],
-          ),
-          backgroundColor: vc.surfaceAlt,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          duration: const Duration(seconds: 2),
-        ),
+      VividToast.show(context,
+        message: 'Downloading...',
+        type: ToastType.info,
+        duration: const Duration(seconds: 2),
       );
 
       // Fetch file bytes
@@ -1943,39 +1919,17 @@ class _MessageBubbleState extends State<_MessageBubble>
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).clearSnackBars();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.check_circle, color: Colors.white, size: 18),
-                const SizedBox(width: 8),
-                Expanded(child: Text('Downloaded: $filename')),
-              ],
-            ),
-            backgroundColor: VividColors.statusSuccess,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          ),
+        VividToast.show(context,
+          message: 'Downloaded: $filename',
+          type: ToastType.success,
         );
       }
     } catch (e) {
       debugPrint('Download error: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).clearSnackBars();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.error, color: Colors.white, size: 18),
-                const SizedBox(width: 8),
-                Expanded(child: Text('Download failed: $e')),
-              ],
-            ),
-            backgroundColor: VividColors.statusUrgent,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          ),
+        VividToast.show(context,
+          message: 'Download failed: $e',
+          type: ToastType.error,
         );
       }
     }
