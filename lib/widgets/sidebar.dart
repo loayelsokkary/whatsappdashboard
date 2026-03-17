@@ -58,75 +58,78 @@ class Sidebar extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // ── Header: logo + collapse toggle in one row ───────
-          Container(
-            height: 56,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(
-                  color: VividColors.tealBlue.withValues(alpha: 0.18),
+          // ── Brand header ─────────────────────────────────────
+          if (expanded) ...[
+            // Expanded: full wordmark + collapse toggle in one row
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
+              decoration: const BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(
+                    color: Color(0x1AFFFFFF), // rgba white 10%
+                  ),
+                ),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // Wordmark fills available width at 40px tall
+                  Expanded(
+                    child: SizedBox(
+                      height: 40,
+                      child: Image.asset(
+                        'assets/images/vivid_logo_full.png',
+                        fit: BoxFit.contain,
+                        alignment: Alignment.centerLeft,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  // Collapse button
+                  InkWell(
+                    onTap: () => themeProvider.toggleSidebar(),
+                    borderRadius: BorderRadius.circular(6),
+                    child: Padding(
+                      padding: const EdgeInsets.all(6),
+                      child: const Icon(
+                        Icons.chevron_left,
+                        color: VividColors.textMuted,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ] else ...[
+            // Collapsed: hamburger expand button then diamond icon
+            const SizedBox(height: 10),
+            Center(
+              child: InkWell(
+                onTap: () => themeProvider.toggleSidebar(),
+                borderRadius: BorderRadius.circular(6),
+                child: const Padding(
+                  padding: EdgeInsets.all(6),
+                  child: Icon(
+                    Icons.menu,
+                    color: VividColors.textMuted,
+                    size: 20,
+                  ),
                 ),
               ),
             ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                // Logo area (animated between full and icon)
-                Expanded(
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 200),
-                    child: expanded
-                        ? Align(
-                            key: const ValueKey('full'),
-                            alignment: Alignment.centerLeft,
-                            child: VividWidgets.logoFull(width: 120),
-                          )
-                        : Center(
-                            key: const ValueKey('icon'),
-                            child: VividWidgets.icon(size: 34),
-                          ),
-                  ),
-                ),
-                // Collapse / expand toggle
-                if (expanded)
-                  IconButton(
-                    onPressed: () => themeProvider.toggleSidebar(),
-                    icon: const Icon(
-                      Icons.menu_open,
-                      color: VividColors.textMuted,
-                      size: 18,
-                    ),
-                    tooltip: 'Collapse sidebar',
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                      minWidth: 28,
-                      minHeight: 28,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-
-          // Collapsed: show toggle below the header row
-          if (!expanded)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: IconButton(
-                onPressed: () => themeProvider.toggleSidebar(),
-                icon: const Icon(
-                  Icons.menu,
-                  color: VividColors.textMuted,
-                  size: 18,
-                ),
-                tooltip: 'Expand sidebar',
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(
-                  minWidth: 28,
-                  minHeight: 28,
-                ),
+            const SizedBox(height: 10),
+            Center(child: VividWidgets.icon(size: 36)),
+            const SizedBox(height: 10),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: Divider(
+                color: Color(0x1AFFFFFF),
+                height: 1,
+                thickness: 1,
               ),
             ),
+          ],
 
           const SizedBox(height: 8),
 
