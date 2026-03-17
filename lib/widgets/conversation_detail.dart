@@ -42,7 +42,6 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
 
   bool _showSideProfile = false;
   bool _avatarHovered = false;
-  bool _pendingOpenSideProfile = false;
 
   // AI Toggle loading state only
   bool _aiToggleLoading = false;
@@ -64,7 +63,6 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
 
   void _onOpenSideProfileRequest() {
     if (openSideProfileNotifier.value && mounted) {
-      _pendingOpenSideProfile = true;
       openSideProfileNotifier.value = false;
       setState(() => _showSideProfile = true);
     }
@@ -75,11 +73,7 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.conversation.id != widget.conversation.id) {
       AudioController.instance.stop();
-      final keepOpen = _pendingOpenSideProfile;
-      _pendingOpenSideProfile = false;
-      if (!keepOpen && _showSideProfile) setState(() => _showSideProfile = false);
-    } else {
-      _pendingOpenSideProfile = false;
+      if (_showSideProfile) setState(() => _showSideProfile = false);
     }
   }
 

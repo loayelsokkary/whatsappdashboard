@@ -568,10 +568,15 @@ class _ConversationCard extends StatelessWidget {
                   return const SizedBox.shrink();
                 }
                 return GestureDetector(
+                  behavior: HitTestBehavior.opaque,
                   onTap: () {
                     final provider = ctx.read<ConversationsProvider>();
                     provider.selectConversation(conversation);
-                    openSideProfileNotifier.value = true;
+                    // Post-frame: ensures ConversationDetailPanel's listener is
+                    // registered before we fire, even on first conversation open.
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      openSideProfileNotifier.value = true;
+                    });
                   },
                   child: Padding(
                     padding: const EdgeInsets.only(right: 5),
