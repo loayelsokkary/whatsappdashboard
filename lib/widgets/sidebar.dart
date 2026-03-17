@@ -75,13 +75,11 @@ class Sidebar extends StatelessWidget {
                 children: [
                   // Wordmark fills available width at 40px tall
                   Expanded(
-                    child: SizedBox(
-                      height: 40,
-                      child: Image.asset(
-                        'assets/images/vivid_logo_full.png',
-                        fit: BoxFit.contain,
-                        alignment: Alignment.centerLeft,
-                      ),
+                    child: Image.asset(
+                      'assets/images/vivid_logo_full.png',
+                      width: 164,
+                      fit: BoxFit.fitWidth,
+                      alignment: Alignment.centerLeft,
                     ),
                   ),
                   const SizedBox(width: 4),
