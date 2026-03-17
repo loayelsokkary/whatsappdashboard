@@ -271,7 +271,6 @@ class _MainScaffoldState extends State<MainScaffold> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isMobile = constraints.maxWidth < 600;
-        final isTablet = constraints.maxWidth < 900;
 
         if (isMobile) {
           return Scaffold(
@@ -286,7 +285,6 @@ class _MainScaffoldState extends State<MainScaffold> {
           body: Row(
             children: [
               Sidebar(
-                compact: isTablet,
                 currentDestination: _currentDestination ?? NavDestination.conversations,
                 onDestinationChanged: (destination) {
                   setState(() => _currentDestination = destination);
