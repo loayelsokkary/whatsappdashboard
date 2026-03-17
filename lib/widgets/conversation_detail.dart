@@ -17,6 +17,10 @@ import 'voice_message_bubble.dart';
 import '../utils/initials_helper.dart';
 import 'side_profile_panel.dart';
 
+/// Set to true from outside (e.g. conversation list note icon) to open the
+/// side profile panel for whichever conversation is currently shown.
+final ValueNotifier<bool> openSideProfileNotifier = ValueNotifier(false);
+
 class ConversationDetailPanel extends StatefulWidget {
   final Conversation conversation;
 
@@ -38,6 +42,7 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
 
   bool _showSideProfile = false;
   bool _avatarHovered = false;
+  bool _pendingOpenSideProfile = false;
 
   // AI Toggle loading state only
   bool _aiToggleLoading = false;
@@ -50,10 +55,19 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
   @override
   void initState() {
     super.initState();
+    openSideProfileNotifier.addListener(_onOpenSideProfileRequest);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
       _scrollToBottom(animate: false);
     });
+  }
+
+  void _onOpenSideProfileRequest() {
+    if (openSideProfileNotifier.value && mounted) {
+      _pendingOpenSideProfile = true;
+      openSideProfileNotifier.value = false;
+      setState(() => _showSideProfile = true);
+    }
   }
 
   @override
@@ -61,7 +75,11 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.conversation.id != widget.conversation.id) {
       AudioController.instance.stop();
-      if (_showSideProfile) setState(() => _showSideProfile = false);
+      final keepOpen = _pendingOpenSideProfile;
+      _pendingOpenSideProfile = false;
+      if (!keepOpen && _showSideProfile) setState(() => _showSideProfile = false);
+    } else {
+      _pendingOpenSideProfile = false;
     }
   }
 
@@ -99,6 +117,7 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
 
   @override
   void dispose() {
+    openSideProfileNotifier.removeListener(_onOpenSideProfileRequest);
     AudioController.instance.stop();
     _messageController.dispose();
     _scrollController.dispose();
@@ -452,17 +471,22 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
               child: AnimatedScale(
                 scale: _avatarHovered ? 1.08 : 1.0,
                 duration: const Duration(milliseconds: 150),
-                child: Container(
+                child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: _showSideProfile
-                      ? VividColors.brightBlue.withValues(alpha: 0.35)
-                      : VividColors.brightBlue.withValues(alpha: 0.2),
+                  color: _avatarHovered
+                      ? VividColors.cyan.withValues(alpha: 0.25)
+                      : _showSideProfile
+                          ? VividColors.brightBlue.withValues(alpha: 0.35)
+                          : VividColors.brightBlue.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(12),
                   border: _showSideProfile
                       ? Border.all(color: VividColors.brightBlue, width: 1.5)
-                      : null,
+                      : _avatarHovered
+                          ? Border.all(color: VividColors.cyan, width: 1.5)
+                          : null,
                 ),
                 child: Center(
                   child: Builder(builder: (context) {

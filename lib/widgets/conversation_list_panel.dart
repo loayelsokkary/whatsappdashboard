@@ -8,6 +8,7 @@ import '../theme/vivid_theme.dart';
 import '../utils/time_utils.dart';
 import '../utils/initials_helper.dart';
 import 'side_profile_panel.dart' show phonesWithNotes, ensurePhonesWithNotesInitialized;
+import 'conversation_detail.dart' show openSideProfileNotifier;
 
 class ConversationListPanel extends StatefulWidget {
   final VoidCallback? onConversationTap;
@@ -562,25 +563,35 @@ class _ConversationCard extends StatelessWidget {
             ),
             ValueListenableBuilder<Set<String>>(
               valueListenable: phonesWithNotes,
-              builder: (_, phones, __) {
+              builder: (ctx, phones, __) {
                 if (!phones.contains(conversation.customerPhone)) {
                   return const SizedBox.shrink();
                 }
-                return Padding(
-                  padding: const EdgeInsets.only(right: 5),
-                  child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: DecoratedBox(
-                      decoration: const BoxDecoration(
-                        color: Color(0x263B82F6),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Center(
-                        child: Icon(
-                          Icons.note_alt_outlined,
-                          size: 12,
-                          color: Color(0xFF3B82F6),
+                return GestureDetector(
+                  onTap: () {
+                    final provider = ctx.read<ConversationsProvider>();
+                    provider.selectConversation(conversation);
+                    openSideProfileNotifier.value = true;
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 5),
+                    child: Tooltip(
+                      message: 'View notes',
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: DecoratedBox(
+                          decoration: const BoxDecoration(
+                            color: Color(0x26F59E0B),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Center(
+                            child: Icon(
+                              Icons.sticky_note_2_outlined,
+                              size: 12,
+                              color: Color(0xFFF59E0B),
+                            ),
+                          ),
                         ),
                       ),
                     ),
