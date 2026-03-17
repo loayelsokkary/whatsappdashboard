@@ -87,9 +87,21 @@ class Sidebar extends StatelessWidget {
           Stack(
             clipBehavior: Clip.none,
             children: [
-              VividWidgets.icon(size: 44),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                child: expanded
+                    ? Padding(
+                        key: const ValueKey('full'),
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: VividWidgets.logoFull(height: 36),
+                      )
+                    : SizedBox(
+                        key: const ValueKey('icon'),
+                        child: VividWidgets.icon(size: 44),
+                      ),
+              ),
               Positioned(
-                right: -2,
+                right: expanded ? 10 : -2,
                 bottom: -2,
                 child: Container(
                   width: 14,

@@ -726,4 +726,14 @@ class VividWidgets {
       fit: BoxFit.contain,
     );
   }
+
+  /// Vivid Full Logo with wordmark (for expanded sidebar)
+  static Widget logoFull({double? width, double? height}) {
+    return Image.asset(
+      'assets/images/vivid_logo_full.png',
+      width: width,
+      height: height,
+      fit: BoxFit.contain,
+    );
+  }
 }
