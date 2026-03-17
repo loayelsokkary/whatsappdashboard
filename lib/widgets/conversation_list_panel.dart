@@ -7,6 +7,7 @@ import '../models/models.dart';
 import '../theme/vivid_theme.dart';
 import '../utils/time_utils.dart';
 import '../utils/initials_helper.dart';
+import 'side_profile_panel.dart' show phonesWithNotes, ensurePhonesWithNotesInitialized;
 
 class ConversationListPanel extends StatefulWidget {
   final VoidCallback? onConversationTap;
@@ -23,6 +24,12 @@ class _ConversationListPanelState extends State<ConversationListPanel> {
   List<MessageSearchResult> _searchResults = [];
   bool _isSearching = false;
   bool _isSearchActive = false;
+
+  @override
+  void initState() {
+    super.initState();
+    ensurePhonesWithNotesInitialized();
+  }
 
   @override
   void dispose() {
@@ -552,6 +559,34 @@ class _ConversationCard extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
+            ),
+            ValueListenableBuilder<Set<String>>(
+              valueListenable: phonesWithNotes,
+              builder: (_, phones, __) {
+                if (!phones.contains(conversation.customerPhone)) {
+                  return const SizedBox.shrink();
+                }
+                return Padding(
+                  padding: const EdgeInsets.only(right: 5),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: DecoratedBox(
+                      decoration: const BoxDecoration(
+                        color: Color(0x263B82F6),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.note_alt_outlined,
+                          size: 12,
+                          color: Color(0xFF3B82F6),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
             Text(
               TimeUtils.formatRelativeTime(conversation.lastMessageAt),

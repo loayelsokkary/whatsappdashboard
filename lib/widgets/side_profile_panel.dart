@@ -87,6 +87,9 @@ final ValueNotifier<Set<String>> phonesWithNotes = ValueNotifier({});
 
 bool _phonesWithNotesInitialized = false;
 
+/// Call once at startup to batch-load which phones have notes.
+Future<void> ensurePhonesWithNotesInitialized() => _ensurePhonesWithNotesInitialized();
+
 void invalidateSideProfileCache(String phone) => _profileCache.remove(phone);
 
 // ─── Data fetcher ─────────────────────────────────────────────────────────────

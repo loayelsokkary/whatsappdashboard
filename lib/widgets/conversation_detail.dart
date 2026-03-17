@@ -37,6 +37,7 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
   Set<String> _seenMessageIds = {};
 
   bool _showSideProfile = false;
+  bool _avatarHovered = false;
 
   // AI Toggle loading state only
   bool _aiToggleLoading = false;
@@ -446,7 +447,12 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
             onTap: () => setState(() => _showSideProfile = !_showSideProfile),
             child: MouseRegion(
               cursor: SystemMouseCursors.click,
-              child: Container(
+              onEnter: (_) => setState(() => _avatarHovered = true),
+              onExit: (_) => setState(() => _avatarHovered = false),
+              child: AnimatedScale(
+                scale: _avatarHovered ? 1.08 : 1.0,
+                duration: const Duration(milliseconds: 150),
+                child: Container(
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
@@ -475,6 +481,7 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
               ),
             ),
           ),
+        ),
           const SizedBox(width: 12),
 
           // Info
