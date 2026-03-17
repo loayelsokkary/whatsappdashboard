@@ -7,6 +7,8 @@ import '../models/models.dart';
 import '../theme/vivid_theme.dart';
 import '../utils/time_utils.dart';
 import '../utils/initials_helper.dart';
+import 'side_profile_panel.dart' show phonesWithNotes, ensurePhonesWithNotesInitialized;
+import 'conversation_detail.dart' show openSideProfileNotifier;
 
 class ConversationListPanel extends StatefulWidget {
   final VoidCallback? onConversationTap;
@@ -23,6 +25,12 @@ class _ConversationListPanelState extends State<ConversationListPanel> {
   List<MessageSearchResult> _searchResults = [];
   bool _isSearching = false;
   bool _isSearchActive = false;
+
+  @override
+  void initState() {
+    super.initState();
+    ensurePhonesWithNotesInitialized();
+  }
 
   @override
   void dispose() {
@@ -552,6 +560,49 @@ class _ConversationCard extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
+            ),
+            ValueListenableBuilder<Set<String>>(
+              valueListenable: phonesWithNotes,
+              builder: (ctx, phones, __) {
+                if (!phones.contains(conversation.customerPhone)) {
+                  return const SizedBox.shrink();
+                }
+                return GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    final provider = ctx.read<ConversationsProvider>();
+                    provider.selectConversation(conversation);
+                    // Post-frame: ensures ConversationDetailPanel's listener is
+                    // registered before we fire, even on first conversation open.
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      openSideProfileNotifier.value = true;
+                    });
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 5),
+                    child: Tooltip(
+                      message: 'View notes',
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: DecoratedBox(
+                          decoration: const BoxDecoration(
+                            color: Color(0x26F59E0B),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Center(
+                            child: Icon(
+                              Icons.sticky_note_2_outlined,
+                              size: 12,
+                              color: Color(0xFFF59E0B),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
             Text(
               TimeUtils.formatRelativeTime(conversation.lastMessageAt),

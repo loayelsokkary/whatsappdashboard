@@ -104,10 +104,17 @@ class BroadcastsProvider extends ChangeNotifier {
   List<BroadcastRecipient> _recipients = [];
   Broadcast? _selectedBroadcast;
   bool _isLoading = false;
+  bool _isLoadingRecipients = false;
+  bool _isLoadingMoreRecipients = false;
+  bool _hasMoreRecipients = false;
+  int _recipientOffset = 0;
+  int _recipientSentCount = 0;
   bool _isSending = false;
   String? _error;
   String? _sendError;
   int _monthlySentCount = 0;
+
+  static const int _recipientsPageSize = 100;
   
   RealtimeChannel? _broadcastsChannel;
   RealtimeChannel? _recipientsChannel;
@@ -116,6 +123,10 @@ class BroadcastsProvider extends ChangeNotifier {
   List<BroadcastRecipient> get recipients => _recipients;
   Broadcast? get selectedBroadcast => _selectedBroadcast;
   bool get isLoading => _isLoading;
+  bool get isLoadingRecipients => _isLoadingRecipients;
+  bool get isLoadingMoreRecipients => _isLoadingMoreRecipients;
+  bool get hasMoreRecipients => _hasMoreRecipients;
+  int get recipientSentCount => _recipientSentCount;
   bool get isSending => _isSending;
   String? get error => _error;
   String? get sendError => _sendError;
@@ -237,32 +248,22 @@ class BroadcastsProvider extends ChangeNotifier {
   void _handleNewRecipient(Map<String, dynamic> data) {
     try {
       final recipient = BroadcastRecipient.fromJson(data);
-      
       if (!_recipients.any((r) => r.id == recipient.id)) {
         _recipients.insert(0, recipient);
-        _syncBroadcastRecipientCount();
+        _recipientOffset += 1;
+        // Increment total count in selected broadcast
+        if (_selectedBroadcast != null) {
+          final updated = _selectedBroadcast!.copyWith(
+            totalRecipients: _selectedBroadcast!.totalRecipients + 1,
+          );
+          _selectedBroadcast = updated;
+          final idx = _broadcasts.indexWhere((b) => b.id == updated.id);
+          if (idx != -1) _broadcasts[idx] = updated;
+        }
         notifyListeners();
       }
     } catch (e) {
       print('Error handling new recipient: $e');
-    }
-  }
-
-  void _syncBroadcastRecipientCount() {
-    if (_selectedBroadcast == null) return;
-    
-    final actualCount = _recipients.length;
-    if (_selectedBroadcast!.totalRecipients != actualCount) {
-      final updatedBroadcast = _selectedBroadcast!.copyWith(
-        totalRecipients: actualCount,
-      );
-      
-      _selectedBroadcast = updatedBroadcast;
-      
-      final index = _broadcasts.indexWhere((b) => b.id == updatedBroadcast.id);
-      if (index != -1) {
-        _broadcasts[index] = updatedBroadcast;
-      }
     }
   }
 
@@ -302,44 +303,106 @@ class BroadcastsProvider extends ChangeNotifier {
 
   Future<void> selectBroadcast(Broadcast broadcast) async {
     _selectedBroadcast = broadcast;
+    _recipients = [];
+    _recipientOffset = 0;
+    _hasMoreRecipients = false;
+    _recipientSentCount = 0;
+    _isLoadingRecipients = true;
     notifyListeners();
 
-    await fetchRecipients(broadcast.id);
-    _syncBroadcastRecipientCount();
+    // Fast COUNT query — updates totalRecipients before list fetch completes
+    final exactCount = await _fetchRecipientCount(broadcast.id);
+    if (exactCount >= 0 && _selectedBroadcast?.id == broadcast.id) {
+      _selectedBroadcast = _selectedBroadcast!.copyWith(totalRecipients: exactCount);
+      final idx = _broadcasts.indexWhere((b) => b.id == broadcast.id);
+      if (idx != -1) _broadcasts[idx] = _selectedBroadcast!;
+      notifyListeners();
+    }
+
+    // First page of recipients + delivery stats in parallel
+    await Future.wait([
+      fetchRecipients(broadcast.id),
+      _fetchRecipientStats(broadcast.id),
+    ]);
+
+    _isLoadingRecipients = false;
     notifyListeners();
-    
+
     _subscribeToRecipients(broadcast.id);
+  }
+
+  Future<int> _fetchRecipientCount(String broadcastId) async {
+    try {
+      // Use adminClient to bypass RLS on per-client tables
+      final result = await SupabaseService.adminClient
+          .from(_recipientsTable)
+          .select()
+          .eq('broadcast_id', broadcastId)
+          .count(CountOption.exact);
+      return result.count;
+    } catch (e) {
+      print('Error fetching recipient count: $e');
+      return -1;
+    }
   }
 
   Future<void> fetchRecipients(String broadcastId) async {
     try {
-      print('📢 Fetching recipients from: $_recipientsTable');
-
-      // Paginate to fetch all recipients (Supabase default limit is 1000)
-      const pageSize = 1000;
-      List<Map<String, dynamic>> allRows = [];
-      int from = 0;
-      while (true) {
-        // Use adminClient to bypass RLS on per-client tables
-        final response = await SupabaseService.adminClient
-            .from(_recipientsTable)
-            .select()
-            .eq('broadcast_id', broadcastId)
-            .range(from, from + pageSize - 1);
-        final rows = List<Map<String, dynamic>>.from(response as List);
-        allRows.addAll(rows);
-        if (rows.length < pageSize) break;
-        from += pageSize;
-      }
-
-      _recipients = allRows
-          .map((json) => BroadcastRecipient.fromJson(json))
-          .toList();
-
-      print('📢 Fetched ${_recipients.length} recipients from $_recipientsTable');
+      // Use adminClient to bypass RLS on per-client tables
+      final response = await SupabaseService.adminClient
+          .from(_recipientsTable)
+          .select('id, customer_name, customer_phone, status')
+          .eq('broadcast_id', broadcastId)
+          .range(0, _recipientsPageSize - 1);
+      final rows = List<Map<String, dynamic>>.from(response as List);
+      _recipients = rows.map((json) => BroadcastRecipient.fromJson(json)).toList();
+      _recipientOffset = rows.length;
+      _hasMoreRecipients = rows.length >= _recipientsPageSize;
       notifyListeners();
     } catch (e) {
       print('Fetch recipients error: $e');
+    }
+  }
+
+  Future<void> loadMoreRecipients() async {
+    if (!_hasMoreRecipients || _isLoadingMoreRecipients || _selectedBroadcast == null) return;
+    _isLoadingMoreRecipients = true;
+    notifyListeners();
+    try {
+      final broadcastId = _selectedBroadcast!.id;
+      // Use adminClient to bypass RLS on per-client tables
+      final response = await SupabaseService.adminClient
+          .from(_recipientsTable)
+          .select('id, customer_name, customer_phone, status')
+          .eq('broadcast_id', broadcastId)
+          .range(_recipientOffset, _recipientOffset + _recipientsPageSize - 1);
+      final rows = List<Map<String, dynamic>>.from(response as List);
+      _recipients = [
+        ..._recipients,
+        ...rows.map((json) => BroadcastRecipient.fromJson(json)),
+      ];
+      _recipientOffset += rows.length;
+      _hasMoreRecipients = rows.length >= _recipientsPageSize;
+    } catch (e) {
+      print('Load more recipients error: $e');
+    }
+    _isLoadingMoreRecipients = false;
+    notifyListeners();
+  }
+
+  Future<void> _fetchRecipientStats(String broadcastId) async {
+    try {
+      // Use adminClient to bypass RLS on per-client tables
+      final result = await SupabaseService.adminClient
+          .from(_recipientsTable)
+          .select()
+          .eq('broadcast_id', broadcastId)
+          .inFilter('status', ['accepted', 'sent', 'delivered'])
+          .count(CountOption.exact);
+      _recipientSentCount = result.count;
+      notifyListeners();
+    } catch (e) {
+      print('Error fetching recipient stats: $e');
     }
   }
 
@@ -349,13 +412,29 @@ class BroadcastsProvider extends ChangeNotifier {
       final startOfMonth = DateTime(now.year, now.month, 1).toIso8601String();
 
       // Use adminClient to bypass RLS on per-client tables
-      final response = await SupabaseService.adminClient
+      final broadcastsResponse = await SupabaseService.adminClient
           .from(_broadcastsTable)
-          .select('total_recipients')
+          .select('id')
           .gte('sent_at', startOfMonth);
+      final ids = (broadcastsResponse as List)
+          .map((b) => b['id']?.toString())
+          .where((id) => id != null && id.isNotEmpty)
+          .cast<String>()
+          .toList();
 
-      _monthlySentCount = (response as List)
-          .fold<int>(0, (sum, b) => sum + ((b['total_recipients'] ?? 0) as int));
+      if (ids.isEmpty) {
+        _monthlySentCount = 0;
+        notifyListeners();
+        return;
+      }
+
+      // Count actual recipients for those broadcasts (adminClient bypasses RLS)
+      final countResult = await SupabaseService.adminClient
+          .from(_recipientsTable)
+          .select()
+          .inFilter('broadcast_id', ids)
+          .count(CountOption.exact);
+      _monthlySentCount = countResult.count;
       notifyListeners();
     } catch (e) {
       print('Error fetching monthly broadcast count: $e');

@@ -45,6 +45,9 @@ dependencies:
   # Web APIs (for file downloads)
   web: ^1.0.0
 
+  # Excel export (real .xlsx, not HTML)
+  excel: ^4.0.6
+
   # Emoji Picker
   emoji_picker_flutter: ^2.1.1
 

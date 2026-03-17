@@ -95,6 +95,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   String? _selectedCampaignId;
   int _overdueIndex = 2; // default 30 min
   bool _hasBothFeatures = false;
+  bool _isExporting = false;
 
   @override
   void initState() {
@@ -299,9 +300,25 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     final vc = context.vividColors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final client = ClientConfig.currentClient;
-    final daysActive = client != null
-        ? DateTime.now().difference(client.createdAt).inDays
-        : null;
+    final daysLabel = () {
+      final start = _effectiveStart;
+      final end = _effectiveEnd;
+      if (start != null && end != null) {
+        if (_dateFilter == DateRangeFilter.allTime) {
+          // for All Time, show how long the client has been live
+          final days = client != null
+              ? DateTime.now().difference(client.createdAt).inDays
+              : end.difference(start).inDays;
+          return '$days days active';
+        }
+        final days = end.difference(start).inDays.clamp(1, 9999);
+        return '$days days active';
+      }
+      if (client != null) {
+        return '${DateTime.now().difference(client.createdAt).inDays} days active';
+      }
+      return null;
+    }();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -321,9 +338,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                if (daysActive != null)
+                if (daysLabel != null)
                   Text(
-                    '$daysActive days active',
+                    daysLabel,
                     style: TextStyle(color: isDark ? vc.textMuted : const Color(0xFF64748B), fontSize: 12),
                   ),
               ],
@@ -659,6 +676,25 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   Widget _buildExportButton(AnalyticsData data) {
     final vc = context.vividColors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    if (_isExporting) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        decoration: BoxDecoration(
+          color: VividColors.cyan.withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
+            SizedBox(width: 8),
+            Text('Exporting…', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15)),
+          ],
+        ),
+      );
+    }
+
     return PopupMenuButton<String>(
       tooltip: 'Export',
       color: isDark ? vc.surface : Colors.white,
@@ -684,30 +720,36 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             Text('Export PDF', style: TextStyle(color: isDark ? vc.textPrimary : const Color(0xFF1E293B), fontSize: 13)),
           ]),
         ),
+        PopupMenuItem(
+          value: 'excel',
+          child: Row(children: [
+            Icon(Icons.grid_on_outlined, size: 16, color: isDark ? vc.textSecondary : const Color(0xFF475569)),
+            const SizedBox(width: 10),
+            Text('Export Excel', style: TextStyle(color: isDark ? vc.textPrimary : const Color(0xFF1E293B), fontSize: 13)),
+          ]),
+        ),
       ],
-      onSelected: (format) {
+      onSelected: (format) async {
         final clientName = ClientConfig.businessName;
         final dateRange = _dateFilter.label;
-        if (format == 'csv') {
-          try {
+        setState(() => _isExporting = true);
+        try {
+          if (format == 'csv') {
             AnalyticsExporter.exportAnalyticsCsv(data: data, clientName: clientName, dateRange: dateRange);
-          } catch (e) {
-            if (mounted) {
-              VividToast.show(context,
-                message: 'CSV export failed: $e',
-                type: ToastType.error,
-              );
-            }
+          } else if (format == 'pdf') {
+            await AnalyticsExporter.exportAnalyticsPdf(data: data, clientName: clientName, dateRange: dateRange);
+          } else {
+            await AnalyticsExporter.exportAnalyticsExcel(data: data, clientName: clientName, dateRange: dateRange);
           }
-        } else {
-          AnalyticsExporter.exportAnalyticsPdf(data: data, clientName: clientName, dateRange: dateRange).catchError((e) {
-            if (mounted) {
-              VividToast.show(context,
-                message: 'PDF export failed: $e',
-                type: ToastType.error,
-              );
-            }
-          });
+        } catch (e) {
+          if (mounted) {
+            VividToast.show(context,
+              message: 'Export failed: $e',
+              type: ToastType.error,
+            );
+          }
+        } finally {
+          if (mounted) setState(() => _isExporting = false);
         }
       },
       child: Container(
@@ -942,11 +984,11 @@ class _ConversationsView extends StatelessWidget {
         const SizedBox(height: 32),
         _buildOverdueSection(context),
 
-        // ---- PER-EMPLOYEE RESPONSE TIME ----
-        if (m.employeeAvgResponseTime.isNotEmpty) ...[
+        // ---- EMPLOYEE PERFORMANCE ----
+        if (data.employeePerformance.isNotEmpty) ...[
           const SizedBox(height: 32),
-          _EmployeeResponseTimeSection(
-            employeeTimes: m.employeeAvgResponseTime,
+          _EmployeePerformanceSection(
+            performance: data.employeePerformance,
             isWide: isWide,
           ),
         ],
@@ -1287,220 +1329,491 @@ class _ConversationsView extends StatelessWidget {
 }
 
 // ================================================================
-// EMPLOYEE RESPONSE TIME SECTION (with search + sort)
+// EMPLOYEE PERFORMANCE SECTION
 // ================================================================
 
-enum _EmployeeSort { fastest, slowest, alphabetical }
+enum _EmpPerfSort { conversionRate, messagesSent, conversations, responseTime, appointments, payments, revenue }
+enum _EmpFilter { all, topConverters, growthOpportunity }
 
-class _EmployeeResponseTimeSection extends StatefulWidget {
-  final Map<String, double> employeeTimes;
+class _EmployeePerformanceSection extends StatefulWidget {
+  final List<EmployeePerformance> performance;
   final bool isWide;
-  const _EmployeeResponseTimeSection({required this.employeeTimes, required this.isWide});
+  const _EmployeePerformanceSection({required this.performance, required this.isWide});
 
   @override
-  State<_EmployeeResponseTimeSection> createState() => _EmployeeResponseTimeSectionState();
+  State<_EmployeePerformanceSection> createState() => _EmployeePerformanceSectionState();
 }
 
-class _EmployeeResponseTimeSectionState extends State<_EmployeeResponseTimeSection> {
-  String _search = '';
-  _EmployeeSort _sort = _EmployeeSort.fastest;
+class _EmployeePerformanceSectionState extends State<_EmployeePerformanceSection> {
+  _EmpPerfSort _sortCol = _EmpPerfSort.conversionRate;
+  bool _sortAsc = false;
+  _EmpFilter _filter = _EmpFilter.all;
 
-  List<MapEntry<String, double>> get _filteredSorted {
-    var entries = widget.employeeTimes.entries.toList();
-    if (_search.isNotEmpty) {
-      final q = _search.toLowerCase();
-      entries = entries.where((e) => e.key.toLowerCase().contains(q)).toList();
+  // Base: exclude employees with 0 messages
+  List<EmployeePerformance> get _base =>
+      widget.performance.where((e) => e.messagesSent > 0).toList();
+
+  List<EmployeePerformance> _applyFilter(List<EmployeePerformance> list, _EmpFilter f) {
+    switch (f) {
+      case _EmpFilter.all: return list;
+      case _EmpFilter.topConverters:
+        return list.where((e) => e.conversionRate > 10).toList();
+      case _EmpFilter.growthOpportunity:
+        return list.where((e) => e.conversationsHandled > 5 && e.conversionRate < 5).toList();
     }
-    switch (_sort) {
-      case _EmployeeSort.fastest:
-        entries.sort((a, b) => a.value.compareTo(b.value));
-      case _EmployeeSort.slowest:
-        entries.sort((a, b) => b.value.compareTo(a.value));
-      case _EmployeeSort.alphabetical:
-        entries.sort((a, b) => a.key.toLowerCase().compareTo(b.key.toLowerCase()));
-    }
-    return entries;
+  }
+
+  List<EmployeePerformance> get _filtered {
+    final list = List<EmployeePerformance>.from(_applyFilter(_base, _filter));
+    list.sort((a, b) {
+      int cmp;
+      switch (_sortCol) {
+        case _EmpPerfSort.conversionRate: cmp = a.conversionRate.compareTo(b.conversionRate);
+        case _EmpPerfSort.messagesSent: cmp = a.messagesSent.compareTo(b.messagesSent);
+        case _EmpPerfSort.conversations: cmp = a.conversationsHandled.compareTo(b.conversationsHandled);
+        case _EmpPerfSort.responseTime: cmp = a.avgResponseTimeSeconds.compareTo(b.avgResponseTimeSeconds);
+        case _EmpPerfSort.appointments: cmp = a.appointmentsBooked.compareTo(b.appointmentsBooked);
+        case _EmpPerfSort.payments: cmp = a.paymentsCollected.compareTo(b.paymentsCollected);
+        case _EmpPerfSort.revenue: cmp = a.revenueAttributed.compareTo(b.revenueAttributed);
+      }
+      return _sortAsc ? cmp : -cmp;
+    });
+    return list;
+  }
+
+  void _onTapHeader(_EmpPerfSort col) {
+    setState(() {
+      if (_sortCol == col) {
+        _sortAsc = !_sortAsc;
+      } else {
+        _sortCol = col;
+        _sortAsc = false;
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final vc = context.vividColors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final base = _base;
+    final filtered = _filtered;
+
+    final cardBg = isDark ? vc.surface : Colors.white;
+    final borderColor = isDark ? vc.border : const Color(0xFFE2E8F0);
     final textPrimary = isDark ? vc.textPrimary : const Color(0xFF1E293B);
     final textMuted = isDark ? vc.textMuted : const Color(0xFF94A3B8);
-    final containerBg = isDark ? vc.surface : Colors.white;
-    final borderColor = isDark ? vc.border : const Color(0xFFE2E8F0);
-    final entries = _filteredSorted;
+    final textSecondary = isDark ? vc.textSecondary : const Color(0xFF475569);
+
+    // Summary card data (from full base, independent of active filter)
+    final qualifiers = base.where((e) => e.conversationsHandled >= 3).toList();
+    final topPerformer = qualifiers.isEmpty ? null
+        : qualifiers.reduce((a, b) => a.conversionRate >= b.conversionRate ? a : b);
+    final mostActive = base.isEmpty ? null
+        : base.reduce((a, b) => a.messagesSent >= b.messagesSent ? a : b);
+    final fastestResponder = base.where((e) => e.avgResponseTimeSeconds > 0).isEmpty ? null
+        : base.where((e) => e.avgResponseTimeSeconds > 0)
+            .reduce((a, b) => a.avgResponseTimeSeconds <= b.avgResponseTimeSeconds ? a : b);
+    final topRevenue = base.where((e) => e.revenueAttributed > 0).isEmpty ? null
+        : base.where((e) => e.revenueAttributed > 0)
+            .reduce((a, b) => a.revenueAttributed >= b.revenueAttributed ? a : b);
+
+    // Filter chip counts
+    final countAll = base.length;
+    final countConverters = _applyFilter(base, _EmpFilter.topConverters).length;
+    final countGrowth = _applyFilter(base, _EmpFilter.growthOpportunity).length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Header row with title, search, sort
-        Row(
-          children: [
-            Text('Response Time by Employee', style: TextStyle(
-              color: textPrimary, fontSize: 20, fontWeight: FontWeight.bold)),
-            const Spacer(),
-            // Sort dropdown
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        Text('Employee Performance', style: TextStyle(
+          color: textPrimary, fontSize: 20, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 20),
+
+        // ── Summary cards — styled like _MetricCard ───────────────────
+        LayoutBuilder(builder: (ctx, constraints) {
+          final isNarrow = constraints.maxWidth < 700;
+
+          Widget card(String title, IconData icon, Color color, String name,
+              String metric, String detail) {
+            return Container(
+              clipBehavior: Clip.hardEdge,
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
               decoration: BoxDecoration(
-                color: containerBg,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: borderColor),
+                color: cardBg,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: color.withValues(alpha: 0.4)),
+                boxShadow: isDark ? null : [
+                  BoxShadow(color: Colors.black.withValues(alpha: 0.06),
+                    blurRadius: 8, offset: const Offset(0, 2)),
+                ],
               ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<_EmployeeSort>(
-                  value: _sort,
-                  dropdownColor: containerBg,
-                  borderRadius: BorderRadius.circular(12),
-                  isDense: true,
-                  icon: Icon(Icons.sort, size: 14, color: textMuted),
-                  style: TextStyle(color: isDark ? vc.textSecondary : const Color(0xFF475569), fontSize: 12),
-                  items: const [
-                    DropdownMenuItem(value: _EmployeeSort.fastest, child: Text('Fastest first')),
-                    DropdownMenuItem(value: _EmployeeSort.slowest, child: Text('Slowest first')),
-                    DropdownMenuItem(value: _EmployeeSort.alphabetical, child: Text('A → Z')),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: color.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(icon, color: color, size: 18),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text(title, style: TextStyle(
+                      color: textMuted, fontSize: 13, fontWeight: FontWeight.w500,
+                    ))),
+                  ]),
+                  const SizedBox(height: 14),
+                  Text(metric, style: TextStyle(
+                    color: color, fontSize: 26, fontWeight: FontWeight.bold, height: 1,
+                  )),
+                  const SizedBox(height: 4),
+                  Text(name, style: TextStyle(
+                    color: textPrimary, fontSize: 13, fontWeight: FontWeight.w600,
+                  ), overflow: TextOverflow.ellipsis, maxLines: 1),
+                  const SizedBox(height: 2),
+                  Text(detail, style: TextStyle(color: textMuted, fontSize: 11)),
+                ],
+              ),
+            );
+          }
+
+          final cards = <Widget>[
+            if (topPerformer != null)
+              card('Top Converter', Icons.emoji_events_rounded, VividColors.cyan,
+                topPerformer.name,
+                '${topPerformer.conversionRate.toStringAsFixed(1)}%',
+                '${topPerformer.appointmentsBooked} appts · ${topPerformer.conversationsHandled} convos'),
+            if (mostActive != null)
+              card('Most Active', Icons.bolt_rounded, VividColors.statusSuccess,
+                mostActive.name,
+                '${mostActive.messagesSent} msgs',
+                '${mostActive.conversationsHandled} conversations'),
+            if (fastestResponder != null)
+              card('Fastest Responder', Icons.speed_rounded, VividColors.statusSuccess,
+                fastestResponder.name,
+                _fmtDuration(fastestResponder.avgResponseTimeSeconds),
+                '${fastestResponder.conversationsHandled} conversations'),
+            if (topRevenue != null)
+              card('Top Revenue', Icons.payments_outlined, VividColors.cyan,
+                topRevenue.name,
+                '${topRevenue.revenueAttributed.toStringAsFixed(0)} BHD',
+                '${topRevenue.paymentsCollected} payments'),
+          ];
+
+          if (cards.isEmpty) return const SizedBox.shrink();
+
+          if (isNarrow) {
+            return SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (var i = 0; i < cards.length; i++) ...[
+                    if (i > 0) const SizedBox(width: 12),
+                    SizedBox(width: 190, child: cards[i]),
                   ],
-                  onChanged: (v) { if (v != null) setState(() => _sort = v); },
-                ),
+                ],
               ),
-            ),
+            );
+          }
+          return Row(
+            children: [
+              for (var i = 0; i < cards.length; i++) ...[
+                if (i > 0) const SizedBox(width: 16),
+                Expanded(child: cards[i]),
+              ],
+            ],
+          );
+        }),
+
+        const SizedBox(height: 20),
+
+        // ── Filter chips — styled like _toggleTab ─────────────────────
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _filterChip(context, 'All ($countAll)', _EmpFilter.all),
+            const SizedBox(width: 4),
+            _filterChip(context, 'Top Converters ($countConverters)', _EmpFilter.topConverters),
+            const SizedBox(width: 4),
+            _filterChip(context, 'Growth Opportunity ($countGrowth)', _EmpFilter.growthOpportunity),
           ],
         ),
-        // Search bar (show when > 6 employees)
-        if (widget.employeeTimes.length > 6) ...[
-          const SizedBox(height: 12),
-          SizedBox(
-            width: 280,
-            child: TextField(
-              onChanged: (v) => setState(() => _search = v),
-              style: TextStyle(color: textPrimary, fontSize: 13),
-              decoration: InputDecoration(
-                hintText: 'Search employee...',
-                hintStyle: TextStyle(color: textMuted.withValues(alpha: 0.5), fontSize: 13),
-                prefixIcon: Icon(Icons.search, size: 18, color: textMuted),
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                filled: true,
-                fillColor: containerBg,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(color: borderColor),
+
+        const SizedBox(height: 16),
+
+        // ── Table — styled like Campaign Performance table ─────────────
+        Container(
+          decoration: BoxDecoration(
+            color: cardBg,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: borderColor),
+            boxShadow: isDark ? null : [
+              BoxShadow(color: Colors.black.withValues(alpha: 0.05),
+                blurRadius: 8, offset: const Offset(0, 2)),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Column(
+              children: [
+                // Header row (same bg as card, just styled text)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                  child: _tableHeaderRow(textMuted),
                 ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(color: borderColor),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: VividColors.cyan),
-                ),
-              ),
+                Divider(height: 1, thickness: 1, color: borderColor),
+                // Data rows or empty state
+                if (filtered.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 40),
+                    child: Center(child: Text('No employees match this filter',
+                      style: TextStyle(color: textMuted, fontSize: 14))),
+                  )
+                else ...[
+                  ...filtered.asMap().entries.map((entry) {
+                    final i = entry.key;
+                    final emp = entry.value;
+                    return _HoverableRow(
+                      normalBg: Colors.transparent,
+                      hoverBg: isDark
+                          ? vc.surfaceAlt.withValues(alpha: 0.5)
+                          : const Color(0xFFF8FAFC),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                        decoration: BoxDecoration(
+                          border: i < filtered.length - 1
+                              ? Border(bottom: BorderSide(color: vc.borderSubtle))
+                              : null,
+                        ),
+                        child: _tableDataRow(emp, textPrimary, textSecondary, textMuted),
+                      ),
+                    );
+                  }),
+                  _teamTotalsRow(filtered, textPrimary, borderColor),
+                ],
+              ],
             ),
           ),
-        ],
-        const SizedBox(height: 20),
-        // Cards — uniform fixed-height grid
-        if (entries.isEmpty)
-          _buildMutedNote(context, 'No employees match your search')
-        else if (widget.isWide)
-          _buildWideGrid(entries)
-        else
-          _buildNarrowList(entries),
+        ),
       ],
     );
   }
 
-  Widget _buildWideGrid(List<MapEntry<String, double>> entries) {
-    final rows = <Widget>[];
-    for (var i = 0; i < entries.length; i += 3) {
-      final chunk = entries.sublist(i, i + 3 > entries.length ? entries.length : i + 3);
-      if (rows.isNotEmpty) rows.add(const SizedBox(height: 16));
-      rows.add(IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (var j = 0; j < chunk.length; j++) ...[
-              if (j > 0) const SizedBox(width: 16),
-              Expanded(child: _employeeCard(chunk[j])),
-            ],
-            // Fill remaining slots to keep uniform width
-            for (var j = chunk.length; j < 3; j++) ...[
-              const SizedBox(width: 16),
-              const Expanded(child: SizedBox()),
-            ],
-          ],
+  Widget _filterChip(BuildContext context, String label, _EmpFilter filter) {
+    final vc = context.vividColors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isSelected = _filter == filter;
+    return GestureDetector(
+      onTap: () => setState(() => _filter = filter),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? VividColors.cyan : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
         ),
-      ));
-    }
-    return Column(children: rows);
-  }
-
-  Widget _buildNarrowList(List<MapEntry<String, double>> entries) {
-    return Column(
-      children: entries.map((e) => Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: _employeeCard(e),
-      )).toList(),
+        child: Text(label, style: TextStyle(
+          color: isSelected
+              ? Colors.white
+              : (isDark ? vc.textMuted : const Color(0xFF64748B)),
+          fontSize: 13,
+          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+        )),
+      ),
     );
   }
 
-  Widget _employeeCard(MapEntry<String, double> entry) {
-    final seconds = entry.value;
-    final color = seconds < 300
-        ? VividColors.statusSuccess
-        : seconds < 1800
-            ? VividColors.statusWarning
-            : VividColors.statusUrgent;
+  // Column flex ratios: Employee=18, Messages=10, Convos=10, AvgRT=13,
+  // Appts=10, Payments=10, ConvRate=13, Revenue=16  (total=100)
+  static const _kF = [18, 10, 10, 13, 10, 10, 13, 16];
 
-    return Builder(builder: (context) {
-      final vc = context.vividColors;
-      final isDark = Theme.of(context).brightness == Brightness.dark;
-      final tp = isDark ? vc.textPrimary : const Color(0xFF1E293B);
-      final tm = isDark ? vc.textMuted : const Color(0xFF94A3B8);
-      return Container(
-      padding: const EdgeInsets.all(20),
-      constraints: const BoxConstraints(minHeight: 100),
-      decoration: BoxDecoration(
-        color: isDark ? vc.surface : Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: isDark ? vc.border : const Color(0xFFE2E8F0)),
-        boxShadow: isDark ? null : [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 6, offset: const Offset(0, 2))],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(Icons.person, color: color, size: 20),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(entry.key, style: TextStyle(
-                  color: tp, fontSize: 14, fontWeight: FontWeight.w500,
-                ), overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 4),
-                Text('Avg reply time', style: TextStyle(
-                  color: tm.withValues(alpha: 0.7), fontSize: 11,
-                )),
+  Widget _tableHeaderRow(Color textMuted) {
+    const cols = [
+      ('EMPLOYEE',    _EmpPerfSort.messagesSent,    false),
+      ('MESSAGES',    _EmpPerfSort.messagesSent,    true),
+      ('CONVOS',      _EmpPerfSort.conversations,   true),
+      ('AVG RESPONSE',_EmpPerfSort.responseTime,    true),
+      ('APPTS',       _EmpPerfSort.appointments,    true),
+      ('PAYMENTS',    _EmpPerfSort.payments,        true),
+      ('CONV RATE',   _EmpPerfSort.conversionRate,  true),
+      ('REVENUE',     _EmpPerfSort.revenue,         true),
+    ];
+    return Row(children: [
+      for (var i = 0; i < cols.length; i++)
+        _hdrCell(cols[i].$1, cols[i].$2, flex: _kF[i],
+            center: cols[i].$3, textMuted: textMuted),
+    ]);
+  }
+
+  Widget _hdrCell(String label, _EmpPerfSort col,
+      {required int flex, bool center = true, required Color textMuted}) {
+    final isActive = _sortCol == col;
+    return Expanded(
+      flex: flex,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: () => _onTapHeader(col),
+          child: Row(
+            mainAxisAlignment: center ? MainAxisAlignment.center : MainAxisAlignment.start,
+            children: [
+              Flexible(child: Text(label,
+                style: TextStyle(
+                  color: isActive ? VividColors.cyan : textMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.5,
+                ),
+                textAlign: center ? TextAlign.center : TextAlign.start,
+              )),
+              if (isActive) ...[
+                const SizedBox(width: 3),
+                Icon(_sortAsc ? Icons.arrow_upward : Icons.arrow_downward,
+                  color: VividColors.cyan, size: 10),
               ],
-            ),
+            ],
           ),
-          Text(_fmtDuration(seconds), style: TextStyle(
-            color: color, fontSize: 24, fontWeight: FontWeight.bold,
-          )),
-        ],
+        ),
       ),
     );
-    });
+  }
+
+  Widget _tableDataRow(EmployeePerformance emp, Color textPrimary,
+      Color textSecondary, Color textMuted) {
+    final rtColor = emp.avgResponseTimeSeconds == 0 ? textMuted
+        : emp.avgResponseTimeSeconds < 300 ? VividColors.statusSuccess
+        : emp.avgResponseTimeSeconds < 1800 ? VividColors.statusWarning
+        : emp.avgResponseTimeSeconds < 3600 ? const Color(0xFFf97316)
+        : VividColors.statusUrgent;
+
+    final convColor = emp.conversionRate >= 15 ? VividColors.statusSuccess
+        : emp.conversionRate >= 5 ? VividColors.statusWarning
+        : emp.conversionRate > 0 ? VividColors.statusUrgent
+        : textMuted;
+
+    return Row(children: [
+      // col 0: Employee Name (left-aligned)
+      Expanded(
+        flex: _kF[0],
+        child: Text(emp.name, style: TextStyle(
+          color: textPrimary, fontSize: 13, fontWeight: FontWeight.w500,
+        ), overflow: TextOverflow.ellipsis),
+      ),
+      // col 1: Messages
+      _dCell(_kF[1], '${emp.messagesSent}', textSecondary),
+      // col 2: Convos
+      _dCell(_kF[2], '${emp.conversationsHandled}', textSecondary),
+      // col 3: Avg Response
+      _dCell(_kF[3],
+        emp.avgResponseTimeSeconds > 0 ? _fmtDuration(emp.avgResponseTimeSeconds) : '—',
+        emp.avgResponseTimeSeconds > 0 ? rtColor : textMuted,
+      ),
+      // col 4: Appts
+      _dCell(_kF[4], emp.appointmentsBooked > 0 ? '${emp.appointmentsBooked}' : '—', textSecondary),
+      // col 5: Payments
+      _dCell(_kF[5], emp.paymentsCollected > 0 ? '${emp.paymentsCollected}' : '—', textSecondary),
+      // col 6: Conv Rate
+      _dCell(_kF[6],
+        emp.conversationsHandled > 0 ? '${emp.conversionRate.toStringAsFixed(1)}%' : '—',
+        convColor,
+        bold: emp.conversationsHandled > 0,
+      ),
+      // col 7: Revenue (right-aligned)
+      _dCell(_kF[7],
+        emp.revenueAttributed > 0 ? '${emp.revenueAttributed.toStringAsFixed(0)} BHD' : '—',
+        emp.revenueAttributed > 0 ? VividColors.statusSuccess : textMuted,
+        align: TextAlign.right,
+      ),
+    ]);
+  }
+
+  Widget _dCell(int flex, String value, Color color,
+      {bool bold = false, TextAlign align = TextAlign.center}) {
+    return Expanded(
+      flex: flex,
+      child: Text(value, textAlign: align, style: TextStyle(
+        color: color, fontSize: 13,
+        fontWeight: bold ? FontWeight.w600 : FontWeight.w400,
+      )),
+    );
+  }
+
+  Widget _teamTotalsRow(List<EmployeePerformance> list, Color textPrimary, Color borderColor) {
+    if (list.isEmpty) return const SizedBox.shrink();
+
+    final withRt = list.where((e) => e.avgResponseTimeSeconds > 0).toList();
+    final avgRt = withRt.isEmpty ? 0.0
+        : withRt.map((e) => e.avgResponseTimeSeconds).reduce((a, b) => a + b) / withRt.length;
+    final totalMsgs = list.fold(0, (s, e) => s + e.messagesSent);
+    final totalConvos = list.fold(0, (s, e) => s + e.conversationsHandled);
+    final totalAppts = list.fold(0, (s, e) => s + e.appointmentsBooked);
+    final totalPmts = list.fold(0, (s, e) => s + e.paymentsCollected);
+    final totalRevenue = list.fold(0.0, (s, e) => s + e.revenueAttributed);
+    final teamConvRate = totalConvos > 0 ? totalAppts / totalConvos * 100 : 0.0;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      decoration: BoxDecoration(
+        color: VividColors.cyan.withValues(alpha: 0.08),
+        border: const Border(top: BorderSide(color: VividColors.cyan, width: 1.5)),
+      ),
+      child: Row(children: [
+        Expanded(
+          flex: _kF[0],
+          child: Text('Team Total', style: const TextStyle(
+            color: VividColors.cyan, fontSize: 13, fontWeight: FontWeight.bold,
+          )),
+        ),
+        _totCell(_kF[1], '$totalMsgs'),
+        _totCell(_kF[2], '$totalConvos'),
+        _totCell(_kF[3], avgRt > 0 ? _fmtDuration(avgRt) : '—'),
+        _totCell(_kF[4], '$totalAppts'),
+        _totCell(_kF[5], '$totalPmts'),
+        _totCell(_kF[6], '${teamConvRate.toStringAsFixed(1)}%'),
+        _totCell(_kF[7], totalRevenue > 0 ? '${totalRevenue.toStringAsFixed(0)} BHD' : '—',
+            align: TextAlign.right),
+      ]),
+    );
+  }
+
+  Widget _totCell(int flex, String value, {TextAlign align = TextAlign.center}) {
+    return Expanded(
+      flex: flex,
+      child: Text(value, textAlign: align, style: const TextStyle(
+        color: VividColors.cyan, fontSize: 13, fontWeight: FontWeight.w600,
+      )),
+    );
+  }
+}
+
+// ── Hoverable row ─────────────────────────────────────────────────
+class _HoverableRow extends StatefulWidget {
+  final Color normalBg;
+  final Color hoverBg;
+  final Widget child;
+  const _HoverableRow({required this.normalBg, required this.hoverBg, required this.child});
+
+  @override
+  State<_HoverableRow> createState() => _HoverableRowState();
+}
+
+class _HoverableRowState extends State<_HoverableRow> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        color: _hovered ? widget.hoverBg : widget.normalBg,
+        child: widget.child,
+      ),
+    );
   }
 }
 
@@ -1523,7 +1836,6 @@ class _BroadcastsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final vc = context.vividColors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2175,7 +2487,6 @@ class _PulsingIconState extends State<_PulsingIcon> with SingleTickerProviderSta
 
   @override
   Widget build(BuildContext context) {
-    final vc = context.vividColors;
     return FadeTransition(
       opacity: Tween<double>(begin: 0.5, end: 1.0).animate(_controller),
       child: Icon(widget.icon, color: widget.color, size: 22),

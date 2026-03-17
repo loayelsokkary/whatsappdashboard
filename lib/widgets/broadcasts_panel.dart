@@ -796,24 +796,45 @@ class _RecipientDetailsState extends State<_RecipientDetails> {
                               ),
                             ),
                             const SizedBox(width: 8),
-                            Text(
-                              '(${provider.recipients.length})',
-                              style: TextStyle(
-                                color: vc.textMuted,
-                                fontSize: 14,
+                            if (provider.isLoadingRecipients)
+                              SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 1.5,
+                                  color: vc.textMuted,
+                                ),
+                              )
+                            else
+                              Text(
+                                '(${provider.selectedBroadcast?.totalRecipients ?? provider.recipients.length})',
+                                style: TextStyle(
+                                  color: vc.textMuted,
+                                  fontSize: 14,
+                                ),
                               ),
-                            ),
                           ],
                         ),
-                        if (provider.recipients.isNotEmpty) ...[
+                        if (!provider.isLoadingRecipients &&
+                            provider.selectedBroadcast!.totalRecipients > 0) ...[
                           const SizedBox(height: 10),
-                          _DeliveryStats(recipients: provider.recipients),
+                          _DeliveryStats(
+                            sentCount: provider.recipientSentCount,
+                            failedCount: (provider.selectedBroadcast?.totalRecipients ?? 0) -
+                                provider.recipientSentCount,
+                            totalCount: provider.selectedBroadcast?.totalRecipients ?? 0,
+                          ),
                         ],
                       ],
                     ),
                   ),
                   const SizedBox(height: 12),
-                  if (provider.recipients.isEmpty)
+                  if (provider.isLoadingRecipients)
+                    const Padding(
+                      padding: EdgeInsets.all(40),
+                      child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                    )
+                  else if (provider.recipients.isEmpty)
                     Padding(
                       padding: const EdgeInsets.all(40),
                       child: Center(
@@ -827,15 +848,36 @@ class _RecipientDetailsState extends State<_RecipientDetails> {
                       ),
                     )
                   else
-                    ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: provider.recipients.length,
-                      itemBuilder: (context, index) {
-                        final recipient = provider.recipients[index];
-                        return _RecipientTile(recipient: recipient);
-                      },
+                    Column(
+                      children: [
+                        ListView.builder(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: provider.recipients.length,
+                          itemBuilder: (context, index) {
+                            final recipient = provider.recipients[index];
+                            return _RecipientTile(recipient: recipient);
+                          },
+                        ),
+                        if (provider.hasMoreRecipients)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                            child: provider.isLoadingMoreRecipients
+                                ? const Center(
+                                    child: Padding(
+                                      padding: EdgeInsets.all(8),
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    ),
+                                  )
+                                : OutlinedButton(
+                                    onPressed: () => provider.loadMoreRecipients(),
+                                    child: Text(
+                                      'Load more (${provider.recipients.length} of ${provider.selectedBroadcast?.totalRecipients ?? '?'})',
+                                    ),
+                                  ),
+                          ),
+                      ],
                     ),
                 ],
               ),
@@ -895,18 +937,22 @@ class _RecipientDetailsState extends State<_RecipientDetails> {
 }
 
 class _DeliveryStats extends StatelessWidget {
-  final List<BroadcastRecipient> recipients;
+  final int sentCount;
+  final int failedCount;
+  final int totalCount;
 
-  const _DeliveryStats({required this.recipients});
+  const _DeliveryStats({
+    required this.sentCount,
+    required this.failedCount,
+    required this.totalCount,
+  });
 
   @override
   Widget build(BuildContext context) {
     final vc = context.vividColors;
-    final sent = recipients.where((r) => r.status == 'accepted' || r.status == 'sent' || r.status == 'delivered').length;
-    final failed = recipients.length - sent;
-    final rate = recipients.isNotEmpty
-        ? (sent / recipients.length * 100)
-        : 0.0;
+    final sent = sentCount;
+    final failed = failedCount < 0 ? 0 : failedCount;
+    final rate = totalCount > 0 ? (sent / totalCount * 100) : 0.0;
 
     return Row(
       children: [
