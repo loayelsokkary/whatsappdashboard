@@ -15,6 +15,7 @@ import '../utils/date_formatter.dart';
 import '../utils/audio_controller.dart';
 import 'voice_message_bubble.dart';
 import '../utils/initials_helper.dart';
+import 'side_profile_panel.dart';
 
 class ConversationDetailPanel extends StatefulWidget {
   final Conversation conversation;
@@ -34,6 +35,8 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
   final FocusNode _focusNode = FocusNode();
   int _previousMessageCount = 0;
   Set<String> _seenMessageIds = {};
+
+  bool _showSideProfile = false;
 
   // AI Toggle loading state only
   bool _aiToggleLoading = false;
@@ -55,9 +58,9 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
   @override
   void didUpdateWidget(ConversationDetailPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Stop voice playback when switching conversations
     if (oldWidget.conversation.id != widget.conversation.id) {
       AudioController.instance.stop();
+      if (_showSideProfile) setState(() => _showSideProfile = false);
     }
   }
 
@@ -396,15 +399,33 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
       _scrollToBottom();
     }
 
-    return Container(
-      color: vc.background,
-      child: Column(
-        children: [
-          _buildHeader(),
-          Expanded(child: _buildMessages(messages, provider.isLoadingMessages)),
-          _buildInput(provider.isSending),
-        ],
-      ),
+    return Row(
+      children: [
+        Expanded(
+          child: Container(
+            color: vc.background,
+            child: Column(
+              children: [
+                _buildHeader(),
+                Expanded(child: _buildMessages(messages, provider.isLoadingMessages)),
+                _buildInput(provider.isSending),
+              ],
+            ),
+          ),
+        ),
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeInOut,
+          width: _showSideProfile ? 296 : 0,
+          child: ClipRect(
+            child: SideProfilePanel(
+              customerPhone: widget.conversation.customerPhone,
+              customerName: widget.conversation.displayName,
+              onClose: () => setState(() => _showSideProfile = false),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -420,27 +441,38 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
       ),
       child: Row(
         children: [
-          // Avatar
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: VividColors.brightBlue.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Center(
-              child: Builder(builder: (context) {
-                final initials = _getInitials();
-                return Text(
-                  initials,
-                  textDirection: isArabicText(initials) ? TextDirection.rtl : TextDirection.ltr,
-                  style: const TextStyle(
-                    color: VividColors.brightBlue,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                  ),
-                );
-              }),
+          // Avatar — tap to toggle side profile
+          GestureDetector(
+            onTap: () => setState(() => _showSideProfile = !_showSideProfile),
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: _showSideProfile
+                      ? VividColors.brightBlue.withValues(alpha: 0.35)
+                      : VividColors.brightBlue.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(12),
+                  border: _showSideProfile
+                      ? Border.all(color: VividColors.brightBlue, width: 1.5)
+                      : null,
+                ),
+                child: Center(
+                  child: Builder(builder: (context) {
+                    final initials = _getInitials();
+                    return Text(
+                      initials,
+                      textDirection: isArabicText(initials) ? TextDirection.rtl : TextDirection.ltr,
+                      style: const TextStyle(
+                        color: VividColors.brightBlue,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                    );
+                  }),
+                ),
+              ),
             ),
           ),
           const SizedBox(width: 12),
@@ -510,9 +542,27 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
           // Label button
           _buildLabelButton(),
 
+          const SizedBox(width: 4),
+
+          // Profile panel toggle
+          SizedBox(
+            width: 32,
+            height: 32,
+            child: IconButton(
+              padding: EdgeInsets.zero,
+              tooltip: 'Customer profile',
+              icon: Icon(
+                Icons.person_outline_rounded,
+                size: 18,
+                color: _showSideProfile ? VividColors.cyan : vc.textMuted,
+              ),
+              onPressed: () => setState(() => _showSideProfile = !_showSideProfile),
+            ),
+          ),
+
           // AI Toggle (only for AI-enabled clients)
           if (ClientConfig.hasAiConversations) ...[
-            const SizedBox(width: 8),
+            const SizedBox(width: 4),
             _buildAiToggle(),
           ],
         ],
