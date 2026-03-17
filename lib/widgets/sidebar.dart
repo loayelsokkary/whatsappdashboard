@@ -93,7 +93,7 @@ class Sidebar extends StatelessWidget {
                     ? Padding(
                         key: const ValueKey('full'),
                         padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: VividWidgets.logoFull(height: 36),
+                        child: VividWidgets.logoFull(width: 140),
                       )
                     : SizedBox(
                         key: const ValueKey('icon'),
