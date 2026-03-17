@@ -58,71 +58,77 @@ class Sidebar extends StatelessWidget {
       ),
       child: Column(
         children: [
-          const SizedBox(height: 12),
-
-          // ── Collapse/expand toggle ──────────────────────────
-          Align(
-            alignment: expanded ? Alignment.centerRight : Alignment.center,
-            child: Padding(
-              padding: expanded
-                  ? const EdgeInsets.only(right: 8)
-                  : EdgeInsets.zero,
-              child: IconButton(
-                onPressed: () => themeProvider.toggleSidebar(),
-                icon: Icon(
-                  expanded ? Icons.menu_open : Icons.menu,
-                  color: VividColors.textMuted,
-                  size: 20,
+          // ── Header: logo + collapse toggle in one row ───────
+          Container(
+            height: 56,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(
+                  color: VividColors.tealBlue.withValues(alpha: 0.18),
                 ),
-                tooltip: expanded ? 'Collapse sidebar' : 'Expand sidebar',
-                padding: const EdgeInsets.all(6),
-                constraints: const BoxConstraints(),
               ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // Logo area (animated between full and icon)
+                Expanded(
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    child: expanded
+                        ? Align(
+                            key: const ValueKey('full'),
+                            alignment: Alignment.centerLeft,
+                            child: VividWidgets.logoFull(width: 120),
+                          )
+                        : Center(
+                            key: const ValueKey('icon'),
+                            child: VividWidgets.icon(size: 34),
+                          ),
+                  ),
+                ),
+                // Collapse / expand toggle
+                if (expanded)
+                  IconButton(
+                    onPressed: () => themeProvider.toggleSidebar(),
+                    icon: const Icon(
+                      Icons.menu_open,
+                      color: VividColors.textMuted,
+                      size: 18,
+                    ),
+                    tooltip: 'Collapse sidebar',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 28,
+                      minHeight: 28,
+                    ),
+                  ),
+              ],
             ),
           ),
 
-          const SizedBox(height: 8),
-
-          // ── Logo with connection indicator ──────────────────
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 200),
-                child: expanded
-                    ? Padding(
-                        key: const ValueKey('full'),
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: VividWidgets.logoFull(width: 140),
-                      )
-                    : SizedBox(
-                        key: const ValueKey('icon'),
-                        child: VividWidgets.icon(size: 44),
-                      ),
-              ),
-              Positioned(
-                right: expanded ? 10 : -2,
-                bottom: -2,
-                child: Container(
-                  width: 14,
-                  height: 14,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: !ClientConfig.hasFeature('conversations') ||
-                            conversationsProvider.isConnected
-                        ? VividColors.statusSuccess
-                        : VividColors.statusUrgent,
-                    border: Border.all(
-                      color: VividColors.darkNavy,
-                      width: 2,
-                    ),
-                  ),
+          // Collapsed: show toggle below the header row
+          if (!expanded)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: IconButton(
+                onPressed: () => themeProvider.toggleSidebar(),
+                icon: const Icon(
+                  Icons.menu,
+                  color: VividColors.textMuted,
+                  size: 18,
+                ),
+                tooltip: 'Expand sidebar',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(
+                  minWidth: 28,
+                  minHeight: 28,
                 ),
               ),
-            ],
-          ),
+            ),
 
-          const SizedBox(height: 24),
+          const SizedBox(height: 8),
 
           // ── Main navigation ─────────────────────────────────
           if (ClientConfig.hasFeature('conversations'))
