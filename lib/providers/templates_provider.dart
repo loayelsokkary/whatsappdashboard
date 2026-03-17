@@ -29,18 +29,77 @@ class TemplatesProvider extends ChangeNotifier {
       };
 
   // ============================================
-  // FETCH TEMPLATES
+  // FETCH TEMPLATES (from per-client Supabase table)
   // ============================================
 
-  /// All templates from Meta API (unfiltered). Used for sync operations.
+  /// All templates from Meta API (unfiltered). Used for sync operations only.
   List<WhatsAppTemplate> get allMetaTemplates => _allMetaTemplates;
   List<WhatsAppTemplate> _allMetaTemplates = [];
 
+  /// Fetches templates from the per-client Supabase table.
+  /// This is the DISPLAY path — only shows templates synced to this client.
   Future<void> fetchTemplates() async {
+    final table = ClientConfig.templatesTable;
+    if (table == null || table.isEmpty) {
+      _templates = [];
+      _error = 'Templates table not configured';
+      notifyListeners();
+      return;
+    }
+
     _isLoading = true;
     _error = null;
     notifyListeners();
 
+    try {
+      print('TEMPLATES: fetching from table $table');
+      final clientId = ClientConfig.currentClient?.id ?? '';
+      final rows = await SupabaseService.adminClient
+          .from(table)
+          .select()
+          .eq('client_id', clientId);
+
+      _templates = (rows as List).map((r) {
+        final buttonsRaw = r['buttons'] as List<dynamic>? ?? [];
+        final buttons = buttonsRaw.map((b) {
+          final m = b as Map<String, dynamic>;
+          return TemplateButton(type: m['type'] as String? ?? '', text: m['text'] as String? ?? '');
+        }).toList();
+
+        return WhatsAppTemplate(
+          id: r['meta_template_id'] as String? ?? '',
+          name: r['template_name'] as String? ?? '',
+          status: r['status'] as String? ?? '',
+          language: r['language_code'] as String? ?? '',
+          category: r['category'] as String? ?? '',
+          headerType: (r['header_type'] as String? ?? '').toUpperCase(),
+          headerText: r['header_text'] as String?,
+          headerMediaUrl: r['offer_image_url'] as String?,
+          body: r['body_text'] as String? ?? '',
+          buttons: buttons,
+        );
+      }).toList();
+
+      // Also populate DB statuses map for validation dots
+      _templateDbStatuses = {
+        for (final r in rows)
+          (r['meta_template_id'] as String? ?? ''): r,
+      };
+
+      print('TEMPLATES: loaded ${_templates.length} templates from $table');
+      _isLoading = false;
+      notifyListeners();
+    } catch (e) {
+      print('TEMPLATES: error fetching from $table: $e');
+      _error = e.toString();
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Fetches ALL templates from Meta API (shared WABA).
+  /// Used only by sync operations — NOT for display.
+  Future<void> fetchMetaTemplates() async {
     try {
       final all = <WhatsAppTemplate>[];
       String? nextUrl =
@@ -70,32 +129,12 @@ class TemplatesProvider extends ChangeNotifier {
       }
 
       _allMetaTemplates = all;
-      // Filter to only templates that exist in this client's DB table.
-      // If DB statuses are loaded, show only matching templates.
-      // If not yet loaded, show all (will re-filter after DB fetch).
-      _applyClientFilter(all);
-      _isLoading = false;
-      notifyListeners();
+      print('TEMPLATES: fetched ${all.length} templates from Meta API');
     } catch (e) {
+      print('TEMPLATES: Meta API error: $e');
       _error = e.toString();
-      _isLoading = false;
       notifyListeners();
     }
-  }
-
-  /// Filters Meta templates to only those synced to the client's DB table.
-  /// Vivid admins see all templates (for sync management).
-  /// Non-admin clients only see templates that exist in their per-client DB table.
-  void _applyClientFilter(List<WhatsAppTemplate> all) {
-    if (ClientConfig.isVividAdmin) {
-      // Admins see all Meta templates (they manage sync)
-      _templates = all;
-      return;
-    }
-    // Non-admin clients: only show templates that exist in their DB table.
-    // If DB statuses haven't loaded yet, show nothing — they will re-filter
-    // once fetchTemplateDbStatuses completes.
-    _templates = all.where((t) => _templateDbStatuses.containsKey(t.id)).toList();
   }
 
   // ============================================
@@ -286,41 +325,19 @@ class TemplatesProvider extends ChangeNotifier {
   // FETCH TEMPLATE DB STATUSES
   // ============================================
 
-  /// Batch-fetches the Supabase DB fields needed for card validation indicators:
-  /// body_variable_labels, offer_image_url, body_variable_count, header_type.
-  /// Keyed by meta_template_id for O(1) lookup in the card widget.
+  /// No-op — fetchTemplates() now populates _templateDbStatuses directly.
+  /// Kept for backward compatibility with callers.
   Future<void> fetchTemplateDbStatuses(String clientId) async {
-    if (clientId.isEmpty) return;
-    final table = ClientConfig.templatesTable;
-    if (table == null || table.isEmpty) return;
-    try {
-      final rows = await SupabaseService.adminClient
-          .from(table)
-          .select('meta_template_id, body_variable_labels, offer_image_url, body_variable_count, header_type')
-          .eq('client_id', clientId);
-      _templateDbStatuses = {
-        for (final r in rows as List)
-          (r['meta_template_id'] as String? ?? ''): r as Map<String, dynamic>,
-      };
-      // Re-apply client filter now that DB statuses are available
-      if (_allMetaTemplates.isNotEmpty) {
-        _applyClientFilter(_allMetaTemplates);
-      }
-      notifyListeners();
-    } catch (_) {
-      // Non-fatal — validation dots just won't show
-    }
+    // DB statuses are now loaded as part of fetchTemplates().
   }
 
   // ============================================
   // SYNC TO SUPABASE
   // ============================================
 
-  /// Upserts all fetched templates into the `wa_templates` Supabase table.
-  /// Returns null on success, or an error message string on failure.
+  /// Fetches all templates from Meta API, then upserts them into the
+  /// per-client Supabase table. Returns null on success, error string on failure.
   Future<String?> syncTemplatesToSupabase() async {
-    if (_templates.isEmpty) return 'No templates to sync';
-
     final clientId = ClientConfig.currentClient?.id ?? '';
     if (clientId.isEmpty) return 'No client selected';
 
@@ -331,11 +348,19 @@ class TemplatesProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      // Step 1: Fetch fresh templates from Meta API
+      await fetchMetaTemplates();
+      if (_allMetaTemplates.isEmpty) {
+        _isSyncing = false;
+        notifyListeners();
+        return 'No templates found in Meta API';
+      }
+
       final now = DateTime.now().toIso8601String();
 
       // Build rows sequentially, doing a per-template DB read to reliably
       // preserve human-set labels/sources/images instead of overwriting them.
-      final rows = await Future.wait(_templates.map((t) async {
+      final rows = await Future.wait(_allMetaTemplates.map((t) async {
         // Individual read — guaranteed to return the correct row for this client+template.
         final existing = await SupabaseService.adminClient
             .from(tableName)
@@ -403,7 +428,8 @@ class TemplatesProvider extends ChangeNotifier {
           .upsert(rows, onConflict: 'meta_template_id');
 
       _isSyncing = false;
-      notifyListeners();
+      // Refresh display from DB so newly synced templates appear
+      await fetchTemplates();
       return null;
     } catch (e) {
       _isSyncing = false;

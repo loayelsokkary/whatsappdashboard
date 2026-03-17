@@ -97,7 +97,7 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Manage your approved WhatsApp message templates',
+                  'Manage your WhatsApp message templates',
                   style: TextStyle(
                     color: vc.textSecondary,
                     fontSize: 13,
