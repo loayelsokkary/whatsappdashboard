@@ -92,6 +92,10 @@ class ManagerChatProvider extends ChangeNotifier {
   // Current session ID (null = legacy / unassigned)
   String? _currentSessionId;
 
+  // In-memory cache: message ID → session_id
+  // Survives DB refreshes when _patchSessionId hasn't committed yet.
+  final Map<String, String> _messageSessionMap = {};
+
   RealtimeChannel? _chatChannel;
   Timer? _pollTimer;
 
@@ -245,15 +249,22 @@ class ManagerChatProvider extends ChangeNotifier {
         final resolvedSessionId = message.sessionId ?? existing.sessionId;
         final resolved = _withSessionId(message, resolvedSessionId);
         _allMessages[existingIndex] = resolved;
+        // Cache so future DB refreshes can restore the session_id
+        if (resolvedSessionId != null) {
+          _messageSessionMap[message.id] = resolvedSessionId;
+        }
         // Patch the DB record so future refreshes preserve the session_id
         if (message.sessionId == null && resolvedSessionId != null) {
           _patchSessionId(message.id, resolvedSessionId);
         }
       } else {
         // No temp match — assign to the active session if record has no session_id
-        final resolved = _withSessionId(
-            message, message.sessionId ?? _currentSessionId);
+        final resolvedSessionId = message.sessionId ?? _currentSessionId;
+        final resolved = _withSessionId(message, resolvedSessionId);
         _allMessages.add(resolved);
+        if (resolvedSessionId != null) {
+          _messageSessionMap[message.id] = resolvedSessionId;
+        }
         if (message.sessionId == null && _currentSessionId != null) {
           _patchSessionId(message.id, _currentSessionId!);
         }
@@ -289,13 +300,19 @@ class ManagerChatProvider extends ChangeNotifier {
         final resolvedSessionId = message.sessionId ?? existing.sessionId;
         final resolved = _withSessionId(message, resolvedSessionId);
         _allMessages[index] = resolved;
+        if (resolvedSessionId != null) {
+          _messageSessionMap[message.id] = resolvedSessionId;
+        }
         if (message.sessionId == null && resolvedSessionId != null) {
           _patchSessionId(message.id, resolvedSessionId);
         }
       } else {
-        final resolved = _withSessionId(
-            message, message.sessionId ?? _currentSessionId);
+        final resolvedSessionId = message.sessionId ?? _currentSessionId;
+        final resolved = _withSessionId(message, resolvedSessionId);
         _allMessages.add(resolved);
+        if (resolvedSessionId != null) {
+          _messageSessionMap[message.id] = resolvedSessionId;
+        }
         if (message.sessionId == null && _currentSessionId != null) {
           _patchSessionId(message.id, _currentSessionId!);
         }
@@ -367,9 +384,12 @@ class ManagerChatProvider extends ChangeNotifier {
           .order('created_at', ascending: true)
           .limit(500);
 
-      _allMessages = (response as List)
-          .map((json) => ManagerChatMessage.fromJson(json))
-          .toList();
+      _allMessages = (response as List).map((json) {
+        final msg = ManagerChatMessage.fromJson(json);
+        if (msg.sessionId != null) return msg;
+        final cached = _messageSessionMap[msg.id];
+        return cached != null ? _withSessionId(msg, cached) : msg;
+      }).toList();
 
       print('💬 Loaded ${_allMessages.length} messages');
 
@@ -406,9 +426,12 @@ class ManagerChatProvider extends ChangeNotifier {
           .order('created_at', ascending: true)
           .limit(500);
 
-      _allMessages = (response as List)
-          .map((json) => ManagerChatMessage.fromJson(json))
-          .toList();
+      _allMessages = (response as List).map((json) {
+        final msg = ManagerChatMessage.fromJson(json);
+        if (msg.sessionId != null) return msg;
+        final cached = _messageSessionMap[msg.id];
+        return cached != null ? _withSessionId(msg, cached) : msg;
+      }).toList();
 
       notifyListeners();
     } catch (e) {
@@ -585,11 +608,13 @@ class ManagerChatProvider extends ChangeNotifier {
                   m.userMessage == fresh.userMessage));
           if (idx != -1) {
             final existing = _allMessages[idx];
-            _allMessages[idx] =
-                _withSessionId(fresh, fresh.sessionId ?? existing.sessionId);
+            final resolvedSessionId =
+                fresh.sessionId ?? existing.sessionId ?? _messageSessionMap[fresh.id];
+            _allMessages[idx] = _withSessionId(fresh, resolvedSessionId);
           } else {
-            _allMessages.add(
-                _withSessionId(fresh, fresh.sessionId ?? _currentSessionId));
+            final resolvedSessionId =
+                fresh.sessionId ?? _messageSessionMap[fresh.id] ?? _currentSessionId;
+            _allMessages.add(_withSessionId(fresh, resolvedSessionId));
           }
         }
         _isWaitingForResponse = false;
