@@ -231,16 +231,32 @@ class ManagerChatProvider extends ChangeNotifier {
       final message = ManagerChatMessage.fromJson(data);
       if (message.userId != _currentUserId) return;
 
+      // Match by ID first, then by content — do NOT match by session_id because
+      // n8n may save the DB record without session_id, so the incoming record
+      // will have sessionId=null even though the temp message has a real UUID.
       final existingIndex = _allMessages.indexWhere((m) =>
           m.id == message.id ||
           (m.id.startsWith('temp_') &&
-              m.userMessage == message.userMessage &&
-              m.sessionId == message.sessionId));
+              m.userMessage == message.userMessage));
 
       if (existingIndex != -1) {
-        _allMessages[existingIndex] = message;
+        final existing = _allMessages[existingIndex];
+        // Prefer the temp message's session_id if the DB record has none
+        final resolvedSessionId = message.sessionId ?? existing.sessionId;
+        final resolved = _withSessionId(message, resolvedSessionId);
+        _allMessages[existingIndex] = resolved;
+        // Patch the DB record so future refreshes preserve the session_id
+        if (message.sessionId == null && resolvedSessionId != null) {
+          _patchSessionId(message.id, resolvedSessionId);
+        }
       } else {
-        _allMessages.add(message);
+        // No temp match — assign to the active session if record has no session_id
+        final resolved = _withSessionId(
+            message, message.sessionId ?? _currentSessionId);
+        _allMessages.add(resolved);
+        if (message.sessionId == null && _currentSessionId != null) {
+          _patchSessionId(message.id, _currentSessionId!);
+        }
       }
 
       if (message.aiResponse != null && message.aiResponse!.isNotEmpty) {
@@ -258,18 +274,31 @@ class ManagerChatProvider extends ChangeNotifier {
       final message = ManagerChatMessage.fromJson(data);
       if (message.userId != _currentUserId) return;
 
+      // Match by real ID first
       var index = _allMessages.indexWhere((m) => m.id == message.id);
+
+      // Fall back to matching temp message by content only (no session_id check)
       if (index == -1) {
         index = _allMessages.indexWhere((m) =>
             m.id.startsWith('temp_') &&
-            m.userMessage == message.userMessage &&
-            m.sessionId == message.sessionId);
+            m.userMessage == message.userMessage);
       }
 
       if (index != -1) {
-        _allMessages[index] = message;
+        final existing = _allMessages[index];
+        final resolvedSessionId = message.sessionId ?? existing.sessionId;
+        final resolved = _withSessionId(message, resolvedSessionId);
+        _allMessages[index] = resolved;
+        if (message.sessionId == null && resolvedSessionId != null) {
+          _patchSessionId(message.id, resolvedSessionId);
+        }
       } else {
-        _allMessages.add(message);
+        final resolved = _withSessionId(
+            message, message.sessionId ?? _currentSessionId);
+        _allMessages.add(resolved);
+        if (message.sessionId == null && _currentSessionId != null) {
+          _patchSessionId(message.id, _currentSessionId!);
+        }
       }
 
       if (message.aiResponse != null && message.aiResponse!.isNotEmpty) {
@@ -279,6 +308,37 @@ class ManagerChatProvider extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       print('Error handling message update: $e');
+    }
+  }
+
+  /// Return a copy of [msg] with [sessionId] applied (only if different).
+  ManagerChatMessage _withSessionId(
+      ManagerChatMessage msg, String? sessionId) {
+    if (msg.sessionId == sessionId) return msg;
+    return ManagerChatMessage(
+      id: msg.id,
+      clientId: msg.clientId,
+      userId: msg.userId,
+      userName: msg.userName,
+      userMessage: msg.userMessage,
+      aiResponse: msg.aiResponse,
+      createdAt: msg.createdAt,
+      sessionId: sessionId,
+    );
+  }
+
+  /// Patch the DB record so the session_id survives future full refreshes.
+  Future<void> _patchSessionId(String messageId, String sessionId) async {
+    try {
+      // Skip patching temp IDs — they're not in the DB yet
+      if (messageId.startsWith('temp_')) return;
+      await SupabaseService.client
+          .from(_managerChatsTable)
+          .update({'session_id': sessionId})
+          .eq('id', messageId);
+      print('💬 Patched session_id=$sessionId on message $messageId');
+    } catch (e) {
+      print('Failed to patch session_id: $e');
     }
   }
 
@@ -517,7 +577,21 @@ class ManagerChatProvider extends ChangeNotifier {
       }
 
       if (hasNewResponse) {
-        _allMessages = freshMessages;
+        // Merge fresh DB records, preserving any in-memory session_id corrections
+        for (final fresh in freshMessages) {
+          final idx = _allMessages.indexWhere((m) =>
+              m.id == fresh.id ||
+              (m.id.startsWith('temp_') &&
+                  m.userMessage == fresh.userMessage));
+          if (idx != -1) {
+            final existing = _allMessages[idx];
+            _allMessages[idx] =
+                _withSessionId(fresh, fresh.sessionId ?? existing.sessionId);
+          } else {
+            _allMessages.add(
+                _withSessionId(fresh, fresh.sessionId ?? _currentSessionId));
+          }
+        }
         _isWaitingForResponse = false;
         _stopPolling();
         notifyListeners();
