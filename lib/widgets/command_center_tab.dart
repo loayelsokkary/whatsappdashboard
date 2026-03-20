@@ -7,7 +7,9 @@ import '../providers/admin_provider.dart';
 import '../providers/admin_analytics_provider.dart';
 import '../services/supabase_service.dart';
 import '../theme/vivid_theme.dart';
+import '../utils/analytics_exporter.dart';
 import '../utils/health_scorer.dart';
+import '../utils/toast_service.dart';
 
 /// Command Center home screen for Vivid super admins.
 /// Shows summary stats, client health overview, and live activity feed.
@@ -264,7 +266,57 @@ class _CommandCenterTabState extends State<CommandCenterTab> {
             ],
           ),
         ),
+        _buildExportButton(vc),
       ],
+    );
+  }
+
+  Widget _buildExportButton(VividColorScheme vc) {
+    return PopupMenuButton<String>(
+      onSelected: (format) {
+        final analytics = context.read<AdminAnalyticsProvider>().companyAnalytics;
+        final clients = context.read<AdminProvider>().clients;
+        final healthScores = _healthScores.values.toList();
+        try {
+          AnalyticsExporter.exportCommandCenterCsv(
+            analytics: analytics,
+            clients: clients,
+            healthScores: healthScores,
+          );
+          VividToast.show(context, message: 'CSV exported', type: ToastType.success);
+        } catch (e) {
+          VividToast.show(context, message: 'Export failed: $e', type: ToastType.error);
+        }
+      },
+      offset: const Offset(0, 40),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      color: vc.surface,
+      itemBuilder: (_) => [
+        PopupMenuItem(value: 'csv', child: Row(children: [
+          Icon(Icons.table_chart, color: Colors.green, size: 18),
+          const SizedBox(width: 10),
+          Text('Export Summary CSV', style: TextStyle(color: vc.textPrimary)),
+        ])),
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          gradient: VividColors.primaryGradient,
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: [
+            BoxShadow(color: VividColors.brightBlue.withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 3)),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.download, color: vc.background, size: 18),
+            const SizedBox(width: 6),
+            Text('Export', style: TextStyle(color: vc.background, fontWeight: FontWeight.w600, fontSize: 13)),
+            Icon(Icons.arrow_drop_down, color: vc.background, size: 18),
+          ],
+        ),
+      ),
     );
   }
 

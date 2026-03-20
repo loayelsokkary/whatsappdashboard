@@ -827,6 +827,9 @@ class ClientConfig {
   /// AI settings table name (e.g., 'threeBs_ai_chat_settings')
   static String? get aiSettingsTable => _currentClient?.aiSettingsTable;
 
+  /// Customer predictions table name (e.g., 'HOB_customer_predictions')
+  static String? get customerPredictionsTable => _currentClient?.customerPredictionsTable;
+
   /// Get messages table name, throws if not configured
   static String get messagesTableName {
     final table = _currentClient?.messagesTable;
@@ -1005,6 +1008,7 @@ class Client {
   final String? managerChatsTable;
   final String? broadcastRecipientsTable;
   final String? aiSettingsTable;
+  final String? customerPredictionsTable;
 
   // Per-feature configuration
   final String? conversationsPhone;
@@ -1035,6 +1039,7 @@ class Client {
     this.managerChatsTable,
     this.broadcastRecipientsTable,
     this.aiSettingsTable,
+    this.customerPredictionsTable,
     this.conversationsPhone,
     this.conversationsWebhookUrl,
     this.broadcastsPhone,
@@ -1072,6 +1077,7 @@ class Client {
       managerChatsTable: json['manager_chats_table'] as String?,
       broadcastRecipientsTable: json['broadcast_recipients_table'] as String?,
       aiSettingsTable: json['ai_settings_table'] as String?,
+      customerPredictionsTable: json['customer_predictions_table'] as String?,
       conversationsPhone: conversationsPhone,
       conversationsWebhookUrl: json['conversations_webhook_url'] as String?,
       broadcastsPhone: broadcastsPhone,
@@ -1099,6 +1105,7 @@ class Client {
       'manager_chats_table': managerChatsTable,
       'broadcast_recipients_table': broadcastRecipientsTable,
       'ai_settings_table': aiSettingsTable,
+      'customer_predictions_table': customerPredictionsTable,
       'conversations_phone': conversationsPhone,
       'conversations_webhook_url': conversationsWebhookUrl,
       'broadcasts_phone': broadcastsPhone,
@@ -1284,4 +1291,52 @@ class CustomerProfileStats {
     this.labelsHistory = const [],
     this.lastHandledBy,
   });
+}
+
+// ============================================
+// CUSTOMER PREDICTION (Predictive Intelligence)
+// ============================================
+
+class CustomerPrediction {
+  final String phone;
+  final String? customerName;
+  final int totalVisits;
+  final DateTime? lastVisit;
+  final int daysSinceLastVisit;
+  final String? primaryService;
+  final String? lastService;
+  final int avgGapDays;
+  final DateTime? predictedNextVisit;
+  final int daysUntilPredicted;
+  final String category; // "New", "Returning", "Regular", "At Risk", "Lapsed"
+
+  const CustomerPrediction({
+    required this.phone,
+    this.customerName,
+    required this.totalVisits,
+    this.lastVisit,
+    required this.daysSinceLastVisit,
+    this.primaryService,
+    this.lastService,
+    required this.avgGapDays,
+    this.predictedNextVisit,
+    required this.daysUntilPredicted,
+    required this.category,
+  });
+
+  factory CustomerPrediction.fromJson(Map<String, dynamic> json) {
+    return CustomerPrediction(
+      phone: json['phone'] as String,
+      customerName: json['customer_name'] as String?,
+      totalVisits: json['total_visits'] as int? ?? 0,
+      lastVisit: json['last_visit'] != null ? DateTime.parse(json['last_visit'] as String) : null,
+      daysSinceLastVisit: json['days_since_last_visit'] as int? ?? 0,
+      primaryService: json['primary_service'] as String?,
+      lastService: json['last_service'] as String?,
+      avgGapDays: json['avg_gap_days'] as int? ?? 0,
+      predictedNextVisit: json['predicted_next_visit'] != null ? DateTime.parse(json['predicted_next_visit'] as String) : null,
+      daysUntilPredicted: json['days_until_predicted'] as int? ?? 0,
+      category: json['category'] as String? ?? 'New',
+    );
+  }
 }

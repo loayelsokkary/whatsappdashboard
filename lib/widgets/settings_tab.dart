@@ -72,6 +72,9 @@ class _SettingsTabState extends State<SettingsTab> {
     if (features.contains('whatsapp_templates') && client.templatesTable != null) {
       tables.add(('Templates', client.templatesTable!));
     }
+    if (features.contains('predictive_intelligence') && client.customerPredictionsTable != null) {
+      tables.add(('Predictions', client.customerPredictionsTable!));
+    }
     return tables;
   }
 
@@ -496,6 +499,9 @@ class _SettingsTabState extends State<SettingsTab> {
         return hasWebhook ? _ConfigStatus.full : _ConfigStatus.none;
       case 'analytics':
         return _ConfigStatus.full; // No config needed
+      case 'predictive_intelligence':
+        final hasTable = c.customerPredictionsTable != null && c.customerPredictionsTable!.isNotEmpty;
+        return hasTable ? _ConfigStatus.full : _ConfigStatus.none;
       default:
         return _ConfigStatus.none;
     }

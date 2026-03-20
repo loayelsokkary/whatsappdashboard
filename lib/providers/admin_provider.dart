@@ -14,6 +14,10 @@ class AdminProvider extends ChangeNotifier {
   // Last login per client (cached)
   Map<String, DateTime?> _lastLogins = {};
 
+  // Label triggers for selected client
+  List<Map<String, dynamic>> _labelTriggers = [];
+  bool _isLoadingTriggers = false;
+
   // Getters
   List<Client> get clients => _clients;
   List<Map<String, dynamic>> get allUsers => _allUsers;
@@ -22,6 +26,8 @@ class AdminProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
   Map<String, DateTime?> get lastLogins => _lastLogins;
+  List<Map<String, dynamic>> get labelTriggers => _labelTriggers;
+  bool get isLoadingTriggers => _isLoadingTriggers;
 
   // ============================================
   // CLIENTS
@@ -63,6 +69,7 @@ class AdminProvider extends ChangeNotifier {
     String? remindersPhone,
     String? remindersWebhookUrl,
     String? managerChatWebhookUrl,
+    String? customerPredictionsTable,
   }) async {
     _error = null;
 
@@ -77,6 +84,7 @@ class AdminProvider extends ChangeNotifier {
       managerChatsTable: managerChatsTable,
       broadcastRecipientsTable: broadcastRecipientsTable,
       aiSettingsTable: aiSettingsTable,
+      customerPredictionsTable: customerPredictionsTable,
       conversationsPhone: conversationsPhone,
       conversationsWebhookUrl: conversationsWebhookUrl,
       broadcastsPhone: broadcastsPhone,
@@ -110,6 +118,7 @@ class AdminProvider extends ChangeNotifier {
     String? managerChatsTable,
     String? broadcastRecipientsTable,
     String? aiSettingsTable,
+    String? customerPredictionsTable,
     String? conversationsPhone,
     String? conversationsWebhookUrl,
     String? broadcastsPhone,
@@ -132,6 +141,7 @@ class AdminProvider extends ChangeNotifier {
       managerChatsTable: managerChatsTable,
       broadcastRecipientsTable: broadcastRecipientsTable,
       aiSettingsTable: aiSettingsTable,
+      customerPredictionsTable: customerPredictionsTable,
       conversationsPhone: conversationsPhone,
       conversationsWebhookUrl: conversationsWebhookUrl,
       broadcastsPhone: broadcastsPhone,
@@ -184,6 +194,9 @@ class AdminProvider extends ChangeNotifier {
     _selectedClient = client;
     notifyListeners();
     await fetchClientUsers(client.id);
+    if (client.enabledFeatures.contains('labels')) {
+      fetchLabelTriggers(client.id);
+    }
   }
 
   /// Clear client selection
@@ -336,6 +349,107 @@ class AdminProvider extends ChangeNotifier {
     return false;
   }
 
+  /// Bulk toggle status for multiple users. Returns count of successful updates.
+  Future<int> bulkToggleStatus(List<String> userIds, String newStatus) async {
+    int successCount = 0;
+    for (final id in userIds) {
+      try {
+        await SupabaseService.client
+            .from('users')
+            .update({'status': newStatus})
+            .eq('id', id);
+        successCount++;
+      } catch (e) {
+        debugPrint('Failed to update status for $id: $e');
+      }
+    }
+    await fetchAllUsers();
+    if (_selectedClient != null) await fetchClientUsers(_selectedClient!.id);
+    return successCount;
+  }
+
+  /// Bulk change role for multiple users. Returns count of successful updates.
+  Future<int> bulkChangeRole(List<String> userIds, String newRole) async {
+    int successCount = 0;
+    for (final id in userIds) {
+      try {
+        await SupabaseService.client
+            .from('users')
+            .update({'role': newRole})
+            .eq('id', id);
+        successCount++;
+      } catch (e) {
+        debugPrint('Failed to update role for $id: $e');
+      }
+    }
+    await fetchAllUsers();
+    if (_selectedClient != null) await fetchClientUsers(_selectedClient!.id);
+    return successCount;
+  }
+
+  /// Bulk delete users. Returns count of successful deletions.
+  Future<int> bulkDeleteUsers(List<String> userIds) async {
+    int successCount = 0;
+    for (final id in userIds) {
+      try {
+        await SupabaseService.client
+            .from('users')
+            .delete()
+            .eq('id', id);
+        successCount++;
+      } catch (e) {
+        debugPrint('Failed to delete user $id: $e');
+      }
+    }
+    await fetchAllUsers();
+    if (_selectedClient != null) await fetchClientUsers(_selectedClient!.id);
+    return successCount;
+  }
+
+  /// Import users from parsed CSV rows. Each row must have: name, email, password, role, client_id.
+  /// Returns (successCount, errors) tuple.
+  Future<({int success, List<String> errors})> importUsersFromCsv(
+    List<Map<String, String>> rows,
+  ) async {
+    int successCount = 0;
+    final errors = <String>[];
+
+    for (int i = 0; i < rows.length; i++) {
+      final row = rows[i];
+      final name = row['name']?.trim() ?? '';
+      final email = row['email']?.trim() ?? '';
+      final password = row['password']?.trim() ?? '';
+      final role = row['role']?.trim().toLowerCase() ?? 'agent';
+      final clientId = row['client_id']?.trim() ?? '';
+
+      if (email.isEmpty || name.isEmpty || clientId.isEmpty) {
+        errors.add('Row ${i + 1}: Missing required field (name, email, or client_id)');
+        continue;
+      }
+      if (password.isEmpty || password.length < 8) {
+        errors.add('Row ${i + 1}: Password must be at least 8 characters');
+        continue;
+      }
+
+      final user = await SupabaseService.instance.createUser(
+        email: email,
+        password: password,
+        name: name,
+        role: role,
+        clientId: clientId,
+      );
+
+      if (user != null) {
+        successCount++;
+      } else {
+        errors.add('Row ${i + 1}: Failed to create "$email" (may already exist)');
+      }
+    }
+
+    await fetchAllUsers();
+    return (success: successCount, errors: errors);
+  }
+
   // ============================================
   // CLIENT HEALTH (login activity)
   // ============================================
@@ -404,4 +518,66 @@ class AdminProvider extends ChangeNotifier {
     'agent',
     'viewer',
   ];
+
+  // ============================================
+  // LABEL TRIGGERS
+  // ============================================
+
+  Future<void> fetchLabelTriggers(String clientId) async {
+    _isLoadingTriggers = true;
+    notifyListeners();
+
+    try {
+      _labelTriggers = await SupabaseService.instance.fetchLabelTriggers(clientId);
+      print('ADMIN: loaded ${_labelTriggers.length} label triggers for $clientId');
+    } catch (e) {
+      print('ADMIN: label triggers error: $e');
+    }
+
+    _isLoadingTriggers = false;
+    notifyListeners();
+  }
+
+  Future<String?> createLabelTrigger({
+    required String clientId,
+    required String label,
+    required List<String> triggerWords,
+    String? color,
+    bool autoApply = true,
+  }) async {
+    try {
+      await SupabaseService.instance.createLabelTrigger(
+        clientId: clientId,
+        label: label,
+        triggerWords: triggerWords,
+        color: color,
+        autoApply: autoApply,
+      );
+      await fetchLabelTriggers(clientId);
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  Future<String?> updateLabelTrigger(String id, Map<String, dynamic> updates, String clientId) async {
+    try {
+      await SupabaseService.instance.updateLabelTrigger(id, updates);
+      await fetchLabelTriggers(clientId);
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  Future<String?> deleteLabelTrigger(String id, String clientId) async {
+    try {
+      await SupabaseService.instance.deleteLabelTrigger(id);
+      _labelTriggers.removeWhere((t) => t['id'] == id);
+      notifyListeners();
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
 }

@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import '../models/models.dart';
 import '../providers/admin_analytics_provider.dart';
 import '../theme/vivid_theme.dart';
+import '../utils/analytics_exporter.dart';
+import '../utils/toast_service.dart';
 
 /// Analytics view for a specific client in the admin panel
 class ClientAnalyticsView extends StatefulWidget {
@@ -37,6 +39,58 @@ class _ClientAnalyticsViewState extends State<ClientAnalyticsView> {
     } else if (widget.client.hasFeature('broadcasts')) {
       provider.fetchBroadcastAnalytics(widget.client);
     }
+  }
+
+  Widget _buildExportButton(BuildContext context) {
+    final vc = context.vividColors;
+    final provider = context.read<AdminAnalyticsProvider>();
+    return PopupMenuButton<String>(
+      onSelected: (format) async {
+        try {
+          await AnalyticsExporter.exportClientReportPdf(
+            client: widget.client,
+            conversationData: provider.getConversationAnalytics(widget.client.id),
+            broadcastData: provider.getBroadcastAnalytics(widget.client.id),
+          );
+          if (mounted) {
+            VividToast.show(context, message: 'PDF exported', type: ToastType.success);
+          }
+        } catch (e) {
+          if (mounted) {
+            VividToast.show(context, message: 'Export failed: $e', type: ToastType.error);
+          }
+        }
+      },
+      offset: const Offset(0, 40),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      color: vc.surface,
+      itemBuilder: (_) => [
+        PopupMenuItem(value: 'pdf', child: Row(children: [
+          Icon(Icons.picture_as_pdf, color: Colors.red, size: 18),
+          const SizedBox(width: 10),
+          Text('Export PDF Report', style: TextStyle(color: vc.textPrimary)),
+        ])),
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          gradient: VividColors.primaryGradient,
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: [
+            BoxShadow(color: VividColors.brightBlue.withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 3)),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.download, color: vc.background, size: 18),
+            const SizedBox(width: 6),
+            Text('Export', style: TextStyle(color: vc.background, fontWeight: FontWeight.w600, fontSize: 13)),
+            Icon(Icons.arrow_drop_down, color: vc.background, size: 18),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -140,10 +194,11 @@ class _ClientAnalyticsViewState extends State<ClientAnalyticsView> {
                     ],
                   ),
                 ),
+                _buildExportButton(context),
               ],
             ),
           ),
-          
+
           // Content
           Expanded(
             child: Consumer<AdminAnalyticsProvider>(

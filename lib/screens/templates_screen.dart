@@ -130,54 +130,55 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
                   const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
             ),
           ),
-          const SizedBox(width: 10),
-          // Sync to AI button
-          OutlinedButton.icon(
-            onPressed: provider.isSyncing
-                ? null
-                : () async {
-                    final error =
-                        await provider.syncTemplatesToSupabase();
-                    if (!context.mounted) return;
-                    VividToast.show(context,
-                      message: error ?? 'Templates synced to AI',
-                      type: error == null ? ToastType.success : ToastType.error,
-                    );
-                  },
-            icon: provider.isSyncing
-                ? SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: vc.textMuted),
-                  )
-                : const Icon(Icons.cloud_upload_rounded, size: 16),
-            label: const Text('Sync to AI'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: vc.textSecondary,
-              side: BorderSide(
-                  color: VividColors.tealBlue.withValues(alpha: 0.4)),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              textStyle:
-                  const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+          // Sync to AI + New Template — admin only (Meta API access)
+          if (ClientConfig.isVividAdmin) ...[
+            const SizedBox(width: 10),
+            OutlinedButton.icon(
+              onPressed: provider.isSyncing
+                  ? null
+                  : () async {
+                      final error =
+                          await provider.syncTemplatesToSupabase();
+                      if (!context.mounted) return;
+                      VividToast.show(context,
+                        message: error ?? 'Templates synced to AI',
+                        type: error == null ? ToastType.success : ToastType.error,
+                      );
+                    },
+              icon: provider.isSyncing
+                  ? SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: vc.textMuted),
+                    )
+                  : const Icon(Icons.cloud_upload_rounded, size: 16),
+              label: const Text('Sync to AI'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: vc.textSecondary,
+                side: BorderSide(
+                    color: VividColors.tealBlue.withValues(alpha: 0.4)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                textStyle:
+                    const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+              ),
             ),
-          ),
-          const SizedBox(width: 10),
-          // New Template button
-          FilledButton.icon(
-            onPressed: () => _openNewTemplate(context),
-            icon: const Icon(Icons.add_rounded, size: 18),
-            label: const Text('New Template'),
-            style: FilledButton.styleFrom(
-              backgroundColor: VividColors.cyan,
-              foregroundColor: vc.background,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              textStyle:
-                  const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            const SizedBox(width: 10),
+            FilledButton.icon(
+              onPressed: () => _openNewTemplate(context),
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: const Text('New Template'),
+              style: FilledButton.styleFrom(
+                backgroundColor: VividColors.cyan,
+                foregroundColor: vc.background,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                textStyle:
+                    const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -562,35 +563,36 @@ class _TemplateCard extends StatelessWidget {
                 ),
               ),
 
-              // Divider + action row (Delete only — card tap opens preview)
-              Container(
-                height: 1,
-                color: vc.border,
-              ),
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    // Delete
-                    TextButton.icon(
-                      onPressed: () => onDelete(template.name, template.id),
-                      icon: const Icon(Icons.delete_outline_rounded, size: 14),
-                      label: const Text('Delete'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: VividColors.statusUrgent,
-                        textStyle: const TextStyle(
-                            fontSize: 12, fontWeight: FontWeight.w500),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                    ),
-                  ],
+              // Divider + action row — admin only (delete hits Meta API)
+              if (ClientConfig.isVividAdmin) ...[
+                Container(
+                  height: 1,
+                  color: vc.border,
                 ),
-              ),
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton.icon(
+                        onPressed: () => onDelete(template.name, template.id),
+                        icon: const Icon(Icons.delete_outline_rounded, size: 14),
+                        label: const Text('Delete'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: VividColors.statusUrgent,
+                          textStyle: const TextStyle(
+                              fontSize: 12, fontWeight: FontWeight.w500),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ),
         ),

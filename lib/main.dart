@@ -15,6 +15,8 @@ import 'providers/user_management_provider.dart';
 import 'providers/activity_logs_provider.dart';
 import 'providers/templates_provider.dart';
 import 'providers/theme_provider.dart';
+import 'providers/outreach_provider.dart';
+import 'providers/financials_provider.dart';
 import 'models/models.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
@@ -57,6 +59,8 @@ class VividDashboardApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ActivityLogsProvider()),
         ChangeNotifierProvider(create: (_) => TemplatesProvider()),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(create: (_) => OutreachProvider()),
+        ChangeNotifierProvider(create: (_) => FinancialsProvider()),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) => MaterialApp(

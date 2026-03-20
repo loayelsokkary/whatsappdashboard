@@ -1,6 +1,13 @@
+import 'dart:convert';
+import 'dart:typed_data';
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:html' as html;
+
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import '../providers/admin_provider.dart';
+import '../services/supabase_service.dart';
 import '../providers/admin_analytics_provider.dart';
 import '../providers/agent_provider.dart';
 import '../models/models.dart';
@@ -14,6 +21,8 @@ import '../widgets/settings_tab.dart';
 import '../main.dart';
 import '../utils/toast_service.dart';
 import '../services/impersonate_service.dart';
+import 'outreach_panel.dart';
+import 'financials_tab.dart';
 
 /// Launch client impersonation / "View as Client" mode.
 void _launchClientPreview(BuildContext context, Client client) {
@@ -41,7 +50,7 @@ class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateM
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 7, vsync: this);
+    _tabController = TabController(length: 10, vsync: this);
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = context.read<AdminProvider>();
@@ -79,13 +88,16 @@ class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateM
                 _ClientsTab(
                   onViewAnalytics: (client) {
                     context.read<AdminProvider>().selectClient(client);
-                    _tabController.animateTo(3);
+                    _tabController.animateTo(4);
                   },
                 ),
                 _UsersTab(),
+                const _AdminTemplatesTab(),
                 _AnalyticsTab(),
                 const VividCompanyAnalyticsView(),
+                const FinancialsTab(),
                 const ActivityLogsPanel(isAdmin: true),
+                const OutreachPanel(),
                 const SettingsTab(),
               ],
             ),
@@ -295,18 +307,24 @@ class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateM
                     Tab(icon: Tooltip(message: 'Home', child: Icon(Icons.dashboard))),
                     Tab(icon: Tooltip(message: 'Clients', child: Icon(Icons.business))),
                     Tab(icon: Tooltip(message: 'Users', child: Icon(Icons.people))),
+                    Tab(icon: Tooltip(message: 'Templates', child: Icon(Icons.description))),
                     Tab(icon: Tooltip(message: 'Client Analytics', child: Icon(Icons.insights))),
                     Tab(icon: Tooltip(message: 'Vivid Analytics', child: Icon(Icons.auto_graph))),
+                    Tab(icon: Tooltip(message: 'Financials', child: Icon(Icons.account_balance_wallet))),
                     Tab(icon: Tooltip(message: 'Activity Logs', child: Icon(Icons.history))),
+                    Tab(icon: Tooltip(message: 'Outreach', child: Icon(Icons.rocket_launch))),
                     Tab(icon: Tooltip(message: 'Settings', child: Icon(Icons.settings))),
                   ]
                 : const [
                     Tab(icon: Icon(Icons.dashboard), text: 'Home'),
                     Tab(icon: Icon(Icons.business), text: 'Clients'),
                     Tab(icon: Icon(Icons.people), text: 'Users'),
+                    Tab(icon: Icon(Icons.description), text: 'Templates'),
                     Tab(icon: Icon(Icons.insights), text: 'Client Analytics'),
                     Tab(icon: Icon(Icons.auto_graph), text: 'Vivid Analytics'),
+                    Tab(icon: Icon(Icons.account_balance_wallet), text: 'Financials'),
                     Tab(icon: Icon(Icons.history), text: 'Activity Logs'),
+                    Tab(icon: Icon(Icons.rocket_launch), text: 'Outreach'),
                     Tab(icon: Icon(Icons.settings), text: 'Settings'),
                   ],
           ),
@@ -610,6 +628,7 @@ class _ClientProfileCardState extends State<_ClientProfileCard> {
       case 'broadcasts': return Colors.orange;
       case 'analytics': return VividColors.brightBlue;
       case 'manager_chat': return Colors.purple;
+      case 'predictive_intelligence': return Colors.teal;
       default: return VividColors.cyan;
     }
   }
@@ -623,6 +642,7 @@ class _ClientProfileCardState extends State<_ClientProfileCard> {
       case 'analytics': return 'Analytics';
       case 'manager_chat': return 'AI Chat';
       case 'conversations': return 'Convos';
+      case 'predictive_intelligence': return 'Predictions';
       default: return feature;
     }
   }
@@ -641,6 +661,8 @@ class _ClientProfileCardState extends State<_ClientProfileCard> {
         return client.managerChatWebhookUrl != null && client.managerChatWebhookUrl!.isNotEmpty;
       case 'analytics':
         return _isFeatureConfigured(client, 'conversations') || _isFeatureConfigured(client, 'broadcasts');
+      case 'predictive_intelligence':
+        return client.customerPredictionsTable != null && client.customerPredictionsTable!.isNotEmpty;
       case 'media':
       case 'labels':
         return true; // Flag-only features
@@ -1036,13 +1058,14 @@ class _ClientDetailState extends State<_ClientDetail> {
   // Track which feature is currently being toggled (for loading indicator)
   String? _togglingFeature;
 
-  static const _allFeatures = ['conversations', 'broadcasts', 'analytics', 'manager_chat'];
+  static const _allFeatures = ['conversations', 'broadcasts', 'analytics', 'manager_chat', 'predictive_intelligence'];
 
   static const _featureNames = {
     'conversations': 'Conversations',
     'broadcasts': 'Broadcasts',
     'analytics': 'Analytics',
     'manager_chat': 'AI Assistant',
+    'predictive_intelligence': 'Predictions',
   };
 
   static const _featureIcons = {
@@ -1050,6 +1073,7 @@ class _ClientDetailState extends State<_ClientDetail> {
     'broadcasts': Icons.campaign,
     'analytics': Icons.insights,
     'manager_chat': Icons.smart_toy,
+    'predictive_intelligence': Icons.auto_graph,
   };
 
   static Color _featureColor(String feature) {
@@ -1058,6 +1082,7 @@ class _ClientDetailState extends State<_ClientDetail> {
       case 'broadcasts': return Colors.orange;
       case 'analytics': return VividColors.brightBlue;
       case 'manager_chat': return Colors.purple;
+      case 'predictive_intelligence': return Colors.teal;
       default: return VividColors.cyan;
     }
   }
@@ -1072,6 +1097,8 @@ class _ClientDetailState extends State<_ClientDetail> {
         return notEmpty(client.broadcastsPhone) && notEmpty(client.broadcastsWebhookUrl);
       case 'manager_chat':
         return notEmpty(client.managerChatWebhookUrl);
+      case 'predictive_intelligence':
+        return notEmpty(client.customerPredictionsTable);
       default:
         return true; // analytics, etc. have no config
     }
@@ -1753,12 +1780,428 @@ class _RoleConfig {
 // USERS TAB (All users view)
 // ============================================
 
-class _UsersTab extends StatelessWidget {
+class _UsersTab extends StatefulWidget {
+  @override
+  State<_UsersTab> createState() => _UsersTabState();
+}
+
+class _UsersTabState extends State<_UsersTab> {
+  String _searchQuery = '';
+  String? _roleFilter;
+  String? _clientFilter;
+  String? _statusFilter;
+  final Set<String> _selectedIds = {};
+  bool _selectAll = false;
+
+  List<Map<String, dynamic>> _applyFilters(List<Map<String, dynamic>> users) {
+    var filtered = users;
+    if (_searchQuery.isNotEmpty) {
+      final q = _searchQuery.toLowerCase();
+      filtered = filtered.where((u) =>
+        (u['name'] as String? ?? '').toLowerCase().contains(q) ||
+        (u['email'] as String? ?? '').toLowerCase().contains(q)
+      ).toList();
+    }
+    if (_roleFilter != null) {
+      filtered = filtered.where((u) => u['role'] == _roleFilter).toList();
+    }
+    if (_clientFilter != null) {
+      filtered = filtered.where((u) => u['client_id'] == _clientFilter).toList();
+    }
+    if (_statusFilter != null) {
+      filtered = filtered.where((u) => (u['status'] ?? 'active') == _statusFilter).toList();
+    }
+    return filtered;
+  }
+
+  void _toggleSelectAll(List<Map<String, dynamic>> filteredUsers) {
+    setState(() {
+      if (_selectAll) {
+        _selectedIds.clear();
+        _selectAll = false;
+      } else {
+        _selectedIds.clear();
+        for (final u in filteredUsers) {
+          _selectedIds.add(u['id'] as String);
+        }
+        _selectAll = true;
+      }
+    });
+  }
+
+  void _toggleUser(String id) {
+    setState(() {
+      if (_selectedIds.contains(id)) {
+        _selectedIds.remove(id);
+        _selectAll = false;
+      } else {
+        _selectedIds.add(id);
+      }
+    });
+  }
+
+  void _clearSelection() {
+    setState(() {
+      _selectedIds.clear();
+      _selectAll = false;
+    });
+  }
+
+  // ── CSV Export ──────────────────────────────────────
+  void _exportCsv(List<Map<String, dynamic>> users) {
+    final buffer = StringBuffer();
+    buffer.writeln('Name,Email,Role,Status,Client');
+    for (final u in users) {
+      final name = (u['name'] ?? '').toString().replaceAll(',', ' ');
+      final email = (u['email'] ?? '').toString();
+      final role = (u['role'] ?? '').toString();
+      final status = (u['status'] ?? 'active').toString();
+      final client = (u['clients']?['name'] ?? '').toString().replaceAll(',', ' ');
+      buffer.writeln('$name,$email,$role,$status,$client');
+    }
+    final bytes = utf8.encode(buffer.toString());
+    final blob = html.Blob([Uint8List.fromList(bytes)], 'text/csv');
+    final url = html.Url.createObjectUrlFromBlob(blob);
+    final anchor = html.AnchorElement()
+      ..href = url
+      ..download = 'users_export_${DateTime.now().millisecondsSinceEpoch}.csv'
+      ..style.display = 'none';
+    html.document.body?.append(anchor);
+    anchor.click();
+    anchor.remove();
+    html.Url.revokeObjectUrl(url);
+
+    if (mounted) {
+      VividToast.show(context,
+        message: 'Exported ${users.length} users to CSV',
+        type: ToastType.success,
+      );
+    }
+  }
+
+  // ── CSV Import Dialog ──────────────────────────────
+  void _showImportDialog(BuildContext context, AdminProvider provider) {
+    final vc = context.vividColors;
+    List<Map<String, String>>? parsedRows;
+    List<String> headers = [];
+    bool isParsing = false;
+    bool isImporting = false;
+    int? importedCount;
+    List<String>? importErrors;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          return AlertDialog(
+            backgroundColor: vc.surface,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            title: Row(
+              children: [
+                const Icon(Icons.upload_file, color: VividColors.cyan, size: 20),
+                const SizedBox(width: 10),
+                Text('Import Users from CSV', style: TextStyle(color: vc.textPrimary, fontSize: 16)),
+              ],
+            ),
+            content: SizedBox(
+              width: 600,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Step 1: File selection
+                  if (parsedRows == null && importedCount == null) ...[
+                    Text(
+                      'CSV must have columns: name, email, password, role, client_id',
+                      style: TextStyle(color: vc.textMuted, fontSize: 12),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Roles: admin, manager, agent, viewer',
+                      style: TextStyle(color: vc.textMuted, fontSize: 11),
+                    ),
+                    const SizedBox(height: 16),
+                    Center(
+                      child: ElevatedButton.icon(
+                        onPressed: isParsing ? null : () {
+                          final input = html.FileUploadInputElement()..accept = '.csv';
+                          input.click();
+                          input.onChange.listen((event) {
+                            final file = input.files?.first;
+                            if (file == null) return;
+                            setDialogState(() => isParsing = true);
+                            final reader = html.FileReader();
+                            reader.readAsText(file);
+                            reader.onLoadEnd.listen((_) {
+                              final content = reader.result as String;
+                              final lines = const LineSplitter().convert(content);
+                              if (lines.isEmpty) {
+                                setDialogState(() => isParsing = false);
+                                return;
+                              }
+                              headers = lines.first.split(',').map((h) => h.trim().toLowerCase()).toList();
+                              final rows = <Map<String, String>>[];
+                              for (int i = 1; i < lines.length; i++) {
+                                final vals = lines[i].split(',');
+                                if (vals.length < headers.length) continue;
+                                final row = <String, String>{};
+                                for (int j = 0; j < headers.length; j++) {
+                                  row[headers[j]] = vals[j].trim();
+                                }
+                                if (row['email']?.isNotEmpty == true) rows.add(row);
+                              }
+                              setDialogState(() {
+                                parsedRows = rows;
+                                isParsing = false;
+                              });
+                            });
+                          });
+                        },
+                        icon: isParsing
+                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : const Icon(Icons.file_open, size: 18),
+                        label: Text(isParsing ? 'Reading...' : 'Select CSV File'),
+                        style: ElevatedButton.styleFrom(backgroundColor: VividColors.brightBlue),
+                      ),
+                    ),
+                  ],
+                  // Step 2: Preview
+                  if (parsedRows != null && importedCount == null) ...[
+                    Text(
+                      '${parsedRows!.length} users found in CSV',
+                      style: TextStyle(color: vc.textPrimary, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      constraints: const BoxConstraints(maxHeight: 300),
+                      decoration: BoxDecoration(
+                        color: vc.surfaceAlt,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: vc.border),
+                      ),
+                      child: SingleChildScrollView(
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: DataTable(
+                            headingRowColor: WidgetStateProperty.all(vc.surface),
+                            dataRowMinHeight: 32,
+                            dataRowMaxHeight: 40,
+                            columnSpacing: 16,
+                            columns: headers.map((h) => DataColumn(
+                              label: Text(h, style: TextStyle(color: vc.textMuted, fontWeight: FontWeight.w600, fontSize: 11)),
+                            )).toList(),
+                            rows: parsedRows!.take(20).map((row) => DataRow(
+                              cells: headers.map((h) => DataCell(
+                                Text(
+                                  h == 'password' ? '••••••••' : (row[h] ?? ''),
+                                  style: TextStyle(color: vc.textPrimary, fontSize: 12),
+                                ),
+                              )).toList(),
+                            )).toList(),
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (parsedRows!.length > 20)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          '... and ${parsedRows!.length - 20} more rows',
+                          style: TextStyle(color: vc.textMuted, fontSize: 11),
+                        ),
+                      ),
+                    if (isImporting)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: LinearProgressIndicator(
+                          backgroundColor: vc.border,
+                          valueColor: const AlwaysStoppedAnimation(VividColors.cyan),
+                        ),
+                      ),
+                  ],
+                  // Step 3: Results
+                  if (importedCount != null) ...[
+                    Icon(
+                      importErrors!.isEmpty ? Icons.check_circle : Icons.warning_amber,
+                      color: importErrors!.isEmpty ? VividColors.statusSuccess : VividColors.statusWarning,
+                      size: 40,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      '$importedCount of ${parsedRows!.length} users imported successfully',
+                      style: TextStyle(color: vc.textPrimary, fontWeight: FontWeight.w600),
+                    ),
+                    if (importErrors!.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        constraints: const BoxConstraints(maxHeight: 200),
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: ListView(
+                          shrinkWrap: true,
+                          children: importErrors!.map((e) => Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Text(e, style: const TextStyle(color: Colors.red, fontSize: 11)),
+                          )).toList(),
+                        ),
+                      ),
+                    ],
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(importedCount != null ? 'Done' : 'Cancel'),
+              ),
+              if (parsedRows != null && importedCount == null)
+                ElevatedButton(
+                  onPressed: isImporting ? null : () async {
+                    setDialogState(() => isImporting = true);
+                    final result = await provider.importUsersFromCsv(parsedRows!);
+                    setDialogState(() {
+                      isImporting = false;
+                      importedCount = result.success;
+                      importErrors = result.errors;
+                    });
+                  },
+                  style: ElevatedButton.styleFrom(backgroundColor: VividColors.brightBlue),
+                  child: isImporting
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : Text('Import ${parsedRows!.length} Users'),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  // ── Bulk Actions ───────────────────────────────────
+  Future<void> _bulkBlock(AdminProvider provider) async {
+    final vc = context.vividColors;
+    final count = _selectedIds.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: vc.surface,
+        title: Text('Block $count Users', style: TextStyle(color: vc.textPrimary)),
+        content: Text('Block $count selected users? They will no longer be able to log in.', style: TextStyle(color: vc.textMuted)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Block All'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final result = await provider.bulkToggleStatus(_selectedIds.toList(), 'blocked');
+    _clearSelection();
+    if (mounted) {
+      VividToast.show(context, message: 'Blocked $result of $count users', type: ToastType.success);
+    }
+  }
+
+  Future<void> _bulkUnblock(AdminProvider provider) async {
+    final count = _selectedIds.length;
+    final result = await provider.bulkToggleStatus(_selectedIds.toList(), 'active');
+    _clearSelection();
+    if (mounted) {
+      VividToast.show(context, message: 'Unblocked $result of $count users', type: ToastType.success);
+    }
+  }
+
+  Future<void> _bulkChangeRole(AdminProvider provider) async {
+    final vc = context.vividColors;
+    final count = _selectedIds.length;
+    final newRole = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: vc.surface,
+        title: Text('Change Role for $count Users', style: TextStyle(color: vc.textPrimary)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: ['admin', 'manager', 'agent', 'viewer'].map((role) => ListTile(
+            title: Text(role[0].toUpperCase() + role.substring(1), style: TextStyle(color: vc.textPrimary)),
+            leading: Icon(
+              role == 'admin' ? Icons.admin_panel_settings :
+              role == 'manager' ? Icons.supervisor_account :
+              role == 'agent' ? Icons.headset_mic : Icons.visibility,
+              color: VividColors.cyan,
+              size: 20,
+            ),
+            onTap: () => Navigator.pop(ctx, role),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            hoverColor: VividColors.brightBlue.withOpacity(0.1),
+          )).toList(),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+        ],
+      ),
+    );
+    if (newRole == null || !mounted) return;
+    final result = await provider.bulkChangeRole(_selectedIds.toList(), newRole);
+    _clearSelection();
+    if (mounted) {
+      VividToast.show(context,
+        message: 'Changed role to ${newRole[0].toUpperCase()}${newRole.substring(1)} for $result of $count users',
+        type: ToastType.success,
+      );
+    }
+  }
+
+  Future<void> _bulkDelete(AdminProvider provider) async {
+    final vc = context.vividColors;
+    final count = _selectedIds.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: vc.surface,
+        title: Text('Delete $count Users', style: TextStyle(color: vc.textPrimary)),
+        content: Text(
+          'Permanently delete $count selected users? This cannot be undone.',
+          style: TextStyle(color: vc.textMuted),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete All'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final result = await provider.bulkDeleteUsers(_selectedIds.toList());
+    _clearSelection();
+    if (mounted) {
+      VividToast.show(context, message: 'Deleted $result of $count users', type: ToastType.success);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final vc = context.vividColors;
     final provider = context.watch<AdminProvider>();
-    final users = provider.allUsers;
+    final allUsers = provider.allUsers;
+    final filteredUsers = _applyFilters(allUsers);
+
+    // Build unique client list for filter dropdown
+    final clientMap = <String, String>{};
+    for (final u in allUsers) {
+      final cid = u['client_id'] as String?;
+      final cname = u['clients']?['name'] as String?;
+      if (cid != null && cname != null) clientMap[cid] = cname;
+    }
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1766,61 +2209,222 @@ class _UsersTab extends StatelessWidget {
 
         return Column(
           children: [
-            // Header
+            // ── Toolbar ──────────────────────────────
             Container(
-              padding: const EdgeInsets.all(16),
-              child: Row(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: Column(
                 children: [
-                  Text(
-                    'All Users (${users.length})',
-                    style: TextStyle(
-                      color: vc.textPrimary,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  // Row 1: Title + CSV buttons
+                  Row(
+                    children: [
+                      Text(
+                        'All Users (${filteredUsers.length}${filteredUsers.length != allUsers.length ? ' of ${allUsers.length}' : ''})',
+                        style: TextStyle(color: vc.textPrimary, fontSize: 16, fontWeight: FontWeight.w600),
+                      ),
+                      const Spacer(),
+                      // Import CSV
+                      IconButton(
+                        onPressed: () => _showImportDialog(context, provider),
+                        icon: const Icon(Icons.upload_file, size: 18),
+                        color: VividColors.cyan,
+                        tooltip: 'Import CSV',
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      // Export CSV
+                      IconButton(
+                        onPressed: filteredUsers.isEmpty ? null : () => _exportCsv(filteredUsers),
+                        icon: const Icon(Icons.download, size: 18),
+                        color: VividColors.cyan,
+                        tooltip: 'Export CSV',
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  // Row 2: Search + Filters
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      // Search
+                      SizedBox(
+                        width: isMobile ? double.infinity : 220,
+                        height: 36,
+                        child: TextField(
+                          onChanged: (v) => setState(() => _searchQuery = v),
+                          style: TextStyle(color: vc.textPrimary, fontSize: 13),
+                          decoration: InputDecoration(
+                            hintText: 'Search name or email...',
+                            hintStyle: TextStyle(color: vc.textMuted, fontSize: 12),
+                            prefixIcon: Icon(Icons.search, size: 18, color: vc.textMuted),
+                            contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(color: vc.border),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: const BorderSide(color: VividColors.cyan),
+                            ),
+                            filled: true,
+                            fillColor: vc.surfaceAlt,
+                          ),
+                        ),
+                      ),
+                      // Role filter
+                      _FilterChip(
+                        label: _roleFilter != null ? _roleFilter![0].toUpperCase() + _roleFilter!.substring(1) : 'Role',
+                        isActive: _roleFilter != null,
+                        onClear: () => setState(() => _roleFilter = null),
+                        items: ['admin', 'manager', 'agent', 'viewer']
+                            .map((r) => PopupMenuItem(value: r, child: Text(r[0].toUpperCase() + r.substring(1))))
+                            .toList(),
+                        onSelected: (v) => setState(() => _roleFilter = v),
+                      ),
+                      // Client filter
+                      _FilterChip(
+                        label: _clientFilter != null ? (clientMap[_clientFilter] ?? 'Client') : 'Client',
+                        isActive: _clientFilter != null,
+                        onClear: () => setState(() => _clientFilter = null),
+                        items: clientMap.entries
+                            .map((e) => PopupMenuItem(value: e.key, child: Text(e.value)))
+                            .toList(),
+                        onSelected: (v) => setState(() => _clientFilter = v),
+                      ),
+                      // Status filter
+                      _FilterChip(
+                        label: _statusFilter != null ? _statusFilter![0].toUpperCase() + _statusFilter!.substring(1) : 'Status',
+                        isActive: _statusFilter != null,
+                        onClear: () => setState(() => _statusFilter = null),
+                        items: ['active', 'blocked']
+                            .map((s) => PopupMenuItem(value: s, child: Text(s[0].toUpperCase() + s.substring(1))))
+                            .toList(),
+                        onSelected: (v) => setState(() => _statusFilter = v),
+                      ),
+                      // Clear all filters
+                      if (_searchQuery.isNotEmpty || _roleFilter != null || _clientFilter != null || _statusFilter != null)
+                        ActionChip(
+                          label: const Text('Clear', style: TextStyle(fontSize: 12)),
+                          avatar: const Icon(Icons.clear, size: 14),
+                          onPressed: () => setState(() {
+                            _searchQuery = '';
+                            _roleFilter = null;
+                            _clientFilter = null;
+                            _statusFilter = null;
+                          }),
+                          visualDensity: VisualDensity.compact,
+                          backgroundColor: vc.surfaceAlt,
+                          labelStyle: TextStyle(color: vc.textMuted),
+                        ),
+                    ],
                   ),
                 ],
               ),
             ),
 
-            // Table header (desktop only)
-            if (!isMobile)
+            // ── Bulk Action Bar ──────────────────────
+            if (_selectedIds.isNotEmpty)
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
-                  color: vc.surface,
+                  color: VividColors.brightBlue.withOpacity(0.1),
                   border: Border(
-                    bottom: BorderSide(color: vc.border),
+                    top: BorderSide(color: VividColors.cyan.withOpacity(0.3)),
+                    bottom: BorderSide(color: VividColors.cyan.withOpacity(0.3)),
                   ),
                 ),
                 child: Row(
                   children: [
-                    Expanded(flex: 2, child: Text('Name', style: TextStyle(color: vc.textMuted, fontWeight: FontWeight.w600))),
-                    Expanded(flex: 3, child: Text('Email', style: TextStyle(color: vc.textMuted, fontWeight: FontWeight.w600))),
-                    Expanded(flex: 1, child: Text('Role', style: TextStyle(color: vc.textMuted, fontWeight: FontWeight.w600))),
-                    Expanded(flex: 2, child: Text('Client', style: TextStyle(color: vc.textMuted, fontWeight: FontWeight.w600))),
-                    SizedBox(width: 90, child: Text('Actions', style: TextStyle(color: vc.textMuted, fontWeight: FontWeight.w600))),
+                    Text(
+                      '${_selectedIds.length} selected',
+                      style: const TextStyle(color: VividColors.cyan, fontWeight: FontWeight.w600, fontSize: 13),
+                    ),
+                    const SizedBox(width: 12),
+                    _BulkActionButton(
+                      icon: Icons.block,
+                      label: 'Block',
+                      color: Colors.red,
+                      onPressed: () => _bulkBlock(provider),
+                    ),
+                    const SizedBox(width: 6),
+                    _BulkActionButton(
+                      icon: Icons.lock_open,
+                      label: 'Unblock',
+                      color: VividColors.statusSuccess,
+                      onPressed: () => _bulkUnblock(provider),
+                    ),
+                    const SizedBox(width: 6),
+                    _BulkActionButton(
+                      icon: Icons.swap_horiz,
+                      label: 'Change Role',
+                      color: VividColors.cyan,
+                      onPressed: () => _bulkChangeRole(provider),
+                    ),
+                    const SizedBox(width: 6),
+                    _BulkActionButton(
+                      icon: Icons.delete_outline,
+                      label: 'Delete',
+                      color: Colors.red,
+                      onPressed: () => _bulkDelete(provider),
+                    ),
+                    const Spacer(),
+                    TextButton(
+                      onPressed: _clearSelection,
+                      child: const Text('Clear Selection', style: TextStyle(color: VividColors.cyan, fontSize: 12)),
+                    ),
                   ],
                 ),
               ),
 
-            // Users list
-            Expanded(
-              child: users.isEmpty
-                      ? Center(child: Text('No users found', style: TextStyle(color: vc.textMuted)))
-                      : ListView.builder(
-                          itemCount: users.length,
-                          itemBuilder: (context, index) {
-                            final user = users[index];
-                            final clientName = user['clients']?['name'] ?? 'No Client';
-                            final role = user['role'] ?? 'unknown';
+            // ── Table header (desktop) ───────────────
+            if (!isMobile)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: vc.surface,
+                  border: Border(bottom: BorderSide(color: vc.border)),
+                ),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 40,
+                      child: Checkbox(
+                        value: _selectAll && _selectedIds.length == filteredUsers.length && filteredUsers.isNotEmpty,
+                        onChanged: (_) => _toggleSelectAll(filteredUsers),
+                        activeColor: VividColors.cyan,
+                        side: BorderSide(color: vc.textMuted),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                    Expanded(flex: 2, child: Text('Name', style: TextStyle(color: vc.textMuted, fontWeight: FontWeight.w600, fontSize: 12))),
+                    Expanded(flex: 3, child: Text('Email', style: TextStyle(color: vc.textMuted, fontWeight: FontWeight.w600, fontSize: 12))),
+                    Expanded(flex: 1, child: Text('Role', style: TextStyle(color: vc.textMuted, fontWeight: FontWeight.w600, fontSize: 12))),
+                    Expanded(flex: 1, child: Text('Status', style: TextStyle(color: vc.textMuted, fontWeight: FontWeight.w600, fontSize: 12))),
+                    Expanded(flex: 2, child: Text('Client', style: TextStyle(color: vc.textMuted, fontWeight: FontWeight.w600, fontSize: 12))),
+                    const SizedBox(width: 90, child: Text('Actions', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12))),
+                  ],
+                ),
+              ),
 
-                            if (isMobile) {
-                              return _buildMobileUserCard(context, user, clientName, role, provider);
-                            }
-                            return _buildDesktopUserRow(context, user, clientName, role, provider);
-                          },
-                        ),
+            // ── Users list ───────────────────────────
+            Expanded(
+              child: filteredUsers.isEmpty
+                  ? Center(child: Text('No users found', style: TextStyle(color: vc.textMuted)))
+                  : ListView.builder(
+                      itemCount: filteredUsers.length,
+                      itemBuilder: (context, index) {
+                        final user = filteredUsers[index];
+                        final clientName = user['clients']?['name'] ?? 'No Client';
+                        final role = user['role'] ?? 'unknown';
+                        final userId = user['id'] as String;
+                        final isSelected = _selectedIds.contains(userId);
+
+                        if (isMobile) {
+                          return _buildMobileUserCard(context, user, clientName, role, provider, isSelected);
+                        }
+                        return _buildDesktopUserRow(context, user, clientName, role, provider, isSelected);
+                      },
+                    ),
             ),
           ],
         );
@@ -1834,63 +2438,61 @@ class _UsersTab extends StatelessWidget {
     String clientName,
     String role,
     AdminProvider provider,
+    bool isSelected,
   ) {
     final vc = context.vividColors;
+    final userId = user['id'] as String;
+    final status = user['status'] as String? ?? 'active';
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: vc.surfaceAlt,
+        color: isSelected ? VividColors.brightBlue.withOpacity(0.1) : vc.surfaceAlt,
         borderRadius: BorderRadius.circular(10),
+        border: isSelected ? Border.all(color: VividColors.cyan.withOpacity(0.4)) : null,
       ),
       child: Row(
         children: [
+          Checkbox(
+            value: isSelected,
+            onChanged: (_) => _toggleUser(userId),
+            activeColor: VividColors.cyan,
+            side: BorderSide(color: vc.textMuted),
+            visualDensity: VisualDensity.compact,
+          ),
+          const SizedBox(width: 4),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Name + role badge
                 Row(
                   children: [
                     Flexible(
-                      child: Text(
-                        user['name'] ?? '',
-                        style: TextStyle(
-                          color: vc.textPrimary,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      child: Text(user['name'] ?? '', style: TextStyle(color: vc.textPrimary, fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis),
                     ),
                     const SizedBox(width: 8),
                     _RoleBadge(role: role),
+                    if (status == 'blocked') ...[
+                      const SizedBox(width: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                        decoration: BoxDecoration(color: Colors.red.withOpacity(0.2), borderRadius: BorderRadius.circular(8)),
+                        child: const Text('Blocked', style: TextStyle(color: Colors.red, fontSize: 9, fontWeight: FontWeight.w600)),
+                      ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 4),
-                // Email
-                Text(
-                  user['email'] ?? '',
-                  style: TextStyle(color: vc.textMuted, fontSize: 12),
-                  overflow: TextOverflow.ellipsis,
-                ),
+                Text(user['email'] ?? '', style: TextStyle(color: vc.textMuted, fontSize: 12), overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 4),
-                // Client name
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: VividColors.brightBlue.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    clientName,
-                    style: const TextStyle(color: VividColors.cyan, fontSize: 11),
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  decoration: BoxDecoration(color: VividColors.brightBlue.withOpacity(0.2), borderRadius: BorderRadius.circular(10)),
+                  child: Text(clientName, style: const TextStyle(color: VividColors.cyan, fontSize: 11), overflow: TextOverflow.ellipsis),
                 ),
               ],
             ),
           ),
-          // Action buttons
           _buildUserActions(context, user, provider),
         ],
       ),
@@ -1903,50 +2505,42 @@ class _UsersTab extends StatelessWidget {
     String clientName,
     String role,
     AdminProvider provider,
+    bool isSelected,
   ) {
     final vc = context.vividColors;
+    final userId = user['id'] as String;
+    final status = user['status'] as String? ?? 'active';
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: vc.borderSubtle),
-        ),
+        color: isSelected ? VividColors.brightBlue.withOpacity(0.06) : null,
+        border: Border(bottom: BorderSide(color: vc.borderSubtle)),
       ),
       child: Row(
         children: [
-          Expanded(
-            flex: 2,
-            child: Text(
-              user['name'] ?? '',
-              style: TextStyle(color: vc.textPrimary),
-              overflow: TextOverflow.ellipsis,
+          SizedBox(
+            width: 40,
+            child: Checkbox(
+              value: isSelected,
+              onChanged: (_) => _toggleUser(userId),
+              activeColor: VividColors.cyan,
+              side: BorderSide(color: vc.textMuted),
+              visualDensity: VisualDensity.compact,
             ),
           ),
-          Expanded(
-            flex: 3,
-            child: Text(
-              user['email'] ?? '',
-              style: TextStyle(color: vc.textMuted),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
+          Expanded(flex: 2, child: Text(user['name'] ?? '', style: TextStyle(color: vc.textPrimary), overflow: TextOverflow.ellipsis)),
+          Expanded(flex: 3, child: Text(user['email'] ?? '', style: TextStyle(color: vc.textMuted), overflow: TextOverflow.ellipsis)),
+          Expanded(flex: 1, child: _RoleBadge(role: role)),
           Expanded(
             flex: 1,
-            child: _RoleBadge(role: role),
+            child: _StatusBadge(status: status),
           ),
           Expanded(
             flex: 2,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: VividColors.brightBlue.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                clientName,
-                style: const TextStyle(color: VividColors.cyan, fontSize: 12),
-                overflow: TextOverflow.ellipsis,
-              ),
+              decoration: BoxDecoration(color: VividColors.brightBlue.withOpacity(0.2), borderRadius: BorderRadius.circular(10)),
+              child: Text(clientName, style: const TextStyle(color: VividColors.cyan, fontSize: 12), overflow: TextOverflow.ellipsis),
             ),
           ),
           _buildUserActions(context, user, provider),
@@ -2204,6 +2798,109 @@ class _UsersTab extends StatelessWidget {
   }
 }
 
+// ── Helper widgets for _UsersTab ─────────────────────
+
+class _StatusBadge extends StatelessWidget {
+  final String status;
+  const _StatusBadge({required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    final isBlocked = status == 'blocked';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: (isBlocked ? Colors.red : VividColors.statusSuccess).withOpacity(0.15),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        isBlocked ? 'Blocked' : 'Active',
+        style: TextStyle(
+          color: isBlocked ? Colors.red : VividColors.statusSuccess,
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final bool isActive;
+  final VoidCallback onClear;
+  final List<PopupMenuEntry<String>> items;
+  final ValueChanged<String> onSelected;
+
+  const _FilterChip({
+    required this.label,
+    required this.isActive,
+    required this.onClear,
+    required this.items,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final vc = context.vividColors;
+    return PopupMenuButton<String>(
+      onSelected: onSelected,
+      itemBuilder: (_) => items,
+      color: vc.surface,
+      child: Container(
+        height: 36,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: isActive ? VividColors.brightBlue.withOpacity(0.15) : vc.surfaceAlt,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: isActive ? VividColors.cyan.withOpacity(0.5) : vc.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(label, style: TextStyle(color: isActive ? VividColors.cyan : vc.textMuted, fontSize: 12)),
+            const SizedBox(width: 4),
+            if (isActive)
+              GestureDetector(
+                onTap: onClear,
+                child: const Icon(Icons.close, size: 14, color: VividColors.cyan),
+              )
+            else
+              Icon(Icons.arrow_drop_down, size: 16, color: vc.textMuted),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BulkActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onPressed;
+
+  const _BulkActionButton({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 16, color: color),
+      label: Text(label, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w500)),
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        visualDensity: VisualDensity.compact,
+      ),
+    );
+  }
+}
+
 // ============================================
 // CLIENT DIALOG
 // ============================================
@@ -2232,6 +2929,7 @@ class _ClientOnboardingWizardState extends State<_ClientOnboardingWizard> {
   // Step 2 — Features
   final Set<String> _selectedFeatures = {};
   bool _hasAiConversations = true;
+  final List<Map<String, dynamic>> _pendingTriggers = [];
 
   // Step 3 — Configuration
   final _conversationsPhoneController = TextEditingController();
@@ -2319,6 +3017,7 @@ class _ClientOnboardingWizardState extends State<_ClientOnboardingWizard> {
     final managerChatsTable = _selectedFeatures.contains('manager_chat') ? '${slug}_manager_chats' : null;
     final templatesTable = (_selectedFeatures.contains('whatsapp_templates') || _selectedFeatures.contains('broadcasts')) ? '${slug}_whatsapp_templates' : null;
     final aiSettingsTable = '${slug}_ai_chat_settings';
+    final customerPredictionsTable = _selectedFeatures.contains('predictive_intelligence') ? '${slug}_customer_predictions' : null;
 
     final success = await provider.createClient(
       name: _nameController.text.trim(),
@@ -2331,6 +3030,7 @@ class _ClientOnboardingWizardState extends State<_ClientOnboardingWizard> {
       managerChatsTable: managerChatsTable,
       broadcastRecipientsTable: broadcastRecipientsTable,
       aiSettingsTable: aiSettingsTable,
+      customerPredictionsTable: customerPredictionsTable,
       conversationsPhone: _conversationsPhoneController.text.trim().isEmpty ? null : _conversationsPhoneController.text.trim(),
       conversationsWebhookUrl: _conversationsWebhookController.text.trim().isEmpty ? null : _conversationsWebhookController.text.trim(),
       broadcastsPhone: _broadcastsPhoneController.text.trim().isEmpty ? null : _broadcastsPhoneController.text.trim(),
@@ -2351,18 +3051,31 @@ class _ClientOnboardingWizardState extends State<_ClientOnboardingWizard> {
       return;
     }
 
+    // Find the newly created client
+    final newClient = provider.clients.firstWhere(
+      (c) => c.slug == _slugController.text.trim(),
+      orElse: () => provider.clients.first,
+    );
+
     // Optionally create first user
     if (_createUser && _userNameController.text.trim().isNotEmpty) {
-      final newClient = provider.clients.firstWhere(
-        (c) => c.slug == _slugController.text.trim(),
-        orElse: () => provider.clients.first,
-      );
       await provider.createUser(
         clientId: newClient.id,
         name: _userNameController.text.trim(),
         email: _userEmailController.text.trim(),
         password: _userPasswordController.text.trim(),
         role: 'admin',
+      );
+    }
+
+    // Create pending label triggers
+    for (final trigger in _pendingTriggers) {
+      await provider.createLabelTrigger(
+        clientId: newClient.id,
+        label: trigger['label'] as String,
+        triggerWords: List<String>.from(trigger['trigger_words'] as List),
+        color: trigger['color'] as String? ?? '#38BEC9',
+        autoApply: trigger['auto_apply'] as bool? ?? true,
       );
     }
 
@@ -2654,6 +3367,7 @@ class _ClientOnboardingWizardState extends State<_ClientOnboardingWizard> {
     ('labels', Icons.label, 'Labels', 'Works with Conversations'),
     ('whatsapp_templates', Icons.article_outlined, 'Templates', 'Works with Broadcasts'),
     ('media', Icons.perm_media, 'Media', 'Works with Conversations'),
+    ('predictive_intelligence', Icons.auto_graph, 'Predictive Intelligence', 'AI-powered customer return predictions'),
   ];
 
   /// Auto-enable analytics when any core feature is on, auto-disable when none are.
@@ -2880,28 +3594,107 @@ class _ClientOnboardingWizardState extends State<_ClientOnboardingWizard> {
             children: [
               Icon(Icons.label, color: Colors.amber, size: 20),
               const SizedBox(width: 8),
-              Text('Label Configuration', style: TextStyle(color: vc.textPrimary, fontWeight: FontWeight.w600, fontSize: 14)),
+              Expanded(
+                child: Text('Label Triggers', style: TextStyle(color: vc.textPrimary, fontWeight: FontWeight.w600, fontSize: 14)),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _showPendingTriggerDialog(vc),
+                icon: const Icon(Icons.add, size: 14),
+                label: const Text('Add'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.amber,
+                  side: BorderSide(color: Colors.amber.withValues(alpha: 0.4)),
+                  textStyle: const TextStyle(fontSize: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 8),
-          Text(
-            'Labels can be auto-applied based on trigger words in messages. Configure trigger words after the client is created.',
-            style: TextStyle(color: vc.textMuted, fontSize: 12),
-          ),
-          const SizedBox(height: 10),
-          OutlinedButton.icon(
-            onPressed: null, // Configured after creation
-            icon: const Icon(Icons.tune, size: 16),
-            label: const Text('Configure Label Triggers'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.amber,
-              side: BorderSide(color: Colors.amber.withValues(alpha: 0.4)),
-              textStyle: const TextStyle(fontSize: 12),
-            ),
-          ),
+          if (_pendingTriggers.isEmpty)
+            Text(
+              'No label triggers yet. Add triggers to auto-label incoming messages.',
+              style: TextStyle(color: vc.textMuted, fontSize: 12),
+            )
+          else
+            ..._pendingTriggers.asMap().entries.map((entry) {
+              final i = entry.key;
+              final t = entry.value;
+              final color = _hexToColorStatic(t['color'] as String? ?? '#38BEC9');
+              final words = (t['trigger_words'] as List<dynamic>?) ?? [];
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: vc.surfaceAlt,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(t['label'] as String? ?? '', style: TextStyle(color: vc.textPrimary, fontSize: 13, fontWeight: FontWeight.w500)),
+                            if (words.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Wrap(
+                                spacing: 4, runSpacing: 4,
+                                children: words.map((w) => Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(color: color.withOpacity(0.15), borderRadius: BorderRadius.circular(6)),
+                                  child: Text(w.toString(), style: TextStyle(color: color, fontSize: 11)),
+                                )).toList(),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.edit, size: 16, color: vc.textMuted),
+                        onPressed: () => _showPendingTriggerDialog(vc, index: i),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.delete_outline, size: 16, color: VividColors.statusUrgent),
+                        onPressed: () => setState(() => _pendingTriggers.removeAt(i)),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
         ],
       ),
     );
+  }
+
+  void _showPendingTriggerDialog(VividColorScheme vc, {int? index}) {
+    final existing = index != null ? _pendingTriggers[index] : null;
+    showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) => _PendingLabelTriggerDialog(existing: existing),
+    ).then((result) {
+      if (result != null) {
+        setState(() {
+          if (index != null) {
+            _pendingTriggers[index] = result;
+          } else {
+            _pendingTriggers.add(result);
+          }
+        });
+      }
+    });
+  }
+
+  static Color _hexToColorStatic(String hex) {
+    hex = hex.replaceFirst('#', '');
+    if (hex.length == 6) hex = 'FF$hex';
+    return Color(int.parse(hex, radix: 16));
   }
 
   // ── Step 3: Configuration ───────────────────────────
@@ -3348,6 +4141,10 @@ class _ClientDialogState extends State<_ClientDialog> {
   bool _hasAiConversations = true;
   bool _isLoading = false;
 
+  // Label triggers (for edit mode — live from DB)
+  List<Map<String, dynamic>> _labelTriggers = [];
+  bool _isLoadingTriggers = false;
+
   void _syncAnalytics() {
     final hasCoreFeature = _selectedFeatures.any((f) => const ['conversations', 'broadcasts', 'manager_chat'].contains(f));
     if (hasCoreFeature && !_selectedFeatures.contains('analytics')) {
@@ -3373,6 +4170,24 @@ class _ClientDialogState extends State<_ClientDialog> {
 
     _selectedFeatures = List.from(widget.client?.enabledFeatures ?? []);
     _hasAiConversations = widget.client?.hasAiConversations ?? true;
+
+    // Load label triggers for existing clients with labels enabled
+    if (widget.client != null && _selectedFeatures.contains('labels')) {
+      _fetchLabelTriggers();
+    }
+  }
+
+  Future<void> _fetchLabelTriggers() async {
+    if (widget.client == null) return;
+    setState(() => _isLoadingTriggers = true);
+    final provider = context.read<AdminProvider>();
+    await provider.fetchLabelTriggers(widget.client!.id);
+    if (mounted) {
+      setState(() {
+        _labelTriggers = List.from(provider.labelTriggers);
+        _isLoadingTriggers = false;
+      });
+    }
   }
 
   @override
@@ -3520,42 +4335,7 @@ class _ClientDialogState extends State<_ClientDialog> {
                 // Label configuration section
                 if (_selectedFeatures.contains('labels')) ...[
                   const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.amber.withValues(alpha: 0.06),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.amber.withValues(alpha: 0.2)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(Icons.label, color: Colors.amber, size: 18),
-                            const SizedBox(width: 8),
-                            Text('Label Configuration', style: TextStyle(color: vc.textPrimary, fontWeight: FontWeight.w600, fontSize: 13)),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Labels can be auto-applied based on trigger words in messages.',
-                          style: TextStyle(color: vc.textMuted, fontSize: 12),
-                        ),
-                        const SizedBox(height: 8),
-                        OutlinedButton.icon(
-                          onPressed: null,
-                          icon: const Icon(Icons.tune, size: 14),
-                          label: const Text('Configure Label Triggers'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.amber,
-                            side: BorderSide(color: Colors.amber.withValues(alpha: 0.4)),
-                            textStyle: const TextStyle(fontSize: 11),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  _buildInlineLabelTriggers(vc),
                 ],
 
                 const SizedBox(height: 24),
@@ -3760,6 +4540,7 @@ class _ClientDialogState extends State<_ClientDialog> {
       ('Recipients', c.broadcastRecipientsTable),
       ('Manager Chats', c.managerChatsTable),
       ('Templates', c.templatesTable),
+      ('Predictions', c.customerPredictionsTable),
     ];
     final configured = tables.where((t) => t.$2 != null && t.$2!.isNotEmpty).toList();
     if (configured.isEmpty) {
@@ -3796,6 +4577,130 @@ class _ClientDialogState extends State<_ClientDialog> {
         }).toList(),
       ),
     );
+  }
+
+  Widget _buildInlineLabelTriggers(VividColorScheme vc) {
+    final isEdit = widget.client != null;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.amber.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.amber.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.label, color: Colors.amber, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text('Label Triggers', style: TextStyle(color: vc.textPrimary, fontWeight: FontWeight.w600, fontSize: 13)),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _showTriggerDialog(vc),
+                icon: const Icon(Icons.add, size: 14),
+                label: const Text('Add'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.amber,
+                  side: BorderSide(color: Colors.amber.withValues(alpha: 0.4)),
+                  textStyle: const TextStyle(fontSize: 11),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (_isLoadingTriggers)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: VividColors.cyan))),
+            )
+          else if (isEdit && _labelTriggers.isEmpty)
+            Text('No label triggers configured.', style: TextStyle(color: vc.textMuted, fontSize: 12))
+          else if (!isEdit)
+            Text('Save the client first, then add label triggers.', style: TextStyle(color: vc.textMuted, fontSize: 12))
+          else
+            ..._labelTriggers.map((t) {
+              final color = _hexToColorLocal(t['color'] as String? ?? '#38BEC9');
+              final words = (t['trigger_words'] as List<dynamic>?) ?? [];
+              final id = t['id'] as String;
+              final label = t['label'] as String? ?? '';
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: vc.surfaceAlt,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(label, style: TextStyle(color: vc.textPrimary, fontSize: 12, fontWeight: FontWeight.w500)),
+                            if (words.isNotEmpty) ...[
+                              const SizedBox(height: 3),
+                              Wrap(
+                                spacing: 4, runSpacing: 3,
+                                children: words.map((w) => Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                  decoration: BoxDecoration(color: color.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(4)),
+                                  child: Text(w.toString(), style: TextStyle(color: color, fontSize: 10)),
+                                )).toList(),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.edit, size: 14, color: vc.textMuted),
+                        onPressed: () => _showTriggerDialog(vc, existing: t),
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline, size: 14, color: VividColors.statusUrgent),
+                        onPressed: () async {
+                          final provider = context.read<AdminProvider>();
+                          await provider.deleteLabelTrigger(id, widget.client!.id);
+                          if (mounted) await _fetchLabelTriggers();
+                        },
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+
+  void _showTriggerDialog(VividColorScheme vc, {Map<String, dynamic>? existing}) {
+    if (widget.client == null) return; // Can't add triggers without a client
+    showDialog(
+      context: context,
+      builder: (ctx) => _LabelTriggerDialog(clientId: widget.client!.id, existing: existing),
+    ).then((_) {
+      if (mounted) _fetchLabelTriggers();
+    });
+  }
+
+  static Color _hexToColorLocal(String hex) {
+    hex = hex.replaceFirst('#', '');
+    if (hex.length == 6) hex = 'FF$hex';
+    return Color(int.parse(hex, radix: 16));
   }
 
   Future<void> _submit() async {
@@ -4993,6 +5898,1235 @@ class _ClientPreviewScreen extends StatelessWidget {
                 ),
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================
+// PENDING LABEL TRIGGER DIALOG (for create wizard — returns Map, no DB)
+// ============================================
+
+class _PendingLabelTriggerDialog extends StatefulWidget {
+  final Map<String, dynamic>? existing;
+
+  const _PendingLabelTriggerDialog({this.existing});
+
+  @override
+  State<_PendingLabelTriggerDialog> createState() => _PendingLabelTriggerDialogState();
+}
+
+class _PendingLabelTriggerDialogState extends State<_PendingLabelTriggerDialog> {
+  late TextEditingController _labelCtrl;
+  late TextEditingController _wordCtrl;
+  late List<String> _triggerWords;
+  late String _selectedColor;
+  late bool _autoApply;
+
+  static const _presetColors = [
+    '#38BEC9', '#34B869', '#DC4444', '#D4A528',
+    '#9333EA', '#0550B8', '#F59E0B', '#EC4899',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.existing;
+    _labelCtrl = TextEditingController(text: e?['label'] as String? ?? '');
+    _wordCtrl = TextEditingController();
+    _triggerWords = (e?['trigger_words'] as List<dynamic>?)?.map((w) => w.toString()).toList() ?? [];
+    _selectedColor = e?['color'] as String? ?? '#38BEC9';
+    _autoApply = e?['auto_apply'] as bool? ?? true;
+  }
+
+  @override
+  void dispose() {
+    _labelCtrl.dispose();
+    _wordCtrl.dispose();
+    super.dispose();
+  }
+
+  void _addWord() {
+    final word = _wordCtrl.text.trim();
+    if (word.isNotEmpty && !_triggerWords.contains(word)) {
+      setState(() { _triggerWords.add(word); _wordCtrl.clear(); });
+    }
+  }
+
+  static Color _hexToColor(String hex) {
+    hex = hex.replaceFirst('#', '');
+    if (hex.length == 6) hex = 'FF$hex';
+    return Color(int.parse(hex, radix: 16));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final vc = context.vividColors;
+    final isEdit = widget.existing != null;
+
+    return AlertDialog(
+      backgroundColor: vc.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: Row(children: [
+        Icon(isEdit ? Icons.edit : Icons.new_label, color: VividColors.cyan, size: 20),
+        const SizedBox(width: 8),
+        Text(isEdit ? 'Edit Label Trigger' : 'Add Label Trigger', style: TextStyle(color: vc.textPrimary, fontSize: 18)),
+      ]),
+      content: SizedBox(
+        width: 420,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Label Name', style: TextStyle(color: vc.textMuted, fontSize: 12)),
+              const SizedBox(height: 6),
+              TextField(
+                controller: _labelCtrl,
+                style: TextStyle(color: vc.textPrimary, fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: 'e.g. Appointment Booked',
+                  hintStyle: TextStyle(color: vc.textMuted, fontSize: 13),
+                  filled: true, fillColor: vc.background,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: vc.border)),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: vc.border)),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: VividColors.cyan)),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text('Color', style: TextStyle(color: vc.textMuted, fontSize: 12)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 10, runSpacing: 10,
+                children: _presetColors.map((hex) {
+                  final color = _hexToColor(hex);
+                  final isSelected = _selectedColor == hex;
+                  return GestureDetector(
+                    onTap: () => setState(() => _selectedColor = hex),
+                    child: Container(
+                      width: 32, height: 32,
+                      decoration: BoxDecoration(
+                        color: color, shape: BoxShape.circle,
+                        border: Border.all(color: isSelected ? Colors.white : Colors.transparent, width: 2.5),
+                        boxShadow: isSelected ? [BoxShadow(color: color.withValues(alpha: 0.5), blurRadius: 8)] : null,
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 16),
+              Text('Trigger Words', style: TextStyle(color: vc.textMuted, fontSize: 12)),
+              const SizedBox(height: 6),
+              Row(children: [
+                Expanded(
+                  child: TextField(
+                    controller: _wordCtrl,
+                    style: TextStyle(color: vc.textPrimary, fontSize: 14),
+                    onSubmitted: (_) => _addWord(),
+                    decoration: InputDecoration(
+                      hintText: 'Type a word and press Enter',
+                      hintStyle: TextStyle(color: vc.textMuted, fontSize: 13),
+                      filled: true, fillColor: vc.background,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: vc.border)),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: vc.border)),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: VividColors.cyan)),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(onPressed: _addWord, icon: const Icon(Icons.add_circle, color: VividColors.cyan), tooltip: 'Add word'),
+              ]),
+              const SizedBox(height: 8),
+              if (_triggerWords.isNotEmpty)
+                Wrap(
+                  spacing: 6, runSpacing: 6,
+                  children: _triggerWords.map((w) {
+                    final color = _hexToColor(_selectedColor);
+                    return Chip(
+                      label: Text(w, style: TextStyle(color: color, fontSize: 12)),
+                      backgroundColor: vc.surfaceAlt,
+                      deleteIconColor: vc.textMuted,
+                      onDeleted: () => setState(() => _triggerWords.remove(w)),
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      side: BorderSide.none,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    );
+                  }).toList(),
+                ),
+              const SizedBox(height: 16),
+              Row(children: [
+                Switch(value: _autoApply, onChanged: (v) => setState(() => _autoApply = v), activeColor: VividColors.cyan),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Auto-apply when message contains any trigger word', style: TextStyle(color: vc.textPrimary, fontSize: 13))),
+              ]),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: Text('Cancel', style: TextStyle(color: vc.textMuted))),
+        FilledButton(
+          onPressed: () {
+            final label = _labelCtrl.text.trim();
+            if (label.isEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Label name is required'), backgroundColor: VividColors.statusUrgent),
+              );
+              return;
+            }
+            Navigator.of(context).pop(<String, dynamic>{
+              'label': label,
+              'trigger_words': List<String>.from(_triggerWords),
+              'color': _selectedColor,
+              'auto_apply': _autoApply,
+            });
+          },
+          style: FilledButton.styleFrom(backgroundColor: VividColors.cyan, foregroundColor: Colors.white),
+          child: Text(isEdit ? 'Save' : 'Add'),
+        ),
+      ],
+    );
+  }
+}
+
+// ============================================
+// LABEL TRIGGER DIALOG
+// ============================================
+
+class _LabelTriggerDialog extends StatefulWidget {
+  final String clientId;
+  final Map<String, dynamic>? existing;
+
+  const _LabelTriggerDialog({required this.clientId, this.existing});
+
+  @override
+  State<_LabelTriggerDialog> createState() => _LabelTriggerDialogState();
+}
+
+class _LabelTriggerDialogState extends State<_LabelTriggerDialog> {
+  late TextEditingController _labelCtrl;
+  late TextEditingController _wordCtrl;
+  late List<String> _triggerWords;
+  late String _selectedColor;
+  late bool _autoApply;
+  bool _saving = false;
+
+  static const _presetColors = [
+    '#38BEC9', // cyan
+    '#34B869', // green
+    '#DC4444', // red
+    '#D4A528', // orange
+    '#9333EA', // purple
+    '#0550B8', // blue
+    '#F59E0B', // amber
+    '#EC4899', // pink
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.existing;
+    _labelCtrl = TextEditingController(text: e?['label'] as String? ?? '');
+    _wordCtrl = TextEditingController();
+    _triggerWords = (e?['trigger_words'] as List<dynamic>?)
+            ?.map((w) => w.toString())
+            .toList() ??
+        [];
+    _selectedColor = e?['color'] as String? ?? '#38BEC9';
+    _autoApply = e?['auto_apply'] as bool? ?? true;
+  }
+
+  @override
+  void dispose() {
+    _labelCtrl.dispose();
+    _wordCtrl.dispose();
+    super.dispose();
+  }
+
+  void _addWord() {
+    final word = _wordCtrl.text.trim();
+    if (word.isNotEmpty && !_triggerWords.contains(word)) {
+      setState(() {
+        _triggerWords.add(word);
+        _wordCtrl.clear();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final vc = context.vividColors;
+    final isEdit = widget.existing != null;
+
+    return AlertDialog(
+      backgroundColor: vc.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: Row(
+        children: [
+          Icon(
+            isEdit ? Icons.edit : Icons.new_label,
+            color: VividColors.cyan,
+            size: 20,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            isEdit ? 'Edit Label Trigger' : 'Add Label Trigger',
+            style: TextStyle(color: vc.textPrimary, fontSize: 18),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: 420,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Label name
+              Text('Label Name', style: TextStyle(color: vc.textMuted, fontSize: 12)),
+              const SizedBox(height: 6),
+              TextField(
+                controller: _labelCtrl,
+                style: TextStyle(color: vc.textPrimary, fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: 'e.g. Appointment Booked',
+                  hintStyle: TextStyle(color: vc.textMuted, fontSize: 13),
+                  filled: true,
+                  fillColor: vc.background,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: vc.border),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: vc.border),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: VividColors.cyan),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Color picker
+              Text('Color', style: TextStyle(color: vc.textMuted, fontSize: 12)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: _presetColors.map((hex) {
+                  final color = _hexToColor(hex);
+                  final isSelected = _selectedColor == hex;
+                  return GestureDetector(
+                    onTap: () => setState(() => _selectedColor = hex),
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: color,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: isSelected ? Colors.white : Colors.transparent,
+                          width: 2.5,
+                        ),
+                        boxShadow: isSelected
+                            ? [BoxShadow(color: color.withOpacity(0.5), blurRadius: 8)]
+                            : null,
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 16),
+
+              // Trigger words
+              Text('Trigger Words', style: TextStyle(color: vc.textMuted, fontSize: 12)),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _wordCtrl,
+                      style: TextStyle(color: vc.textPrimary, fontSize: 14),
+                      onSubmitted: (_) => _addWord(),
+                      decoration: InputDecoration(
+                        hintText: 'Type a word and press Enter',
+                        hintStyle: TextStyle(color: vc.textMuted, fontSize: 13),
+                        filled: true,
+                        fillColor: vc.background,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: vc.border),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: vc.border),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: VividColors.cyan),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    onPressed: _addWord,
+                    icon: const Icon(Icons.add_circle, color: VividColors.cyan),
+                    tooltip: 'Add word',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              if (_triggerWords.isNotEmpty)
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: _triggerWords.map((w) {
+                    final color = _hexToColor(_selectedColor);
+                    return Chip(
+                      label: Text(w, style: TextStyle(color: color, fontSize: 12)),
+                      backgroundColor: vc.surfaceAlt,
+                      deleteIconColor: vc.textMuted,
+                      onDeleted: () => setState(() => _triggerWords.remove(w)),
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      side: BorderSide.none,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    );
+                  }).toList(),
+                ),
+              const SizedBox(height: 16),
+
+              // Auto-apply toggle
+              Row(
+                children: [
+                  Switch(
+                    value: _autoApply,
+                    onChanged: (v) => setState(() => _autoApply = v),
+                    activeColor: VividColors.cyan,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Auto-apply when message contains any trigger word',
+                      style: TextStyle(color: vc.textPrimary, fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text('Cancel', style: TextStyle(color: vc.textMuted)),
+        ),
+        FilledButton(
+          onPressed: _saving ? null : _save,
+          style: FilledButton.styleFrom(
+            backgroundColor: VividColors.cyan,
+            foregroundColor: Colors.white,
+          ),
+          child: _saving
+              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+              : Text(isEdit ? 'Save' : 'Add'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _save() async {
+    final label = _labelCtrl.text.trim();
+    if (label.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Label name is required'), backgroundColor: VividColors.statusUrgent),
+      );
+      return;
+    }
+
+    setState(() => _saving = true);
+    final provider = context.read<AdminProvider>();
+
+    String? err;
+    if (widget.existing != null) {
+      err = await provider.updateLabelTrigger(
+        widget.existing!['id'] as String,
+        {
+          'label': label,
+          'trigger_words': _triggerWords,
+          'color': _selectedColor,
+          'auto_apply': _autoApply,
+        },
+        widget.clientId,
+      );
+    } else {
+      err = await provider.createLabelTrigger(
+        clientId: widget.clientId,
+        label: label,
+        triggerWords: _triggerWords,
+        color: _selectedColor,
+        autoApply: _autoApply,
+      );
+    }
+
+    if (!mounted) return;
+    setState(() => _saving = false);
+
+    if (err != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $err'), backgroundColor: VividColors.statusUrgent),
+      );
+    } else {
+      Navigator.of(context).pop();
+    }
+  }
+
+  static Color _hexToColor(String hex) {
+    hex = hex.replaceFirst('#', '');
+    if (hex.length == 6) hex = 'FF$hex';
+    return Color(int.parse(hex, radix: 16));
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ADMIN TEMPLATES TAB
+// ═══════════════════════════════════════════════════════════════════
+
+class _AdminTemplatesTab extends StatefulWidget {
+  const _AdminTemplatesTab();
+
+  @override
+  State<_AdminTemplatesTab> createState() => _AdminTemplatesTabState();
+}
+
+class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
+  List<WhatsAppTemplate> _templates = [];
+  bool _isLoading = false;
+  String? _error;
+  String _search = '';
+  String? _statusFilter;
+  String? _categoryFilter;
+  WhatsAppTemplate? _selected;
+  bool _isDeleting = false;
+
+  static String get _baseUrl =>
+      'https://graph.facebook.com/${SupabaseService.metaApiVersion}';
+
+  Map<String, String> get _headers => {
+        'Authorization': 'Bearer ${SupabaseService.metaAccessToken}',
+        'Content-Type': 'application/json',
+      };
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchTemplates();
+  }
+
+  Future<void> _fetchTemplates() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      final all = <WhatsAppTemplate>[];
+      String? nextUrl =
+          '$_baseUrl/${SupabaseService.metaWabaId}/message_templates?limit=100&fields=id,name,status,language,category,components';
+
+      while (nextUrl != null) {
+        final response = await http.get(Uri.parse(nextUrl), headers: _headers);
+        if (response.statusCode != 200) {
+          final body = jsonDecode(response.body) as Map<String, dynamic>;
+          final err = body['error'] as Map<String, dynamic>?;
+          throw Exception(err?['message'] ?? 'HTTP ${response.statusCode}');
+        }
+        final body = jsonDecode(response.body) as Map<String, dynamic>;
+        final data = body['data'] as List<dynamic>? ?? [];
+        for (final item in data) {
+          all.add(WhatsAppTemplate.fromJson(item as Map<String, dynamic>));
+        }
+        final paging = body['paging'] as Map<String, dynamic>?;
+        final next = paging?['next'] as String?;
+        nextUrl = (next != null && next.isNotEmpty) ? next : null;
+      }
+
+      all.sort((a, b) => a.name.compareTo(b.name));
+      print('ADMIN_TEMPLATES: fetched ${all.length} templates from Meta API');
+      if (mounted) setState(() => _templates = all);
+    } catch (e) {
+      print('ADMIN_TEMPLATES: error: $e');
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _deleteTemplate(WhatsAppTemplate t) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        final vc = ctx.vividColors;
+        return AlertDialog(
+          backgroundColor: vc.surface,
+          title: Text('Delete Template', style: TextStyle(color: vc.textPrimary)),
+          content: Text(
+            "Delete '${t.name}'? This will remove it from your WhatsApp Business Account and all client tables.",
+            style: TextStyle(color: vc.textSecondary),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text('Cancel', style: TextStyle(color: vc.textMuted)),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: VividColors.statusUrgent),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirm != true) return;
+
+    setState(() => _isDeleting = true);
+    try {
+      // Step 1: Delete from Meta API
+      final uri = Uri.parse(
+        '$_baseUrl/${SupabaseService.metaWabaId}/message_templates?name=${t.name}',
+      );
+      final response = await http.delete(uri, headers: _headers);
+      if (response.statusCode != 200) {
+        final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+        final err = decoded['error'] as Map<String, dynamic>?;
+        throw Exception(err?['message'] ?? 'Failed (${response.statusCode})');
+      }
+
+      // Step 2: Delete from all client Supabase tables
+      final clients = context.read<AdminProvider>().clients;
+      int cleaned = 0;
+      for (final c in clients) {
+        if (c.templatesTable != null && c.templatesTable!.isNotEmpty) {
+          try {
+            await SupabaseService.adminClient
+                .from(c.templatesTable!)
+                .delete()
+                .eq('template_name', t.name);
+            cleaned++;
+          } catch (_) {
+            // Table may not exist or row may not exist — skip
+          }
+        }
+      }
+
+      print('ADMIN_TEMPLATES: deleted "${t.name}" from Meta + $cleaned client tables');
+      if (mounted) {
+        setState(() {
+          _templates.removeWhere((x) => x.name == t.name);
+          if (_selected?.name == t.name) _selected = null;
+        });
+        VividToast.show(context,
+            message: 'Template deleted from Meta + $cleaned client table${cleaned == 1 ? '' : 's'}',
+            type: ToastType.success);
+      }
+    } catch (e) {
+      print('ADMIN_TEMPLATES: delete error: $e');
+      if (mounted) {
+        VividToast.show(context, message: 'Delete failed: $e', type: ToastType.error);
+      }
+    } finally {
+      if (mounted) setState(() => _isDeleting = false);
+    }
+  }
+
+  List<WhatsAppTemplate> get _filtered {
+    var list = _templates;
+    if (_statusFilter != null) {
+      list = list.where((t) => t.status.toUpperCase() == _statusFilter).toList();
+    }
+    if (_categoryFilter != null) {
+      list = list.where((t) => t.category.toUpperCase() == _categoryFilter).toList();
+    }
+    if (_search.isNotEmpty) {
+      final q = _search.toLowerCase();
+      list = list.where((t) => t.name.toLowerCase().contains(q)).toList();
+    }
+    return list;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final vc = context.vividColors;
+    return Column(
+      children: [
+        _buildHeader(vc),
+        _buildFilters(vc),
+        Expanded(
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator(color: VividColors.cyan))
+              : _error != null
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.error_outline, color: VividColors.statusUrgent, size: 40),
+                          const SizedBox(height: 8),
+                          Text(_error!, style: TextStyle(color: vc.textMuted, fontSize: 13)),
+                          const SizedBox(height: 12),
+                          OutlinedButton(
+                            onPressed: _fetchTemplates,
+                            child: const Text('Retry'),
+                          ),
+                        ],
+                      ),
+                    )
+                  : Row(
+                      children: [
+                        Expanded(child: _buildGrid(vc)),
+                        if (_selected != null) _buildPreview(vc),
+                      ],
+                    ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHeader(VividColorScheme vc) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+      child: Row(
+        children: [
+          Icon(Icons.description, color: VividColors.cyan, size: 20),
+          const SizedBox(width: 8),
+          Text('WhatsApp Templates',
+              style: TextStyle(color: vc.textPrimary, fontSize: 18, fontWeight: FontWeight.w700)),
+          const SizedBox(width: 12),
+          if (!_isLoading)
+            Text('${_templates.length} total',
+                style: TextStyle(color: vc.textMuted, fontSize: 13)),
+          const Spacer(),
+          SizedBox(
+            width: 240,
+            height: 36,
+            child: TextField(
+              style: TextStyle(color: vc.textPrimary, fontSize: 13),
+              decoration: InputDecoration(
+                hintText: 'Search templates…',
+                hintStyle: TextStyle(color: vc.textMuted, fontSize: 13),
+                prefixIcon: Icon(Icons.search, size: 18, color: vc.textMuted),
+                filled: true,
+                fillColor: vc.surfaceAlt,
+                contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: vc.border),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: vc.border),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: VividColors.cyan),
+                ),
+              ),
+              onChanged: (v) => setState(() => _search = v),
+            ),
+          ),
+          const SizedBox(width: 12),
+          if (_selected != null)
+            _isDeleting
+                ? const SizedBox(
+                    width: 20, height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: VividColors.statusUrgent))
+                : IconButton(
+                    tooltip: 'Delete selected template',
+                    icon: const Icon(Icons.delete_outline, color: VividColors.statusUrgent, size: 20),
+                    onPressed: () => _deleteTemplate(_selected!),
+                  ),
+          OutlinedButton.icon(
+            onPressed: _isLoading ? null : _fetchTemplates,
+            icon: const Icon(Icons.refresh, size: 16),
+            label: const Text('Refresh'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: VividColors.cyan,
+              side: const BorderSide(color: VividColors.cyan),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilters(VividColorScheme vc) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+      child: Row(
+        children: [
+          _filterChip(vc, 'All', _statusFilter == null, () => setState(() => _statusFilter = null)),
+          const SizedBox(width: 6),
+          _filterChip(vc, 'Approved', _statusFilter == 'APPROVED',
+              () => setState(() => _statusFilter = _statusFilter == 'APPROVED' ? null : 'APPROVED'),
+              color: VividColors.statusSuccess),
+          const SizedBox(width: 6),
+          _filterChip(vc, 'Pending', _statusFilter == 'PENDING',
+              () => setState(() => _statusFilter = _statusFilter == 'PENDING' ? null : 'PENDING'),
+              color: VividColors.statusWarning),
+          const SizedBox(width: 6),
+          _filterChip(vc, 'Rejected', _statusFilter == 'REJECTED',
+              () => setState(() => _statusFilter = _statusFilter == 'REJECTED' ? null : 'REJECTED'),
+              color: VividColors.statusUrgent),
+          const SizedBox(width: 16),
+          Container(width: 1, height: 20, color: vc.border),
+          const SizedBox(width: 16),
+          _filterChip(vc, 'All Categories', _categoryFilter == null,
+              () => setState(() => _categoryFilter = null)),
+          const SizedBox(width: 6),
+          _filterChip(vc, 'Marketing', _categoryFilter == 'MARKETING',
+              () => setState(() => _categoryFilter = _categoryFilter == 'MARKETING' ? null : 'MARKETING')),
+          const SizedBox(width: 6),
+          _filterChip(vc, 'Utility', _categoryFilter == 'UTILITY',
+              () => setState(() => _categoryFilter = _categoryFilter == 'UTILITY' ? null : 'UTILITY')),
+          const SizedBox(width: 6),
+          _filterChip(vc, 'Authentication', _categoryFilter == 'AUTHENTICATION',
+              () => setState(() => _categoryFilter = _categoryFilter == 'AUTHENTICATION' ? null : 'AUTHENTICATION')),
+        ],
+      ),
+    );
+  }
+
+  Widget _filterChip(VividColorScheme vc, String label, bool selected, VoidCallback onTap,
+      {Color? color}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: selected
+              ? (color ?? VividColors.cyan).withValues(alpha: 0.15)
+              : vc.surfaceAlt,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: selected
+                ? (color ?? VividColors.cyan).withValues(alpha: 0.4)
+                : vc.border,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? (color ?? VividColors.cyan) : vc.textMuted,
+            fontSize: 11,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGrid(VividColorScheme vc) {
+    final items = _filtered;
+    if (items.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.description_outlined, color: vc.textMuted, size: 48),
+            const SizedBox(height: 8),
+            Text(
+              _templates.isEmpty ? 'No templates found' : 'No templates match filters',
+              style: TextStyle(color: vc.textMuted, fontSize: 14),
+            ),
+          ],
+        ),
+      );
+    }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cols = constraints.maxWidth > 1400
+            ? 4
+            : constraints.maxWidth > 1000
+                ? 3
+                : constraints.maxWidth > 640
+                    ? 2
+                    : 1;
+        return GridView.builder(
+          padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: cols,
+            mainAxisSpacing: 14,
+            crossAxisSpacing: 14,
+            childAspectRatio: 1.5,
+          ),
+          itemCount: items.length,
+          itemBuilder: (context, i) => _buildCard(vc, items[i]),
+        );
+      },
+    );
+  }
+
+  Widget _buildCard(VividColorScheme vc, WhatsAppTemplate t) {
+    final isSelected = _selected?.id == t.id;
+    final (statusColor, statusLabel) = switch (t.status.toUpperCase()) {
+      'APPROVED' => (VividColors.statusSuccess, 'Approved'),
+      'PENDING' || 'PENDING_DELETION' => (VividColors.statusWarning, 'Pending'),
+      'REJECTED' => (VividColors.statusUrgent, 'Rejected'),
+      _ => (vc.textMuted, t.status),
+    };
+
+    return Material(
+      color: vc.surface,
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => setState(() => _selected = isSelected ? null : t),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: isSelected ? VividColors.cyan : vc.border),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 4,
+                decoration: BoxDecoration(
+                  color: isSelected ? VividColors.cyan : Colors.transparent,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(12),
+                    bottomLeft: Radius.circular(12),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              t.name,
+                              style: TextStyle(
+                                color: vc.textPrimary,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: statusColor.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(5),
+                              border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+                            ),
+                            child: Text(statusLabel,
+                                style: TextStyle(
+                                    color: statusColor, fontSize: 10, fontWeight: FontWeight.w600)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '${t.language} · ${t.category}',
+                        style: TextStyle(color: vc.textMuted, fontSize: 11),
+                      ),
+                      const SizedBox(height: 8),
+                      Expanded(
+                        child: Text(
+                          t.body,
+                          style: TextStyle(color: vc.textSecondary, fontSize: 12, height: 1.4),
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (t.headerType.isNotEmpty)
+                        Align(
+                          alignment: Alignment.bottomRight,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: vc.surfaceAlt,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              t.headerType,
+                              style: TextStyle(
+                                  color: vc.textMuted,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 0.3),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPreview(VividColorScheme vc) {
+    final t = _selected!;
+    final isApproved = t.status.toUpperCase() == 'APPROVED';
+    final (statusColor, statusLabel) = switch (t.status.toUpperCase()) {
+      'APPROVED' => (VividColors.statusSuccess, 'Approved'),
+      'PENDING' || 'PENDING_DELETION' => (VividColors.statusWarning, 'Pending'),
+      'REJECTED' => (VividColors.statusUrgent, 'Rejected'),
+      _ => (vc.textMuted, t.status),
+    };
+
+    return Container(
+      width: 380,
+      decoration: BoxDecoration(
+        color: vc.surface,
+        border: Border(left: BorderSide(color: vc.border)),
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(t.name,
+                      style: TextStyle(
+                          color: vc.textPrimary, fontSize: 15, fontWeight: FontWeight.w700),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(5),
+                    border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+                  ),
+                  child: Text(statusLabel,
+                      style:
+                          TextStyle(color: statusColor, fontSize: 10, fontWeight: FontWeight.w600)),
+                ),
+                IconButton(
+                  icon: Icon(Icons.close, size: 18, color: vc.textMuted),
+                  onPressed: () => setState(() => _selected = null),
+                ),
+              ],
+            ),
+          ),
+          Divider(color: vc.border, height: 1),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // WhatsApp-style bubble
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isApproved
+                          ? const Color(0xFF1A2E1A)
+                          : vc.surfaceAlt,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isApproved
+                            ? const Color(0xFF2D5A2D)
+                            : vc.border,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (t.headerType == 'IMAGE')
+                          Container(
+                            height: 120,
+                            width: double.infinity,
+                            margin: const EdgeInsets.only(bottom: 10),
+                            decoration: BoxDecoration(
+                              color: vc.surfaceAlt,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: t.headerMediaUrl != null
+                                ? ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Image.network(
+                                      t.headerMediaUrl!,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) => Center(
+                                        child: Icon(Icons.image, color: vc.textMuted, size: 32),
+                                      ),
+                                    ),
+                                  )
+                                : Center(
+                                    child: Icon(Icons.image, color: vc.textMuted, size: 32),
+                                  ),
+                          ),
+                        if (t.headerType == 'VIDEO')
+                          Container(
+                            height: 120,
+                            width: double.infinity,
+                            margin: const EdgeInsets.only(bottom: 10),
+                            decoration: BoxDecoration(
+                              color: vc.surfaceAlt,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Center(
+                              child: Icon(Icons.play_circle_outline, color: vc.textMuted, size: 40),
+                            ),
+                          ),
+                        if (t.headerType == 'DOCUMENT')
+                          Container(
+                            height: 50,
+                            width: double.infinity,
+                            margin: const EdgeInsets.only(bottom: 10),
+                            decoration: BoxDecoration(
+                              color: vc.surfaceAlt,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.insert_drive_file, color: vc.textMuted, size: 20),
+                                const SizedBox(width: 6),
+                                Text('Document', style: TextStyle(color: vc.textMuted, fontSize: 12)),
+                              ],
+                            ),
+                          ),
+                        if (t.headerType == 'TEXT' && t.headerText != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Text(
+                              t.headerText!,
+                              style: TextStyle(
+                                  color: vc.textPrimary, fontSize: 14, fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        _buildBodyWithVars(vc, t.body),
+                        if (t.footer != null && t.footer!.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Text(t.footer!,
+                              style: TextStyle(
+                                  color: vc.textMuted, fontSize: 11, fontStyle: FontStyle.italic)),
+                        ],
+                      ],
+                    ),
+                  ),
+                  if (t.buttons.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    ...t.buttons.map((btn) => Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            decoration: BoxDecoration(
+                              color: vc.surfaceAlt,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: vc.border),
+                            ),
+                            child: Text(
+                              btn.text,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                  color: VividColors.cyan, fontSize: 12, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        )),
+                  ],
+                  const SizedBox(height: 20),
+                  _metaRow(vc, 'Status', statusLabel),
+                  _metaRow(vc, 'Language', t.language),
+                  _metaRow(vc, 'Category', t.category),
+                  _metaRow(vc, 'Header', t.headerType.isEmpty ? 'None' : t.headerType),
+                  _metaRow(vc, 'ID', t.id),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _isDeleting ? null : () => _deleteTemplate(t),
+                      icon: const Icon(Icons.delete_outline, size: 16),
+                      label: Text(_isDeleting ? 'Deleting…' : 'Delete Template'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: VividColors.statusUrgent,
+                        side: const BorderSide(color: VividColors.statusUrgent),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBodyWithVars(VividColorScheme vc, String body) {
+    final regex = RegExp(r'\{\{(\d+)\}\}');
+    final spans = <InlineSpan>[];
+    int lastEnd = 0;
+    for (final match in regex.allMatches(body)) {
+      if (match.start > lastEnd) {
+        spans.add(TextSpan(
+          text: body.substring(lastEnd, match.start),
+          style: TextStyle(color: vc.textPrimary, fontSize: 13, height: 1.5),
+        ));
+      }
+      spans.add(TextSpan(
+        text: match.group(0),
+        style: const TextStyle(
+            color: VividColors.cyan, fontSize: 13, fontWeight: FontWeight.w700, height: 1.5),
+      ));
+      lastEnd = match.end;
+    }
+    if (lastEnd < body.length) {
+      spans.add(TextSpan(
+        text: body.substring(lastEnd),
+        style: TextStyle(color: vc.textPrimary, fontSize: 13, height: 1.5),
+      ));
+    }
+    return RichText(text: TextSpan(children: spans));
+  }
+
+  Widget _metaRow(VividColorScheme vc, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 70,
+            child: Text(label,
+                style: TextStyle(color: vc.textMuted, fontSize: 11, fontWeight: FontWeight.w600)),
+          ),
+          Expanded(
+            child: Text(value,
+                style: TextStyle(color: vc.textSecondary, fontSize: 11, fontFamily: 'monospace'),
+                overflow: TextOverflow.ellipsis),
           ),
         ],
       ),

@@ -398,6 +398,7 @@ class SupabaseService {
     String? remindersPhone,
     String? remindersWebhookUrl,
     String? managerChatWebhookUrl,
+    String? customerPredictionsTable,
     bool hasAiConversations = true,
   }) async {
     try {
@@ -411,6 +412,7 @@ class SupabaseService {
         'manager_chats_table': managerChatsTable,
         'broadcast_recipients_table': broadcastRecipientsTable,
         'ai_settings_table': aiSettingsTable,
+        'customer_predictions_table': customerPredictionsTable,
         'conversations_phone': conversationsPhone,
         'conversations_webhook_url': conversationsWebhookUrl,
         'broadcasts_phone': broadcastsPhone,
@@ -460,6 +462,7 @@ class SupabaseService {
     String? remindersPhone,
     String? remindersWebhookUrl,
     String? managerChatWebhookUrl,
+    String? customerPredictionsTable,
     bool? hasAiConversations,
   }) async {
     try {
@@ -473,6 +476,7 @@ class SupabaseService {
       if (managerChatsTable != null) updates['manager_chats_table'] = managerChatsTable;
       if (broadcastRecipientsTable != null) updates['broadcast_recipients_table'] = broadcastRecipientsTable;
       if (aiSettingsTable != null) updates['ai_settings_table'] = aiSettingsTable;
+      if (customerPredictionsTable != null) updates['customer_predictions_table'] = customerPredictionsTable;
       if (conversationsPhone != null) updates['conversations_phone'] = conversationsPhone;
       if (conversationsWebhookUrl != null) updates['conversations_webhook_url'] = conversationsWebhookUrl;
       if (broadcastsPhone != null) updates['broadcasts_phone'] = broadcastsPhone;
@@ -498,6 +502,24 @@ class SupabaseService {
     } catch (e) {
       print('Update client error: $e');
       return false;
+    }
+  }
+
+  /// Fetch a customer prediction by phone number from the client's predictions table.
+  Future<CustomerPrediction?> fetchCustomerPrediction(String customerPhone) async {
+    final table = ClientConfig.customerPredictionsTable;
+    if (table == null || table.isEmpty) return null;
+    try {
+      final response = await client
+          .from(table)
+          .select()
+          .eq('phone', customerPhone)
+          .maybeSingle();
+      if (response == null) return null;
+      return CustomerPrediction.fromJson(response);
+    } catch (e) {
+      print('Error fetching prediction: $e');
+      return null;
     }
   }
 
@@ -1407,6 +1429,82 @@ class SupabaseService {
       }
     }
     return results;
+  }
+
+  // ============================================
+  // FINANCIALS
+  // ============================================
+
+  Future<List<Map<String, dynamic>>> fetchFinancials({
+    String? type,
+    String? status,
+    String? clientId,
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
+    var query = adminClient.from('vivid_financials').select('*, clients(name)');
+    if (type != null) query = query.eq('type', type);
+    if (status != null) query = query.eq('payment_status', status);
+    if (clientId != null) query = query.eq('client_id', clientId);
+    if (startDate != null) {
+      query = query.gte('created_at', startDate.toIso8601String());
+    }
+    if (endDate != null) {
+      query = query.lte('created_at', endDate.toIso8601String());
+    }
+    final response = await query.order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(response);
+  }
+
+  Future<void> createFinancial(Map<String, dynamic> data) async {
+    await adminClient.from('vivid_financials').insert(data);
+  }
+
+  Future<void> updateFinancial(String id, Map<String, dynamic> updates) async {
+    updates['updated_at'] = DateTime.now().toIso8601String();
+    await adminClient.from('vivid_financials').update(updates).eq('id', id);
+  }
+
+  Future<void> deleteFinancial(String id) async {
+    await adminClient.from('vivid_financials').delete().eq('id', id);
+  }
+
+  // ============================================
+  // LABEL TRIGGERS
+  // ============================================
+
+  Future<List<Map<String, dynamic>>> fetchLabelTriggers(String clientId) async {
+    final response = await adminClient
+        .from('label_trigger_words')
+        .select()
+        .eq('client_id', clientId)
+        .order('created_at');
+    return List<Map<String, dynamic>>.from(response);
+  }
+
+  Future<void> createLabelTrigger({
+    required String clientId,
+    required String label,
+    required List<String> triggerWords,
+    String? color,
+    bool autoApply = true,
+  }) async {
+    await adminClient.from('label_trigger_words').insert({
+      'client_id': clientId,
+      'label': label,
+      'trigger_words': triggerWords,
+      'color': color ?? '#38BEC9',
+      'auto_apply': autoApply,
+    });
+  }
+
+  Future<void> updateLabelTrigger(String id, Map<String, dynamic> updates) async {
+    updates['updated_at'] = DateTime.now().toIso8601String();
+    await adminClient.from('label_trigger_words').update(updates).eq('id', id);
+  }
+
+  Future<void> deleteLabelTrigger(String id) async {
+    await adminClient.from('label_trigger_words').delete().eq('id', id);
   }
 
   // ============================================

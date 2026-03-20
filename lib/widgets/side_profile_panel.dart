@@ -357,6 +357,7 @@ class SideProfilePanel extends StatefulWidget {
 class _SideProfilePanelState extends State<SideProfilePanel>
     with SingleTickerProviderStateMixin {
   SideProfileData? _data;
+  CustomerPrediction? _prediction;
   bool _loading = true;
   late AnimationController _shimmerCtrl;
 
@@ -386,6 +387,7 @@ class _SideProfilePanelState extends State<SideProfilePanel>
       setState(() {
         _loading = true;
         _data = null;
+        _prediction = null;
         _notes = [];
         _notesLoading = true;
         _addingNote = false;
@@ -411,6 +413,17 @@ class _SideProfilePanelState extends State<SideProfilePanel>
       if (mounted) setState(() => _loading = false);
     }
     _loadNotes(phone);
+    _loadPrediction(phone);
+  }
+
+  Future<void> _loadPrediction(String phone) async {
+    if (ClientConfig.customerPredictionsTable == null) return;
+    try {
+      final p = await SupabaseService.instance.fetchCustomerPrediction(phone);
+      if (mounted) setState(() => _prediction = p);
+    } catch (_) {
+      // Silently fail — prediction section just won't show
+    }
   }
 
   Future<void> _loadNotes(String phone) async {
@@ -819,6 +832,105 @@ class _SideProfilePanelState extends State<SideProfilePanel>
     );
   }
 
+  // ── Section 5b: Predictive Intelligence ──────────────────────────────────
+  Widget _buildPrediction() {
+    final p = _prediction;
+    if (p == null) return const SizedBox.shrink();
+
+    // Category badge colors
+    final (catBg, catFg) = switch (p.category) {
+      'New'       => (const Color(0x1A3B82F6), const Color(0xFF60A5FA)),
+      'Returning' => (const Color(0x1A06B6D4), const Color(0xFF22D3EE)),
+      'Regular'   => (const Color(0x1A34D399), const Color(0xFF34D399)),
+      'At Risk'   => (const Color(0x1AF97316), const Color(0xFFFB923C)),
+      'Lapsed'    => (const Color(0x1AEF4444), const Color(0xFFF87171)),
+      _           => (const Color(0x1F64748B), const Color(0xFF94A3B8)),
+    };
+
+    // Predicted return text + color
+    String returnText;
+    Color returnColor;
+    if (p.predictedNextVisit == null) {
+      returnText = 'No prediction';
+      returnColor = const Color(0xFF4B6584);
+    } else if (p.daysUntilPredicted < 0) {
+      returnText = '${p.daysUntilPredicted.abs()} days overdue';
+      returnColor = const Color(0xFFF87171);
+    } else if (p.daysUntilPredicted <= 3) {
+      returnText = 'Expected soon';
+      returnColor = const Color(0xFF34D399);
+    } else {
+      returnText = 'In ${p.daysUntilPredicted} days';
+      returnColor = const Color(0xFFE2E8F0);
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // Header row
+        Row(children: [
+          _sectionLabel('PREDICTIVE INTELLIGENCE'),
+          const Spacer(),
+          const Icon(Icons.auto_graph, size: 14, color: Color(0xFF3D5A80)),
+        ]),
+
+        // Category badge
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+          decoration: BoxDecoration(
+            color: catBg,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Text(p.category,
+            style: TextStyle(color: catFg, fontSize: 11, fontWeight: FontWeight.w600)),
+        ),
+        const SizedBox(height: 14),
+
+        // Info rows
+        _predRow('Predicted Return',
+          p.predictedNextVisit != null ? _formatDate(p.predictedNextVisit) : '--',
+          subtitle: returnText, subtitleColor: returnColor),
+        _predRow('Visit Pattern', 'Every ~${p.avgGapDays} days'),
+        _predRow('Total Visits', '${p.totalVisits}'),
+        _predRow('Last Visit',
+          p.lastVisit != null
+            ? '${_formatDate(p.lastVisit)} (${p.daysSinceLastVisit}d ago)'
+            : '--'),
+        if (p.primaryService != null)
+          _predRow('Primary Service', p.primaryService!),
+        if (p.lastService != null && p.lastService != p.primaryService)
+          _predRow('Last Service', p.lastService!),
+      ]),
+    );
+  }
+
+  Widget _predRow(String label, String value, {String? subtitle, Color? subtitleColor}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SizedBox(
+          width: 110,
+          child: Text(label, style: const TextStyle(
+            color: Color(0xFF4B6584), fontSize: 11, fontWeight: FontWeight.w500)),
+        ),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(value, style: const TextStyle(
+              color: Color(0xFFE2E8F0), fontSize: 12, fontWeight: FontWeight.w600),
+              overflow: TextOverflow.ellipsis, maxLines: 1),
+            if (subtitle != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(subtitle, style: TextStyle(
+                  color: subtitleColor ?? const Color(0xFF4B6584),
+                  fontSize: 10, fontWeight: FontWeight.w500)),
+              ),
+          ]),
+        ),
+      ]),
+    );
+  }
+
   // ── Section 6: Team Notes ─────────────────────────────────────────────────
   Widget _buildTeamNotes() {
     final displayNotes = _showAllNotes ? _notes : _notes.take(3).toList();
@@ -1087,6 +1199,10 @@ class _SideProfilePanelState extends State<SideProfilePanel>
     return SingleChildScrollView(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         _buildCustomerHeader(),
+        if (_prediction != null) ...[
+          _divider(),
+          _buildPrediction(),
+        ],
         _divider(),
         _buildStatsRow(),
         _buildInfoGrid(),

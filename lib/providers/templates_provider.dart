@@ -52,7 +52,7 @@ class TemplatesProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      print('TEMPLATES: fetching from table $table');
+      print('TEMPLATES: loading from Supabase table: $table');
       final clientId = ClientConfig.currentClient?.id ?? '';
       final rows = await SupabaseService.adminClient
           .from(table)
