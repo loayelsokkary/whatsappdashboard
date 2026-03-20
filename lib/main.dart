@@ -240,6 +240,7 @@ class _MainScaffoldState extends State<MainScaffold> {
     if (ClientConfig.hasFeature('conversations')) destinations.add(NavDestination.conversations);
     if (ClientConfig.hasFeature('broadcasts')) destinations.add(NavDestination.broadcasts);
     if (ClientConfig.hasFeature('whatsapp_templates') || ClientConfig.hasFeature('broadcasts')) destinations.add(NavDestination.templates);
+    if (ClientConfig.hasFeature('booking_reminders')) destinations.add(NavDestination.bookingReminders);
     if (ClientConfig.hasFeature('analytics')) destinations.add(NavDestination.analytics);
     if (ClientConfig.hasFeature('manager_chat')) destinations.add(NavDestination.managerChat);
     if (ClientConfig.isClientAdmin) destinations.add(NavDestination.activityLogs);
@@ -251,6 +252,7 @@ class _MainScaffoldState extends State<MainScaffold> {
       case NavDestination.conversations: return Icons.forum;
       case NavDestination.broadcasts: return Icons.campaign;
       case NavDestination.templates: return Icons.article_outlined;
+      case NavDestination.bookingReminders: return Icons.calendar_month;
       case NavDestination.analytics: return Icons.analytics;
       case NavDestination.managerChat: return Icons.chat_bubble_rounded;
       case NavDestination.activityLogs: return Icons.history;
@@ -262,6 +264,7 @@ class _MainScaffoldState extends State<MainScaffold> {
       case NavDestination.conversations: return 'Chats';
       case NavDestination.broadcasts: return 'Broadcasts';
       case NavDestination.templates: return 'Templates';
+      case NavDestination.bookingReminders: return 'Bookings';
       case NavDestination.analytics: return 'Analytics';
       case NavDestination.managerChat: return 'Vivid AI';
       case NavDestination.activityLogs: return 'Logs';
@@ -273,7 +276,6 @@ class _MainScaffoldState extends State<MainScaffold> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isMobile = constraints.maxWidth < 600;
-        final isTablet = constraints.maxWidth < 900;
 
         if (isMobile) {
           return Scaffold(
@@ -288,7 +290,6 @@ class _MainScaffoldState extends State<MainScaffold> {
           body: Row(
             children: [
               Sidebar(
-                compact: isTablet,
                 currentDestination: _currentDestination ?? NavDestination.conversations,
                 onDestinationChanged: (destination) {
                   setState(() => _currentDestination = destination);
@@ -376,6 +377,11 @@ class _MainScaffoldState extends State<MainScaffold> {
             }
             setState(() => _currentDestination = NavDestination.conversations);
           },
+        );
+      case NavDestination.bookingReminders:
+        return Center(
+          child: Text('Booking Reminders — Coming Soon',
+              style: TextStyle(color: context.vividColors.textMuted, fontSize: 16)),
         );
       case NavDestination.activityLogs:
         return _buildActivityLogsContent();

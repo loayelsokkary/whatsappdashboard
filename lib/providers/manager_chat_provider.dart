@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -6,7 +7,24 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/supabase_service.dart';
 import '../models/models.dart';
 
-/// Manager chat message model - matches new schema
+/// A single chat session (grouped from messages by session_id)
+class ChatSession {
+  final String? id; // null = legacy messages without a session_id
+  final String preview; // first user message preview (truncated)
+  final DateTime lastMessageAt;
+  final int messageCount;
+
+  const ChatSession({
+    required this.id,
+    required this.preview,
+    required this.lastMessageAt,
+    required this.messageCount,
+  });
+
+  bool get isLegacy => id == null;
+}
+
+/// Manager chat message model - matches DB schema
 class ManagerChatMessage {
   final String id;
   final String? clientId;
@@ -15,6 +33,7 @@ class ManagerChatMessage {
   final String? userMessage;
   final String? aiResponse;
   final DateTime createdAt;
+  final String? sessionId; // Groups messages into chat sessions
 
   const ManagerChatMessage({
     required this.id,
@@ -24,6 +43,7 @@ class ManagerChatMessage {
     this.userMessage,
     this.aiResponse,
     required this.createdAt,
+    this.sessionId,
   });
 
   factory ManagerChatMessage.fromJson(Map<String, dynamic> json) {
@@ -34,6 +54,7 @@ class ManagerChatMessage {
       userName: json['user_name'] as String?,
       userMessage: json['user_message'] as String?,
       aiResponse: json['ai_response'] as String?,
+      sessionId: json['session_id'] as String?,
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : DateTime.now(),
@@ -48,6 +69,7 @@ class ManagerChatMessage {
       'user_name': userName,
       'user_message': userMessage,
       'ai_response': aiResponse,
+      'session_id': sessionId,
       'created_at': createdAt.toIso8601String(),
     };
   }
@@ -55,22 +77,77 @@ class ManagerChatMessage {
 
 /// Provider for manager chat with AI
 class ManagerChatProvider extends ChangeNotifier {
-  List<ManagerChatMessage> _messages = [];
+  // All messages for this user across all sessions
+  List<ManagerChatMessage> _allMessages = [];
+
   bool _isLoading = false;
   bool _isWaitingForResponse = false;
   String? _error;
-  
+
   String _agentId = '';
   String _managerPhoneNumber = '';
   String? _currentUserId;
+  bool _initialized = false;
+
+  // Current session ID (null = legacy / unassigned)
+  String? _currentSessionId;
+
+  // In-memory cache: message ID → session_id
+  // Survives DB refreshes when _patchSessionId hasn't committed yet.
+  final Map<String, String> _messageSessionMap = {};
 
   RealtimeChannel? _chatChannel;
   Timer? _pollTimer;
 
-  List<ManagerChatMessage> get messages => _messages;
+  // ─── Getters ───────────────────────────────────────────────
+
   bool get isLoading => _isLoading;
   bool get isWaitingForResponse => _isWaitingForResponse;
   String? get error => _error;
+  String? get currentSessionId => _currentSessionId;
+
+  /// Messages for the current session only
+  List<ManagerChatMessage> get messages {
+    if (_currentSessionId == null) {
+      // Legacy: show messages without a session_id
+      return _allMessages
+          .where((m) => m.sessionId == null)
+          .toList();
+    }
+    return _allMessages
+        .where((m) => m.sessionId == _currentSessionId)
+        .toList();
+  }
+
+  /// All sessions, sorted by most recent first
+  List<ChatSession> get sessions {
+    final Map<String?, List<ManagerChatMessage>> grouped = {};
+    for (final msg in _allMessages) {
+      grouped.putIfAbsent(msg.sessionId, () => []).add(msg);
+    }
+
+    final result = grouped.entries.map((entry) {
+      final msgs = entry.value
+        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      // First non-empty user message as preview
+      final firstUserMsg = msgs.firstWhere(
+        (m) => m.userMessage != null && m.userMessage!.isNotEmpty,
+        orElse: () => msgs.first,
+      );
+      final raw = firstUserMsg.userMessage ?? 'Chat session';
+      final preview = raw.length > 60 ? '${raw.substring(0, 60)}...' : raw;
+
+      return ChatSession(
+        id: entry.key,
+        preview: preview,
+        lastMessageAt: msgs.last.createdAt,
+        messageCount: msgs.length,
+      );
+    }).toList()
+      ..sort((a, b) => b.lastMessageAt.compareTo(a.lastMessageAt));
+
+    return result;
+  }
 
   /// Get dynamic table name from ClientConfig.
   /// Returns null if not configured — callers must check.
@@ -83,14 +160,25 @@ class ManagerChatProvider extends ChangeNotifier {
   /// Whether the manager chat table is properly configured
   bool get isConfigured => _managerChatsTable != null;
 
-  /// Initialize the chat
+  // ─── Initialization ────────────────────────────────────────
+
+  /// Initialize the chat. Only does full setup once; subsequent calls reload messages.
   void initialize({
     required String agentId,
     required String managerPhoneNumber,
   }) {
     _agentId = agentId;
     _managerPhoneNumber = managerPhoneNumber;
-    _currentUserId = ClientConfig.currentUser?.id;
+    final userId = ClientConfig.currentUser?.id;
+
+    if (_initialized && userId == _currentUserId) {
+      // Already initialized — just refresh messages silently
+      _refreshMessages();
+      return;
+    }
+
+    _currentUserId = userId;
+    _initialized = true;
 
     print('💬 Initializing chat for user: $_currentUserId');
     print('💬 Manager chats table: ${_managerChatsTable ?? "NOT CONFIGURED"}');
@@ -101,7 +189,7 @@ class ManagerChatProvider extends ChangeNotifier {
       return;
     }
 
-    _loadMessages();
+    _loadAllMessages();
     _subscribeToMessages();
   }
 
@@ -128,7 +216,7 @@ class ManagerChatProvider extends ChangeNotifier {
             value: userId,
           ),
           callback: (payload) {
-            print('💬 New manager chat message received for user');
+            print('💬 New manager chat message received');
             _handleNewMessage(payload.newRecord);
           },
         )
@@ -151,28 +239,48 @@ class ManagerChatProvider extends ChangeNotifier {
     print('💬 Subscribed to $table for user: $userId');
   }
 
-  /// Handle new message from realtime
+  // ─── Message handlers ──────────────────────────────────────
+
   void _handleNewMessage(Map<String, dynamic> data) {
     try {
       final message = ManagerChatMessage.fromJson(data);
-
-      // Only add if it's for the current user
       if (message.userId != _currentUserId) return;
 
-      // Check if message already exists (or is temp message)
-      final existingIndex = _messages.indexWhere((m) =>
-        m.id == message.id ||
-        (m.id.startsWith('temp_') && m.userMessage == message.userMessage)
-      );
+      // Match by ID first, then by content — do NOT match by session_id because
+      // n8n may save the DB record without session_id, so the incoming record
+      // will have sessionId=null even though the temp message has a real UUID.
+      final existingIndex = _allMessages.indexWhere((m) =>
+          m.id == message.id ||
+          (m.id.startsWith('temp_') &&
+              m.userMessage == message.userMessage));
 
       if (existingIndex != -1) {
-        // Replace temp message with real one
-        _messages[existingIndex] = message;
+        final existing = _allMessages[existingIndex];
+        // Prefer the temp message's session_id if the DB record has none
+        final resolvedSessionId = message.sessionId ?? existing.sessionId;
+        final resolved = _withSessionId(message, resolvedSessionId);
+        _allMessages[existingIndex] = resolved;
+        // Cache so future DB refreshes can restore the session_id
+        if (resolvedSessionId != null) {
+          _messageSessionMap[message.id] = resolvedSessionId;
+        }
+        // Patch the DB record so future refreshes preserve the session_id
+        if (message.sessionId == null && resolvedSessionId != null) {
+          _patchSessionId(message.id, resolvedSessionId);
+        }
       } else {
-        _messages.add(message);
+        // No temp match — assign to the active session if record has no session_id
+        final resolvedSessionId = message.sessionId ?? _currentSessionId;
+        final resolved = _withSessionId(message, resolvedSessionId);
+        _allMessages.add(resolved);
+        if (resolvedSessionId != null) {
+          _messageSessionMap[message.id] = resolvedSessionId;
+        }
+        if (message.sessionId == null && _currentSessionId != null) {
+          _patchSessionId(message.id, _currentSessionId!);
+        }
       }
 
-      // Only clear waiting when AI has actually responded
       if (message.aiResponse != null && message.aiResponse!.isNotEmpty) {
         _isWaitingForResponse = false;
         _stopPolling();
@@ -183,32 +291,44 @@ class ManagerChatProvider extends ChangeNotifier {
     }
   }
 
-  /// Handle message update from realtime
   void _handleMessageUpdate(Map<String, dynamic> data) {
     try {
       final message = ManagerChatMessage.fromJson(data);
-
-      // Only update if it's for the current user
       if (message.userId != _currentUserId) return;
 
-      // Try to find by actual ID first
-      var index = _messages.indexWhere((m) => m.id == message.id);
+      // Match by real ID first
+      var index = _allMessages.indexWhere((m) => m.id == message.id);
 
-      // If not found, try matching temp message by content
+      // Fall back to matching temp message by content only (no session_id check)
       if (index == -1) {
-        index = _messages.indexWhere((m) =>
-          m.id.startsWith('temp_') && m.userMessage == message.userMessage
-        );
+        index = _allMessages.indexWhere((m) =>
+            m.id.startsWith('temp_') &&
+            m.userMessage == message.userMessage);
       }
 
       if (index != -1) {
-        _messages[index] = message;
+        final existing = _allMessages[index];
+        final resolvedSessionId = message.sessionId ?? existing.sessionId;
+        final resolved = _withSessionId(message, resolvedSessionId);
+        _allMessages[index] = resolved;
+        if (resolvedSessionId != null) {
+          _messageSessionMap[message.id] = resolvedSessionId;
+        }
+        if (message.sessionId == null && resolvedSessionId != null) {
+          _patchSessionId(message.id, resolvedSessionId);
+        }
       } else {
-        // INSERT was missed — add the message so it still appears
-        _messages.add(message);
+        final resolvedSessionId = message.sessionId ?? _currentSessionId;
+        final resolved = _withSessionId(message, resolvedSessionId);
+        _allMessages.add(resolved);
+        if (resolvedSessionId != null) {
+          _messageSessionMap[message.id] = resolvedSessionId;
+        }
+        if (message.sessionId == null && _currentSessionId != null) {
+          _patchSessionId(message.id, _currentSessionId!);
+        }
       }
 
-      // Clear waiting when AI has responded
       if (message.aiResponse != null && message.aiResponse!.isNotEmpty) {
         _isWaitingForResponse = false;
         _stopPolling();
@@ -219,8 +339,41 @@ class ManagerChatProvider extends ChangeNotifier {
     }
   }
 
-  /// Load existing messages for current user only
-  Future<void> _loadMessages() async {
+  /// Return a copy of [msg] with [sessionId] applied (only if different).
+  ManagerChatMessage _withSessionId(
+      ManagerChatMessage msg, String? sessionId) {
+    if (msg.sessionId == sessionId) return msg;
+    return ManagerChatMessage(
+      id: msg.id,
+      clientId: msg.clientId,
+      userId: msg.userId,
+      userName: msg.userName,
+      userMessage: msg.userMessage,
+      aiResponse: msg.aiResponse,
+      createdAt: msg.createdAt,
+      sessionId: sessionId,
+    );
+  }
+
+  /// Patch the DB record so the session_id survives future full refreshes.
+  Future<void> _patchSessionId(String messageId, String sessionId) async {
+    try {
+      // Skip patching temp IDs — they're not in the DB yet
+      if (messageId.startsWith('temp_')) return;
+      await SupabaseService.adminClient
+          .from(_managerChatsTable!)
+          .update({'session_id': sessionId})
+          .eq('id', messageId);
+      print('💬 Patched session_id=$sessionId on message $messageId');
+    } catch (e) {
+      print('Failed to patch session_id: $e');
+    }
+  }
+
+  // ─── Loading ───────────────────────────────────────────────
+
+  /// Full load — replaces all messages, sets current session to most recent
+  Future<void> _loadAllMessages() async {
     _isLoading = true;
     _error = null;
     notifyListeners();
@@ -228,26 +381,41 @@ class ManagerChatProvider extends ChangeNotifier {
     try {
       final userId = _currentUserId;
       if (userId == null) {
-        print('💬 No user ID, cannot load messages');
         _isLoading = false;
         notifyListeners();
         return;
       }
-      
-      print('💬 Loading messages from: $_managerChatsTable for user: $userId');
+
+      print('💬 Loading all messages from: $_managerChatsTable for user: $userId');
 
       // Use adminClient to bypass RLS on per-client tables
       final response = await SupabaseService.adminClient
           .from(_managerChatsTable!)
           .select()
           .eq('user_id', userId)
-          .order('created_at', ascending: true);
+          .order('created_at', ascending: true)
+          .limit(500);
 
-      _messages = (response as List)
-          .map((json) => ManagerChatMessage.fromJson(json))
-          .toList();
+      _allMessages = (response as List).map((json) {
+        final msg = ManagerChatMessage.fromJson(json);
+        if (msg.sessionId != null) return msg;
+        final cached = _messageSessionMap[msg.id];
+        return cached != null ? _withSessionId(msg, cached) : msg;
+      }).toList();
 
-      print('💬 Loaded ${_messages.length} chat messages for user: $userId');
+      print('💬 Loaded ${_allMessages.length} messages');
+
+      // Auto-select most recent session
+      if (_currentSessionId == null) {
+        final allSessions = sessions;
+        if (allSessions.isNotEmpty && !allSessions.first.isLegacy) {
+          _currentSessionId = allSessions.first.id;
+        } else if (allSessions.isNotEmpty) {
+          // Only legacy messages — start a new session so user can continue fresh
+          _currentSessionId = _generateSessionId();
+        }
+        // If no messages at all, _currentSessionId stays null until user sends first message
+      }
     } catch (e) {
       print('Load messages error: $e');
       _error = 'Failed to load messages';
@@ -257,9 +425,56 @@ class ManagerChatProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Send a message
+  /// Silent refresh — fetches latest without showing loading spinner
+  Future<void> _refreshMessages() async {
+    try {
+      final userId = _currentUserId;
+      if (userId == null) return;
+
+      // Use adminClient to bypass RLS on per-client tables
+      final response = await SupabaseService.adminClient
+          .from(_managerChatsTable!)
+          .select()
+          .eq('user_id', userId)
+          .order('created_at', ascending: true)
+          .limit(500);
+
+      _allMessages = (response as List).map((json) {
+        final msg = ManagerChatMessage.fromJson(json);
+        if (msg.sessionId != null) return msg;
+        final cached = _messageSessionMap[msg.id];
+        return cached != null ? _withSessionId(msg, cached) : msg;
+      }).toList();
+
+      notifyListeners();
+    } catch (e) {
+      print('Refresh messages error: $e');
+    }
+  }
+
+  // ─── Sessions ──────────────────────────────────────────────
+
+  /// Start a brand-new chat session
+  void startNewSession() {
+    _currentSessionId = _generateSessionId();
+    _isWaitingForResponse = false;
+    notifyListeners();
+  }
+
+  /// Switch to an existing session (or null for legacy)
+  void switchToSession(String? sessionId) {
+    _currentSessionId = sessionId;
+    _isWaitingForResponse = false;
+    notifyListeners();
+  }
+
+  // ─── Send Message ──────────────────────────────────────────
+
   Future<void> sendMessage(String text) async {
     if (text.trim().isEmpty) return;
+
+    // Ensure we have a session ID before sending
+    _currentSessionId ??= _generateSessionId();
 
     _isWaitingForResponse = true;
     notifyListeners();
@@ -273,7 +488,7 @@ class ManagerChatProvider extends ChangeNotifier {
       final userId = _currentUserId ?? ClientConfig.currentUser?.id;
       final userName = ClientConfig.currentUser?.name ?? 'Unknown';
 
-      // Create optimistic message
+      // Optimistic message for instant UI feedback
       final optimisticMessage = ManagerChatMessage(
         id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
         clientId: ClientConfig.currentClient?.id,
@@ -281,12 +496,12 @@ class ManagerChatProvider extends ChangeNotifier {
         userName: userName,
         userMessage: text,
         aiResponse: null,
+        sessionId: _currentSessionId,
         createdAt: DateTime.now(),
       );
-      _messages.add(optimisticMessage);
+      _allMessages.add(optimisticMessage);
       notifyListeners();
 
-      // Send to webhook with user info
       final payload = {
         'source': 'dashboard',
         'type': 'query',
@@ -301,6 +516,7 @@ class ManagerChatProvider extends ChangeNotifier {
             'user_id': userId,
             'user_name': userName,
             'client_id': ClientConfig.currentClient?.id,
+            'session_id': _currentSessionId,
           }
         },
         'timestamp': DateTime.now().toIso8601String(),
@@ -309,7 +525,6 @@ class ManagerChatProvider extends ChangeNotifier {
       };
 
       print('💬 Calling webhook: $webhookUrl');
-      print('💬 Payload: $payload');
 
       final response = await http.post(
         Uri.parse(webhookUrl),
@@ -318,25 +533,22 @@ class ManagerChatProvider extends ChangeNotifier {
       );
 
       print('💬 Webhook response: ${response.statusCode}');
-      
+
       if (response.statusCode >= 200 && response.statusCode < 300) {
-        // Log the AI chat message
         await SupabaseService.instance.log(
           actionType: ActionType.messageSent,
           description: 'AI Chat: ${text.length > 50 ? '${text.substring(0, 50)}...' : text}',
           metadata: {
             'message': text,
             'type': 'ai_chat',
+            'session_id': _currentSessionId,
           },
         );
       } else {
         throw Exception('Webhook failed: ${response.body}');
       }
 
-      // Response will come via realtime subscription
-      // Start polling as fallback in case realtime misses the update
       _startPolling();
-
     } catch (e) {
       print('Send message error: $e');
       _error = 'Failed to send message';
@@ -345,11 +557,8 @@ class ManagerChatProvider extends ChangeNotifier {
     }
   }
 
-  // ============================================
-  // POLLING FALLBACK
-  // ============================================
+  // ─── Polling fallback ──────────────────────────────────────
 
-  /// Start polling as fallback for when realtime misses events
   void _startPolling() {
     _stopPolling();
     int attempts = 0;
@@ -358,7 +567,6 @@ class ManagerChatProvider extends ChangeNotifier {
       if (!_isWaitingForResponse || attempts > 10) {
         _stopPolling();
         if (_isWaitingForResponse) {
-          // Timed out after ~30s
           _isWaitingForResponse = false;
           notifyListeners();
         }
@@ -373,7 +581,6 @@ class ManagerChatProvider extends ChangeNotifier {
     _pollTimer = null;
   }
 
-  /// Fetch latest messages and check if AI has responded
   Future<void> _pollForResponse() async {
     try {
       final userId = _currentUserId;
@@ -384,21 +591,21 @@ class ManagerChatProvider extends ChangeNotifier {
           .from(_managerChatsTable!)
           .select()
           .eq('user_id', userId)
-          .order('created_at', ascending: true);
+          .order('created_at', ascending: true)
+          .limit(500);
 
       final freshMessages = (response as List)
           .map((json) => ManagerChatMessage.fromJson(json))
           .toList();
 
-      // Check if any new message has an AI response we don't have yet
+      // Check if AI has responded to any message we're waiting on
       bool hasNewResponse = false;
       for (final fresh in freshMessages) {
         if (fresh.aiResponse != null && fresh.aiResponse!.isNotEmpty) {
-          final existing = _messages.where((m) =>
-            m.id == fresh.id &&
-            m.aiResponse != null &&
-            m.aiResponse!.isNotEmpty
-          );
+          final existing = _allMessages.where((m) =>
+              m.id == fresh.id &&
+              m.aiResponse != null &&
+              m.aiResponse!.isNotEmpty);
           if (existing.isEmpty) {
             hasNewResponse = true;
             break;
@@ -407,7 +614,23 @@ class ManagerChatProvider extends ChangeNotifier {
       }
 
       if (hasNewResponse) {
-        _messages = freshMessages;
+        // Merge fresh DB records, preserving any in-memory session_id corrections
+        for (final fresh in freshMessages) {
+          final idx = _allMessages.indexWhere((m) =>
+              m.id == fresh.id ||
+              (m.id.startsWith('temp_') &&
+                  m.userMessage == fresh.userMessage));
+          if (idx != -1) {
+            final existing = _allMessages[idx];
+            final resolvedSessionId =
+                fresh.sessionId ?? existing.sessionId ?? _messageSessionMap[fresh.id];
+            _allMessages[idx] = _withSessionId(fresh, resolvedSessionId);
+          } else {
+            final resolvedSessionId =
+                fresh.sessionId ?? _messageSessionMap[fresh.id] ?? _currentSessionId;
+            _allMessages.add(_withSessionId(fresh, resolvedSessionId));
+          }
+        }
         _isWaitingForResponse = false;
         _stopPolling();
         notifyListeners();
@@ -417,15 +640,24 @@ class ManagerChatProvider extends ChangeNotifier {
     }
   }
 
-  /// Clear chat history (local only)
-  void clearChat() {
-    _messages = [];
-    notifyListeners();
+  // ─── Utilities ─────────────────────────────────────────────
+
+  /// Generate a UUID v4
+  static String _generateSessionId() {
+    final random = Random.secure();
+    final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex =
+        bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+        '${hex.substring(12, 16)}-${hex.substring(16, 20)}-'
+        '${hex.substring(20)}';
   }
 
-  /// Reload messages (useful when switching back to chat)
+  /// Manual refresh (can be called from UI)
   Future<void> refresh() async {
-    await _loadMessages();
+    await _refreshMessages();
   }
 
   @override
