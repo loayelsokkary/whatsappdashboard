@@ -161,6 +161,222 @@ class BroadcastClientAnalytics {
   });
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// NEW PER-FEATURE ANALYTICS MODELS
+// ═══════════════════════════════════════════════════════════════════
+
+class ClientOverviewMetrics {
+  final int daysActive;
+  final int enabledFeatureCount;
+  final int totalMessages;
+  final int uniqueCustomers;
+  final int totalBroadcasts;
+  final int totalManagerQueries;
+
+  const ClientOverviewMetrics({
+    required this.daysActive,
+    required this.enabledFeatureCount,
+    required this.totalMessages,
+    required this.uniqueCustomers,
+    this.totalBroadcasts = 0,
+    this.totalManagerQueries = 0,
+  });
+}
+
+class ConversationMetrics {
+  final int inboundMessages;
+  final int outboundMessages;
+  final int uniqueCustomers;
+  final int newCustomersThisMonth;
+  final int returningCustomers;
+  // AI performance
+  final double automationRate;
+  final int aiMessages;
+  final int humanMessages;
+  final int handoffCount;
+  // Response time
+  final Duration avgFirstResponseTime;
+  final bool hasTimestampColumns;
+  final Map<String, Duration> perAgentResponseTime;
+  // Activity patterns
+  final Map<int, int> messagesByHour;
+  final Map<int, int> messagesByDayOfWeek;
+  final Map<String, int> dailyVolume;
+  final Map<String, int> monthlyNewCustomers;
+  // Message types
+  final int textMessages;
+  final int voiceMessages;
+  final int mediaMessages;
+  final bool hasMediaColumns;
+  // Team performance
+  final List<AgentPerformance> agentPerformance;
+  final bool hasSentByData;
+  // Customer insights
+  final List<TopCustomerInfo> topCustomers;
+  final double avgCustomerLifetimeDays;
+  final int singleMessageCustomers;
+
+  const ConversationMetrics({
+    required this.inboundMessages,
+    required this.outboundMessages,
+    required this.uniqueCustomers,
+    required this.newCustomersThisMonth,
+    required this.returningCustomers,
+    required this.automationRate,
+    required this.aiMessages,
+    required this.humanMessages,
+    required this.handoffCount,
+    required this.avgFirstResponseTime,
+    this.hasTimestampColumns = false,
+    this.perAgentResponseTime = const {},
+    required this.messagesByHour,
+    required this.messagesByDayOfWeek,
+    required this.dailyVolume,
+    required this.monthlyNewCustomers,
+    this.textMessages = 0,
+    this.voiceMessages = 0,
+    this.mediaMessages = 0,
+    this.hasMediaColumns = false,
+    this.agentPerformance = const [],
+    this.hasSentByData = false,
+    this.topCustomers = const [],
+    this.avgCustomerLifetimeDays = 0,
+    this.singleMessageCustomers = 0,
+  });
+}
+
+class BroadcastMetrics {
+  final int totalCampaigns;
+  final int totalRecipientsReached;
+  final double deliveryRate;
+  final double failRate;
+  final double avgCampaignSize;
+  final double totalOfferValue;
+  final double avgOfferPerCampaign;
+  final int broadcastDrivenConversations;
+  final int acceptedCount;
+  final int deliveredCount;
+  final int sentCount;
+  final int failedCount;
+  final List<CampaignSummary> campaigns;
+  final int repeatRecipients;
+  final int uniqueReach;
+  final int unreachableCount;
+
+  const BroadcastMetrics({
+    required this.totalCampaigns,
+    required this.totalRecipientsReached,
+    required this.deliveryRate,
+    required this.failRate,
+    required this.avgCampaignSize,
+    this.totalOfferValue = 0,
+    this.avgOfferPerCampaign = 0,
+    this.broadcastDrivenConversations = 0,
+    this.acceptedCount = 0,
+    this.deliveredCount = 0,
+    this.sentCount = 0,
+    this.failedCount = 0,
+    this.campaigns = const [],
+    this.repeatRecipients = 0,
+    this.uniqueReach = 0,
+    this.unreachableCount = 0,
+  });
+}
+
+class ManagerChatMetrics {
+  final int totalQueries;
+  final int uniqueUsers;
+  final List<UserQuerySummary> perUserBreakdown;
+  final Map<String, int> dailyUsage;
+  final Map<int, int> usageByHour;
+
+  const ManagerChatMetrics({
+    required this.totalQueries,
+    required this.uniqueUsers,
+    this.perUserBreakdown = const [],
+    this.dailyUsage = const {},
+    this.usageByHour = const {},
+  });
+}
+
+class LabelMetrics {
+  final Map<String, int> labelDistribution;
+  final Map<String, int> labelByUniqueCustomer;
+  final Map<String, Map<String, int>> weeklyLabelTrend;
+
+  const LabelMetrics({
+    this.labelDistribution = const {},
+    this.labelByUniqueCustomer = const {},
+    this.weeklyLabelTrend = const {},
+  });
+}
+
+class PredictiveMetrics {
+  final Map<String, int> categoryDistribution;
+  final double retentionRate;
+  final int atRiskCount;
+  final int lapsedCount;
+  final int dueThisWeek;
+  final int overdueCount;
+  final Map<String, int> topServices;
+  final double avgGapDays;
+  final int totalCustomers;
+
+  const PredictiveMetrics({
+    this.categoryDistribution = const {},
+    this.retentionRate = 0,
+    this.atRiskCount = 0,
+    this.lapsedCount = 0,
+    this.dueThisWeek = 0,
+    this.overdueCount = 0,
+    this.topServices = const {},
+    this.avgGapDays = 0,
+    this.totalCustomers = 0,
+  });
+}
+
+class AgentPerformance {
+  final String name;
+  final int messageCount;
+  final Duration avgResponseTime;
+  final int activeDays;
+
+  const AgentPerformance({
+    required this.name,
+    required this.messageCount,
+    required this.avgResponseTime,
+    required this.activeDays,
+  });
+}
+
+class CampaignSummary {
+  final String name;
+  final DateTime date;
+  final int recipients;
+  final double deliveryRate;
+  final double responseRate;
+
+  const CampaignSummary({
+    required this.name,
+    required this.date,
+    required this.recipients,
+    required this.deliveryRate,
+    this.responseRate = 0,
+  });
+}
+
+class UserQuerySummary {
+  final String userName;
+  final int queryCount;
+  final DateTime lastQuery;
+
+  const UserQuerySummary({
+    required this.userName,
+    required this.queryCount,
+    required this.lastQuery,
+  });
+}
+
 /// Provider for admin-level analytics per client
 class AdminAnalyticsProvider extends ChangeNotifier {
   bool _isLoading = false;
@@ -646,7 +862,7 @@ class AdminAnalyticsProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final supabase = SupabaseService.client;
+      final supabase = SupabaseService.adminClient;
 
       int totalAiMessages = 0;
       int totalManagerMessages = 0;
@@ -683,119 +899,130 @@ class AdminAnalyticsProvider extends ChangeNotifier {
         int clientBroadcastCount = 0;
         DateTime? clientLastActivity;
 
-        // Fetch messages if client has conversations feature
+        // Fetch messages if client has conversations feature (paginated)
         if (client.hasFeature('conversations')) {
           try {
             final messagesTable = _getMessagesTable(client);
             final phone = _getConversationsPhone(client);
+            final columns = 'ai_response,manager_response,customer_phone,customer_name,created_at';
 
-            var query = supabase
-                .from(messagesTable)
-                .select()
-                .order('created_at', ascending: false);
-
-            if (phone != null && phone.isNotEmpty) {
-              query = supabase
-                  .from(messagesTable)
-                  .select()
-                  .eq('ai_phone', phone)
-                  .order('created_at', ascending: false);
-            }
-
-            final messagesResponse = await query;
-            final messages = messagesResponse as List;
-            clientMessageCount = messages.length;
-            totalMessageCount += messages.length;
-
-            for (final msg in messages) {
-              final aiResponse = msg['ai_response'] as String? ?? '';
-              final managerResponse = msg['manager_response'] as String?;
-              final customerPhone = msg['customer_phone'] as String?;
-              final createdAt = msg['created_at'] as String?;
-
-              final hasAi = aiResponse.trim().isNotEmpty;
-              final hasManager = managerResponse != null && managerResponse.trim().isNotEmpty;
-
-              if (hasAi) {
-                totalAiMessages++;
-                clientAiMessages[client.id] = (clientAiMessages[client.id] ?? 0) + 1;
+            // Paginate in chunks of 1000
+            const pageSize = 1000;
+            int offset = 0;
+            while (true) {
+              var q = supabase.from(messagesTable).select(columns);
+              if (phone != null && phone.isNotEmpty) {
+                q = q.eq('ai_phone', phone);
               }
-              if (hasManager) {
-                totalManagerMessages++;
-                clientManagerMessages[client.id] = (clientManagerMessages[client.id] ?? 0) + 1;
-              }
-              if (customerPhone != null) {
-                uniqueCustomers.add(customerPhone);
-                clientUniqueCustomers.putIfAbsent(client.id, () => {});
-                clientUniqueCustomers[client.id]!.add(customerPhone);
+              final List<dynamic> messages = await q
+                  .order('created_at', ascending: false)
+                  .range(offset, offset + pageSize - 1);
 
-                // Track top customers globally
-                globalCustomerCounts.putIfAbsent(customerPhone, () => {
-                  'name': msg['customer_name'] as String?,
-                  'count': 0,
-                  'clientName': client.name,
-                });
-                globalCustomerCounts[customerPhone]!['count'] =
-                    (globalCustomerCounts[customerPhone]!['count'] as int) + 1;
-                final custName = msg['customer_name'] as String?;
-                if (custName != null && custName.isNotEmpty) {
-                  globalCustomerCounts[customerPhone]!['name'] = custName;
+              clientMessageCount += messages.length;
+              totalMessageCount += messages.length;
+
+              for (final msg in messages) {
+                final aiResponse = msg['ai_response'] as String? ?? '';
+                final managerResponse = msg['manager_response'] as String?;
+                final customerPhone = msg['customer_phone'] as String?;
+                final createdAt = msg['created_at'] as String?;
+
+                final hasAi = aiResponse.trim().isNotEmpty;
+                final hasManager = managerResponse != null && managerResponse.trim().isNotEmpty;
+
+                if (hasAi) {
+                  totalAiMessages++;
+                  clientAiMessages[client.id] = (clientAiMessages[client.id] ?? 0) + 1;
+                }
+                if (hasManager) {
+                  totalManagerMessages++;
+                  clientManagerMessages[client.id] = (clientManagerMessages[client.id] ?? 0) + 1;
+                }
+                if (customerPhone != null) {
+                  uniqueCustomers.add(customerPhone);
+                  clientUniqueCustomers.putIfAbsent(client.id, () => {});
+                  clientUniqueCustomers[client.id]!.add(customerPhone);
+
+                  // Track top customers globally
+                  globalCustomerCounts.putIfAbsent(customerPhone, () => {
+                    'name': msg['customer_name'] as String?,
+                    'count': 0,
+                    'clientName': client.name,
+                  });
+                  globalCustomerCounts[customerPhone]!['count'] =
+                      (globalCustomerCounts[customerPhone]!['count'] as int) + 1;
+                  final custName = msg['customer_name'] as String?;
+                  if (custName != null && custName.isNotEmpty) {
+                    globalCustomerCounts[customerPhone]!['name'] = custName;
+                  }
+                }
+
+                // Handoff: AI tried but manager also stepped in
+                if (hasAi && hasManager) handoffCount++;
+
+                // Track last activity and time-based metrics
+                if (createdAt != null) {
+                  final date = DateTime.tryParse(createdAt);
+                  if (date != null) {
+                    if (lastActivity == null || date.isAfter(lastActivity)) {
+                      lastActivity = date;
+                    }
+                    if (clientLastActivity == null || date.isAfter(clientLastActivity)) {
+                      clientLastActivity = date;
+                    }
+
+                    // Time-bucketed counts
+                    if (date.isAfter(todayStart)) todayMessages++;
+                    if (date.isAfter(weekStart)) thisWeekMessages++;
+                    if (date.isAfter(monthStart)) thisMonthMessages++;
+
+                    // Busiest hours
+                    messagesByHour[date.hour] = (messagesByHour[date.hour] ?? 0) + 1;
+
+                    // Count messages by day (last 7 days)
+                    if (now.difference(date).inDays < 7) {
+                      final dayKey = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+                      messagesByDay[dayKey] = (messagesByDay[dayKey] ?? 0) + 1;
+                    }
+                  }
                 }
               }
 
-              // Handoff: AI tried but manager also stepped in
-              if (hasAi && hasManager) handoffCount++;
-
-              // Track last activity and time-based metrics
-              if (createdAt != null) {
-                final date = DateTime.tryParse(createdAt);
-                if (date != null) {
-                  if (lastActivity == null || date.isAfter(lastActivity)) {
-                    lastActivity = date;
-                  }
-                  if (clientLastActivity == null || date.isAfter(clientLastActivity)) {
-                    clientLastActivity = date;
-                  }
-
-                  // Time-bucketed counts
-                  if (date.isAfter(todayStart)) todayMessages++;
-                  if (date.isAfter(weekStart)) thisWeekMessages++;
-                  if (date.isAfter(monthStart)) thisMonthMessages++;
-
-                  // Busiest hours
-                  messagesByHour[date.hour] = (messagesByHour[date.hour] ?? 0) + 1;
-
-                  // Count messages by day (last 7 days)
-                  if (now.difference(date).inDays < 7) {
-                    final dayKey = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-                    messagesByDay[dayKey] = (messagesByDay[dayKey] ?? 0) + 1;
-                  }
-                }
-              }
+              if (messages.length < pageSize) break;
+              offset += pageSize;
             }
           } catch (e) {
             print('Error fetching messages for ${client.name}: $e');
           }
         }
 
-        // Fetch broadcasts if client has broadcasts feature
+        // Fetch broadcasts if client has broadcasts feature (paginated)
         if (client.hasFeature('broadcasts')) {
           try {
             final broadcastsTable = _getBroadcastsTable(client);
             final recipientsTable = _getRecipientsTable(client);
 
-            final broadcastsResponse = await supabase
-                .from(broadcastsTable)
-                .select()
-                .order('sent_at', ascending: false);
+            // Paginate broadcasts
+            const pageSize = 1000;
+            final allBroadcasts = <dynamic>[];
+            int offset = 0;
+            while (true) {
+              final List<dynamic> broadcasts = await supabase
+                  .from(broadcastsTable)
+                  .select()
+                  .order('sent_at', ascending: false)
+                  .range(offset, offset + pageSize - 1);
+              allBroadcasts.addAll(broadcasts);
+              if (broadcasts.length < pageSize) break;
+              offset += pageSize;
+            }
 
-            final broadcasts = broadcastsResponse as List;
-            clientBroadcastCount = broadcasts.length;
-            totalBroadcastCount += broadcasts.length;
+            clientBroadcastCount = allBroadcasts.length;
+            totalBroadcastCount += allBroadcasts.length;
 
             // Track last broadcast activity
-            if (broadcasts.isNotEmpty && broadcasts.first['sent_at'] != null) {
-              final broadcastDate = DateTime.tryParse(broadcasts.first['sent_at']);
+            if (allBroadcasts.isNotEmpty && allBroadcasts.first['sent_at'] != null) {
+              final broadcastDate = DateTime.tryParse(allBroadcasts.first['sent_at']);
               if (broadcastDate != null) {
                 if (lastActivity == null || broadcastDate.isAfter(lastActivity)) {
                   lastActivity = broadcastDate;
@@ -806,18 +1033,25 @@ class AdminAnalyticsProvider extends ChangeNotifier {
               }
             }
 
-            // Fetch recipients and count delivery statuses
-            final broadcastIds = broadcasts.map((b) => b['id'] as String).toList();
+            // Fetch recipients and count delivery statuses (paginated)
+            final broadcastIds = allBroadcasts.map((b) => b['id'] as String).toList();
             if (broadcastIds.isNotEmpty && recipientsTable != null) {
-              final recipientsResponse = await supabase
-                  .from(recipientsTable)
-                  .select()
-                  .inFilter('broadcast_id', broadcastIds);
-              final recipients = recipientsResponse as List;
-              totalRecipientsCount += recipients.length;
-              totalBroadcastRecipients += recipients.length;
+              final allRecipients = <dynamic>[];
+              int rOffset = 0;
+              while (true) {
+                final List<dynamic> recipients = await supabase
+                    .from(recipientsTable)
+                    .select('status')
+                    .inFilter('broadcast_id', broadcastIds)
+                    .range(rOffset, rOffset + pageSize - 1);
+                allRecipients.addAll(recipients);
+                if (recipients.length < pageSize) break;
+                rOffset += pageSize;
+              }
+              totalRecipientsCount += allRecipients.length;
+              totalBroadcastRecipients += allRecipients.length;
 
-              for (final recipient in recipients) {
+              for (final recipient in allRecipients) {
                 final status = recipient['status'] as String? ?? 'sent';
                 switch (status.toLowerCase()) {
                   case 'delivered':
@@ -991,6 +1225,667 @@ class AdminAnalyticsProvider extends ChangeNotifier {
     }
 
     print('📊 Subscribed to company-wide real-time analytics (${_companyChannels.length} channels)');
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // NEW PER-FEATURE ANALYTICS METHODS
+  // ═══════════════════════════════════════════════════════════════
+
+  // Caches keyed by "clientId_startIso_endIso"
+  final Map<String, ClientOverviewMetrics> _overviewCache = {};
+  final Map<String, ConversationMetrics> _convMetricsCache = {};
+  final Map<String, BroadcastMetrics> _bcastMetricsCache = {};
+  final Map<String, ManagerChatMetrics> _mchatMetricsCache = {};
+  final Map<String, LabelMetrics> _labelMetricsCache = {};
+  final Map<String, PredictiveMetrics> _predMetricsCache = {};
+  bool _isLoadingFeature = false;
+
+  bool get isLoadingFeature => _isLoadingFeature;
+
+  ClientOverviewMetrics? getCachedOverview(String key) => _overviewCache[key];
+  ConversationMetrics? getCachedConvMetrics(String key) => _convMetricsCache[key];
+  BroadcastMetrics? getCachedBcastMetrics(String key) => _bcastMetricsCache[key];
+  ManagerChatMetrics? getCachedMchatMetrics(String key) => _mchatMetricsCache[key];
+  LabelMetrics? getCachedLabelMetrics(String key) => _labelMetricsCache[key];
+  PredictiveMetrics? getCachedPredMetrics(String key) => _predMetricsCache[key];
+
+  String _cacheKey(String clientId, DateTime? start, DateTime? end) =>
+      '${clientId}_${start?.toIso8601String() ?? 'all'}_${end?.toIso8601String() ?? 'all'}';
+
+  /// Fetch ALL rows from a Supabase table, paginating in chunks of 1000.
+  /// Supabase default limit is 1000 rows — this fetches everything.
+  Future<List<dynamic>> _fetchAllRows(
+    String table,
+    String columns, {
+    DateTime? start,
+    DateTime? end,
+    String dateColumn = 'created_at',
+    String? orderBy,
+  }) async {
+    const pageSize = 1000;
+    final allRows = <dynamic>[];
+    int offset = 0;
+    while (true) {
+      var q = SupabaseService.adminClient
+          .from(table)
+          .select(columns);
+      if (start != null) q = q.gte(dateColumn, start.toIso8601String());
+      if (end != null) q = q.lte(dateColumn, end.toIso8601String());
+      final List<dynamic> rows;
+      if (orderBy != null) {
+        rows = await q.order(orderBy, ascending: true).range(offset, offset + pageSize - 1);
+      } else {
+        rows = await q.range(offset, offset + pageSize - 1);
+      }
+      allRows.addAll(rows);
+      if (rows.length < pageSize) break;
+      offset += pageSize;
+    }
+    return allRows;
+  }
+
+  // ─── OVERVIEW ───────────────────────────────────────────────
+
+  Future<ClientOverviewMetrics> fetchClientOverview(
+      Client client, {DateTime? start, DateTime? end}) async {
+    final key = _cacheKey(client.id, start, end);
+    try {
+      int totalMessages = 0;
+      int uniqueCustomers = 0;
+      int totalBroadcasts = 0;
+      int totalManagerQueries = 0;
+
+      // Messages (paginated — no 1000-row cap)
+      final msgTable = _getMessagesTable(client);
+      try {
+        final msgs = await _fetchAllRows(msgTable, 'customer_phone', start: start, end: end);
+        totalMessages = msgs.length;
+        final phones = <String>{};
+        for (final m in msgs) {
+          final p = m['customer_phone'] as String?;
+          if (p != null && p.isNotEmpty) phones.add(p);
+        }
+        uniqueCustomers = phones.length;
+      } catch (_) {}
+
+      // Broadcasts (paginated)
+      if (client.hasFeature('broadcasts')) {
+        try {
+          final bcast = await _fetchAllRows(_getBroadcastsTable(client), 'id', start: start, end: end, dateColumn: 'sent_at');
+          totalBroadcasts = bcast.length;
+        } catch (_) {}
+      }
+
+      // Manager chat (paginated)
+      if (client.hasFeature('manager_chat') && client.managerChatsTable != null) {
+        try {
+          final mc = await _fetchAllRows(client.managerChatsTable!, 'id', start: start, end: end);
+          totalManagerQueries = mc.length;
+        } catch (_) {}
+      }
+
+      final coreFeatures = ['conversations', 'broadcasts', 'manager_chat'];
+      final enabledCount = coreFeatures.where((f) => client.hasFeature(f)).length;
+
+      final result = ClientOverviewMetrics(
+        daysActive: client.createdAt != null
+            ? DateTime.now().difference(client.createdAt!).inDays
+            : 0,
+        enabledFeatureCount: enabledCount,
+        totalMessages: totalMessages,
+        uniqueCustomers: uniqueCustomers,
+        totalBroadcasts: totalBroadcasts,
+        totalManagerQueries: totalManagerQueries,
+      );
+      _overviewCache[key] = result;
+      notifyListeners();
+      return result;
+    } catch (e) {
+      print('ANALYTICS: overview error for ${client.name}: $e');
+      rethrow;
+    }
+  }
+
+  // ─── CONVERSATION METRICS ──────────────────────────────────
+
+  Future<ConversationMetrics> fetchConversationMetrics(
+      Client client, {DateTime? start, DateTime? end}) async {
+    final key = _cacheKey(client.id, start, end);
+    try {
+      final msgTable = _getMessagesTable(client);
+
+      // Fetch ALL messages (paginated — no 1000-row cap)
+      final cols = 'customer_phone,customer_name,customer_message,ai_response,manager_response,sent_by,created_at,is_voice_message,media_url,customer_sent_at,ai_responded_at';
+      List<dynamic> rows;
+      try {
+        rows = await _fetchAllRows(msgTable, cols, start: start, end: end, orderBy: 'created_at');
+      } catch (_) {
+        // Fallback without optional columns
+        rows = await _fetchAllRows(msgTable, 'customer_phone,customer_name,customer_message,ai_response,manager_response,created_at', start: start, end: end, orderBy: 'created_at');
+      }
+
+      int inbound = 0, outbound = 0, aiMsgs = 0, humanMsgs = 0, handoff = 0;
+      int textMsgs = 0, voiceMsgs = 0, mediaMsgs = 0;
+      bool hasMediaCols = false, hasTimestamps = false, hasSentBy = false;
+      final phones = <String>{};
+      final phoneFirstSeen = <String, DateTime>{};
+      final phoneMonths = <String, Set<String>>{};
+      final hourCounts = <int, int>{};
+      final dowCounts = <int, int>{};
+      final dailyCounts = <String, int>{};
+      final monthlyNew = <String, int>{};
+      final agentMsgs = <String, List<Map<String, dynamic>>>{};
+      final responseTimes = <Duration>[];
+
+      for (final r in rows) {
+        final phone = r['customer_phone'] as String? ?? '';
+        final custMsg = r['customer_message'] as String? ?? '';
+        final aiResp = r['ai_response'] as String? ?? '';
+        final manResp = r['manager_response'] as String? ?? '';
+        final sentBy = r['sent_by'] as String?;
+        final createdAt = DateTime.tryParse(r['created_at']?.toString() ?? '');
+
+        if (custMsg.isNotEmpty) inbound++;
+        if (aiResp.isNotEmpty || manResp.isNotEmpty) outbound++;
+        if (aiResp.isNotEmpty) aiMsgs++;
+        if (manResp.isNotEmpty) humanMsgs++;
+        if (aiResp.isNotEmpty && manResp.isNotEmpty) handoff++;
+
+        // Media detection
+        final mediaUrl = r['media_url'] as String?;
+        final isVoice = r['is_voice_message'];
+        if (mediaUrl != null || isVoice != null) hasMediaCols = true;
+        if (isVoice == true) {
+          voiceMsgs++;
+        } else if (mediaUrl != null && mediaUrl.isNotEmpty) {
+          mediaMsgs++;
+        } else {
+          textMsgs++;
+        }
+
+        // Phone tracking
+        if (phone.isNotEmpty) {
+          phones.add(phone);
+          if (createdAt != null) {
+            if (!phoneFirstSeen.containsKey(phone) || createdAt.isBefore(phoneFirstSeen[phone]!)) {
+              phoneFirstSeen[phone] = createdAt;
+            }
+            final monthKey = '${createdAt.year}-${createdAt.month.toString().padLeft(2, '0')}';
+            phoneMonths.putIfAbsent(phone, () => {}).add(monthKey);
+          }
+        }
+
+        // Time patterns
+        if (createdAt != null) {
+          hourCounts[createdAt.hour] = (hourCounts[createdAt.hour] ?? 0) + 1;
+          dowCounts[createdAt.weekday] = (dowCounts[createdAt.weekday] ?? 0) + 1;
+          final dayKey = '${createdAt.year}-${createdAt.month.toString().padLeft(2, '0')}-${createdAt.day.toString().padLeft(2, '0')}';
+          dailyCounts[dayKey] = (dailyCounts[dayKey] ?? 0) + 1;
+        }
+
+        // Sent by tracking
+        if (sentBy != null && sentBy.isNotEmpty) {
+          hasSentBy = true;
+          agentMsgs.putIfAbsent(sentBy, () => []).add(r);
+        }
+
+        // Response time
+        final custSentAt = r['customer_sent_at']?.toString();
+        final aiRespondedAt = r['ai_responded_at']?.toString();
+        if (custSentAt != null && aiRespondedAt != null) {
+          hasTimestamps = true;
+          final sent = DateTime.tryParse(custSentAt);
+          final responded = DateTime.tryParse(aiRespondedAt);
+          if (sent != null && responded != null && responded.isAfter(sent)) {
+            final diff = responded.difference(sent);
+            if (diff.inMinutes < 5) responseTimes.add(diff);
+          }
+        }
+      }
+
+      // Compute new vs returning
+      final now = DateTime.now();
+      final thisMonth = '${now.year}-${now.month.toString().padLeft(2, '0')}';
+      int newThisMonth = 0;
+      for (final entry in phoneFirstSeen.entries) {
+        final firstMonth = '${entry.value.year}-${entry.value.month.toString().padLeft(2, '0')}';
+        if (firstMonth == thisMonth) newThisMonth++;
+        final m = firstMonth;
+        monthlyNew[m] = (monthlyNew[m] ?? 0) + 1;
+      }
+      final returning = phoneMonths.values.where((months) => months.length >= 2).length;
+
+      // Avg response time
+      Duration avgResp = Duration.zero;
+      if (responseTimes.isNotEmpty) {
+        final totalMs = responseTimes.fold<int>(0, (sum, d) => sum + d.inMilliseconds);
+        avgResp = Duration(milliseconds: totalMs ~/ responseTimes.length);
+      }
+
+      // Agent performance
+      final agents = <AgentPerformance>[];
+      if (hasSentBy) {
+        for (final entry in agentMsgs.entries) {
+          final days = <String>{};
+          for (final m in entry.value) {
+            final ca = DateTime.tryParse(m['created_at']?.toString() ?? '');
+            if (ca != null) days.add('${ca.year}-${ca.month}-${ca.day}');
+          }
+          agents.add(AgentPerformance(
+            name: entry.key,
+            messageCount: entry.value.length,
+            avgResponseTime: Duration.zero, // Would need per-agent timestamps
+            activeDays: days.length,
+          ));
+        }
+        agents.sort((a, b) => b.messageCount.compareTo(a.messageCount));
+      }
+
+      // Top customers
+      final phoneCounts = <String, int>{};
+      final phoneNames = <String, String>{};
+      for (final r in rows) {
+        final p = r['customer_phone'] as String? ?? '';
+        if (p.isEmpty) continue;
+        phoneCounts[p] = (phoneCounts[p] ?? 0) + 1;
+        final n = r['customer_name'] as String?;
+        if (n != null && n.isNotEmpty) phoneNames[p] = n;
+      }
+      final sortedPhones = phoneCounts.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      final topCusts = sortedPhones.take(10).map((e) => TopCustomerInfo(
+            phone: e.key,
+            name: phoneNames[e.key],
+            messageCount: e.value,
+            clientName: client.name,
+          )).toList();
+
+      // Customer lifetime
+      double avgLifetime = 0;
+      int singleMsg = 0;
+      for (final p in phones) {
+        final count = phoneCounts[p] ?? 0;
+        if (count <= 1) singleMsg++;
+      }
+      if (phoneFirstSeen.length > 1) {
+        double totalDays = 0;
+        int counted = 0;
+        for (final p in phones) {
+          final first = phoneFirstSeen[p];
+          if (first != null) {
+            totalDays += now.difference(first).inDays;
+            counted++;
+          }
+        }
+        if (counted > 0) avgLifetime = totalDays / counted;
+      }
+
+      final totalOutbound = aiMsgs + humanMsgs;
+      final result = ConversationMetrics(
+        inboundMessages: inbound,
+        outboundMessages: outbound,
+        uniqueCustomers: phones.length,
+        newCustomersThisMonth: newThisMonth,
+        returningCustomers: returning,
+        automationRate: totalOutbound > 0 ? (aiMsgs / totalOutbound) * 100 : 0,
+        aiMessages: aiMsgs,
+        humanMessages: humanMsgs,
+        handoffCount: handoff,
+        avgFirstResponseTime: avgResp,
+        hasTimestampColumns: hasTimestamps,
+        perAgentResponseTime: const {},
+        messagesByHour: hourCounts,
+        messagesByDayOfWeek: dowCounts,
+        dailyVolume: dailyCounts,
+        monthlyNewCustomers: monthlyNew,
+        textMessages: textMsgs,
+        voiceMessages: voiceMsgs,
+        mediaMessages: mediaMsgs,
+        hasMediaColumns: hasMediaCols,
+        agentPerformance: agents,
+        hasSentByData: hasSentBy,
+        topCustomers: topCusts,
+        avgCustomerLifetimeDays: avgLifetime,
+        singleMessageCustomers: singleMsg,
+      );
+      _convMetricsCache[key] = result;
+      notifyListeners();
+      print('ANALYTICS: conversation metrics loaded for ${client.name} (${rows.length} msgs)');
+      return result;
+    } catch (e) {
+      print('ANALYTICS: conversation metrics error for ${client.name}: $e');
+      rethrow;
+    }
+  }
+
+  // ─── BROADCAST METRICS ─────────────────────────────────────
+
+  Future<BroadcastMetrics> fetchBroadcastMetrics(
+      Client client, {DateTime? start, DateTime? end}) async {
+    final key = _cacheKey(client.id, start, end);
+    try {
+      final bcastTable = _getBroadcastsTable(client);
+      final recipTable = _getRecipientsTable(client);
+
+      // Fetch ALL broadcasts (paginated)
+      final broadcasts = await _fetchAllRows(bcastTable, '*', start: start, end: end, dateColumn: 'sent_at', orderBy: 'sent_at');
+
+      final campaignList = <CampaignSummary>[];
+      double totalOffer = 0;
+      int offerCount = 0;
+
+      // Fetch all recipients
+      List<dynamic> allRecipients = [];
+      if (recipTable != null && broadcasts.isNotEmpty) {
+        final bcastIds = broadcasts.map((b) => b['id'].toString()).toList();
+        try {
+          // Paginate recipients — can be large
+          const rPageSize = 1000;
+          int rOffset = 0;
+          while (true) {
+            final batch = await SupabaseService.adminClient
+                .from(recipTable)
+                .select()
+                .inFilter('broadcast_id', bcastIds)
+                .range(rOffset, rOffset + rPageSize - 1);
+            allRecipients.addAll(batch as List);
+            if ((batch).length < rPageSize) break;
+            rOffset += rPageSize;
+          }
+        } catch (_) {}
+      }
+
+      // Group recipients by broadcast
+      final recipByBcast = <String, List<dynamic>>{};
+      for (final r in allRecipients) {
+        final bid = r['broadcast_id']?.toString() ?? '';
+        recipByBcast.putIfAbsent(bid, () => []).add(r);
+      }
+
+      int totalRecipients = 0, accepted = 0, delivered = 0, sent = 0, failed = 0;
+      final allPhones = <String>{};
+      final phoneAppearances = <String, int>{};
+      final phoneFailed = <String, int>{};
+      final phoneBcastCount = <String, int>{};
+
+      for (final b in broadcasts) {
+        final bid = b['id'].toString();
+        final recips = recipByBcast[bid] ?? [];
+        final bcastRecipCount = recips.length;
+        totalRecipients += bcastRecipCount;
+
+        int bDelivered = 0, bFailed = 0;
+        for (final r in recips) {
+          final status = (r['status'] as String? ?? '').toLowerCase();
+          final phone = r['customer_phone'] as String? ?? '';
+          if (phone.isNotEmpty) {
+            allPhones.add(phone);
+            phoneAppearances[phone] = (phoneAppearances[phone] ?? 0) + 1;
+            phoneBcastCount[phone] = (phoneBcastCount[phone] ?? 0) + 1;
+          }
+          if (status == 'accepted') { accepted++; bDelivered++; }
+          else if (status == 'delivered' || status == 'read') { delivered++; bDelivered++; }
+          else if (status == 'sent') { sent++; bDelivered++; }
+          else if (status == 'failed') {
+            failed++;
+            bFailed++;
+            if (phone.isNotEmpty) phoneFailed[phone] = (phoneFailed[phone] ?? 0) + 1;
+          }
+        }
+
+        final offer = (b['offer_amount'] as num?)?.toDouble();
+        if (offer != null && offer > 0) {
+          totalOffer += offer;
+          offerCount++;
+        }
+
+        final dRate = bcastRecipCount > 0 ? ((bDelivered) / bcastRecipCount * 100) : 0.0;
+        campaignList.add(CampaignSummary(
+          name: b['campaign_name'] as String? ?? 'Unnamed',
+          date: DateTime.tryParse(b['sent_at']?.toString() ?? '') ?? DateTime.now(),
+          recipients: bcastRecipCount,
+          deliveryRate: dRate,
+        ));
+      }
+
+      final totalSent = accepted + delivered + sent + failed;
+      final dRate = totalSent > 0 ? ((accepted + delivered + sent) / totalSent * 100) : 0.0;
+      final fRate = totalSent > 0 ? (failed / totalSent * 100) : 0.0;
+      final repeat = phoneAppearances.values.where((c) => c >= 2).length;
+      final unreachable = phoneFailed.entries
+          .where((e) => e.value == phoneBcastCount[e.key])
+          .length;
+
+      // Broadcast-driven conversations (messages within 48h of broadcast)
+      int drivenConvs = 0;
+      if (client.hasFeature('conversations')) {
+        try {
+          final msgTable = _getMessagesTable(client);
+          for (final b in broadcasts) {
+            final sentAt = DateTime.tryParse(b['sent_at']?.toString() ?? '');
+            if (sentAt == null) continue;
+            final cutoff = sentAt.add(const Duration(hours: 48));
+            final msgs = await SupabaseService.adminClient
+                .from(msgTable)
+                .select('customer_phone')
+                .gte('created_at', sentAt.toIso8601String())
+                .lte('created_at', cutoff.toIso8601String());
+            final recPhones = (recipByBcast[b['id'].toString()] ?? [])
+                .map((r) => r['customer_phone'] as String? ?? '')
+                .toSet();
+            for (final m in (msgs as List)) {
+              if (recPhones.contains(m['customer_phone'])) drivenConvs++;
+            }
+          }
+        } catch (_) {}
+      }
+
+      final result = BroadcastMetrics(
+        totalCampaigns: broadcasts.length,
+        totalRecipientsReached: totalRecipients,
+        deliveryRate: dRate,
+        failRate: fRate,
+        avgCampaignSize: broadcasts.isNotEmpty
+            ? totalRecipients / broadcasts.length
+            : 0,
+        totalOfferValue: totalOffer,
+        avgOfferPerCampaign: offerCount > 0 ? totalOffer / offerCount : 0,
+        broadcastDrivenConversations: drivenConvs,
+        acceptedCount: accepted,
+        deliveredCount: delivered,
+        sentCount: sent,
+        failedCount: failed,
+        campaigns: campaignList,
+        repeatRecipients: repeat,
+        uniqueReach: allPhones.length,
+        unreachableCount: unreachable,
+      );
+      _bcastMetricsCache[key] = result;
+      notifyListeners();
+      print('ANALYTICS: broadcast metrics loaded for ${client.name} (${broadcasts.length} campaigns)');
+      return result;
+    } catch (e) {
+      print('ANALYTICS: broadcast metrics error for ${client.name}: $e');
+      rethrow;
+    }
+  }
+
+  // ─── MANAGER CHAT METRICS ─────────────────────────────────
+
+  Future<ManagerChatMetrics> fetchManagerChatMetrics(
+      Client client, {DateTime? start, DateTime? end}) async {
+    final key = _cacheKey(client.id, start, end);
+    final table = client.managerChatsTable;
+    if (table == null || table.isEmpty) {
+      return const ManagerChatMetrics(totalQueries: 0, uniqueUsers: 0);
+    }
+    try {
+      final rows = await _fetchAllRows(table, 'user_name,created_at', start: start, end: end, orderBy: 'created_at');
+
+      final userMap = <String, List<DateTime>>{};
+      final dailyUsage = <String, int>{};
+      final hourUsage = <int, int>{};
+
+      for (final r in rows) {
+        final user = r['user_name'] as String? ?? 'Unknown';
+        final ca = DateTime.tryParse(r['created_at']?.toString() ?? '');
+        userMap.putIfAbsent(user, () => []);
+        if (ca != null) {
+          userMap[user]!.add(ca);
+          final dayKey = '${ca.year}-${ca.month.toString().padLeft(2, '0')}-${ca.day.toString().padLeft(2, '0')}';
+          dailyUsage[dayKey] = (dailyUsage[dayKey] ?? 0) + 1;
+          hourUsage[ca.hour] = (hourUsage[ca.hour] ?? 0) + 1;
+        }
+      }
+
+      final perUser = userMap.entries.map((e) => UserQuerySummary(
+            userName: e.key,
+            queryCount: e.value.length,
+            lastQuery: e.value.isNotEmpty ? e.value.last : DateTime.now(),
+          )).toList()
+        ..sort((a, b) => b.queryCount.compareTo(a.queryCount));
+
+      final result = ManagerChatMetrics(
+        totalQueries: rows.length,
+        uniqueUsers: userMap.length,
+        perUserBreakdown: perUser,
+        dailyUsage: dailyUsage,
+        usageByHour: hourUsage,
+      );
+      _mchatMetricsCache[key] = result;
+      notifyListeners();
+      print('ANALYTICS: manager chat metrics loaded for ${client.name} (${rows.length} queries)');
+      return result;
+    } catch (e) {
+      print('ANALYTICS: manager chat metrics error for ${client.name}: $e');
+      rethrow;
+    }
+  }
+
+  // ─── LABEL METRICS ────────────────────────────────────────
+
+  Future<LabelMetrics?> fetchLabelMetrics(
+      Client client, {DateTime? start, DateTime? end}) async {
+    final key = _cacheKey(client.id, start, end);
+    final msgTable = _getMessagesTable(client);
+    try {
+      final rows = await _fetchAllRows(msgTable, 'label,customer_phone,created_at', start: start, end: end);
+
+      final dist = <String, int>{};
+      final uniquePerLabel = <String, Set<String>>{};
+      final weeklyTrend = <String, Map<String, int>>{};
+
+      for (final r in rows) {
+        final label = r['label'] as String? ?? '';
+        if (label.isEmpty) continue;
+        dist[label] = (dist[label] ?? 0) + 1;
+        final phone = r['customer_phone'] as String? ?? '';
+        if (phone.isNotEmpty) {
+          uniquePerLabel.putIfAbsent(label, () => {}).add(phone);
+        }
+        final ca = DateTime.tryParse(r['created_at']?.toString() ?? '');
+        if (ca != null) {
+          // ISO week key
+          final weekNum = ((ca.difference(DateTime(ca.year, 1, 1)).inDays) / 7).floor() + 1;
+          final weekKey = '${ca.year}-W${weekNum.toString().padLeft(2, '0')}';
+          weeklyTrend.putIfAbsent(weekKey, () => {});
+          weeklyTrend[weekKey]![label] = (weeklyTrend[weekKey]![label] ?? 0) + 1;
+        }
+      }
+
+      if (dist.isEmpty) return null; // No label data
+
+      final byUnique = uniquePerLabel.map((k, v) => MapEntry(k, v.length));
+
+      final result = LabelMetrics(
+        labelDistribution: dist,
+        labelByUniqueCustomer: byUnique,
+        weeklyLabelTrend: weeklyTrend,
+      );
+      _labelMetricsCache[key] = result;
+      notifyListeners();
+      print('ANALYTICS: label metrics loaded for ${client.name} (${dist.length} labels)');
+      return result;
+    } catch (e) {
+      // Column doesn't exist
+      print('ANALYTICS: label metrics not available for ${client.name}: $e');
+      return null;
+    }
+  }
+
+  // ─── PREDICTIVE METRICS ───────────────────────────────────
+
+  Future<PredictiveMetrics?> fetchPredictiveMetrics(Client client) async {
+    final key = _cacheKey(client.id, null, null);
+    final table = client.customerPredictionsTable;
+    if (table == null || table.isEmpty) return null;
+    try {
+      final rows = await _fetchAllRows(table, '*');
+
+      final catDist = <String, int>{};
+      final services = <String, int>{};
+      int atRisk = 0, lapsed = 0, dueThisWeek = 0, overdue = 0;
+      double totalGap = 0;
+      int gapCount = 0;
+      final now = DateTime.now();
+      final weekFromNow = now.add(const Duration(days: 7));
+
+      for (final r in rows) {
+        final cat = r['category'] as String? ?? 'Unknown';
+        catDist[cat] = (catDist[cat] ?? 0) + 1;
+        if (cat == 'At Risk') atRisk++;
+        if (cat == 'Lapsed') lapsed++;
+
+        final service = r['primary_service'] as String?;
+        if (service != null && service.isNotEmpty) {
+          services[service] = (services[service] ?? 0) + 1;
+        }
+
+        final gap = (r['avg_gap_days'] as num?)?.toDouble();
+        if (gap != null && gap > 0) {
+          totalGap += gap;
+          gapCount++;
+        }
+
+        final predicted = DateTime.tryParse(r['predicted_next_visit']?.toString() ?? '');
+        if (predicted != null) {
+          if (predicted.isBefore(now)) overdue++;
+          else if (predicted.isBefore(weekFromNow)) dueThisWeek++;
+        }
+      }
+
+      final total = rows.length;
+      final regularReturning = (catDist['Regular'] ?? 0) + (catDist['Returning'] ?? 0);
+      final retention = total > 0 ? (regularReturning / total * 100) : 0.0;
+
+      final result = PredictiveMetrics(
+        categoryDistribution: catDist,
+        retentionRate: retention,
+        atRiskCount: atRisk,
+        lapsedCount: lapsed,
+        dueThisWeek: dueThisWeek,
+        overdueCount: overdue,
+        topServices: services,
+        avgGapDays: gapCount > 0 ? totalGap / gapCount : 0,
+        totalCustomers: total,
+      );
+      _predMetricsCache[key] = result;
+      notifyListeners();
+      print('ANALYTICS: predictive metrics loaded for ${client.name} ($total predictions)');
+      return result;
+    } catch (e) {
+      print('ANALYTICS: predictive metrics error for ${client.name}: $e');
+      return null;
+    }
+  }
+
+  void clearFeatureCache() {
+    _overviewCache.clear();
+    _convMetricsCache.clear();
+    _bcastMetricsCache.clear();
+    _mchatMetricsCache.clear();
+    _labelMetricsCache.clear();
+    _predMetricsCache.clear();
   }
 
   /// Clear cached analytics and unsubscribe

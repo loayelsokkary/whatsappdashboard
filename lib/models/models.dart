@@ -1188,6 +1188,7 @@ class TemplateButton {
 class WhatsAppTemplate {
   final String id;
   final String name;
+  final String? displayName;
   final String status;
   final String language;
   final String category;
@@ -1199,9 +1200,13 @@ class WhatsAppTemplate {
   final List<TemplateButton> buttons;
   final List<dynamic> componentsJson;
 
+  /// Returns display_name if set, otherwise falls back to raw template name.
+  String get label => displayName?.isNotEmpty == true ? displayName! : name;
+
   const WhatsAppTemplate({
     required this.id,
     required this.name,
+    this.displayName,
     required this.status,
     required this.language,
     required this.category,
@@ -1251,6 +1256,7 @@ class WhatsAppTemplate {
     return WhatsAppTemplate(
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? '',
+      displayName: json['display_name'] as String?,
       status: json['status'] as String? ?? '',
       language: json['language'] as String? ?? '',
       category: json['category'] as String? ?? '',

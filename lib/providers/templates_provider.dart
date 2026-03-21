@@ -23,6 +23,11 @@ class TemplatesProvider extends ChangeNotifier {
   static String get _baseUrl =>
       'https://graph.facebook.com/${SupabaseService.metaApiVersion}';
 
+  /// Normalize a client slug into a safe prefix for Meta template names.
+  /// Only lowercase letters and digits; everything else becomes underscore.
+  static String normalizeSlug(String slug) =>
+      slug.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_');
+
   Map<String, String> get _headers => {
         'Authorization': 'Bearer ${SupabaseService.metaAccessToken}',
         'Content-Type': 'application/json',
@@ -69,6 +74,7 @@ class TemplatesProvider extends ChangeNotifier {
         return WhatsAppTemplate(
           id: r['meta_template_id'] as String? ?? '',
           name: r['template_name'] as String? ?? '',
+          displayName: r['display_name'] as String?,
           status: r['status'] as String? ?? '',
           language: r['language_code'] as String? ?? '',
           category: r['category'] as String? ?? '',
@@ -218,6 +224,18 @@ class TemplatesProvider extends ChangeNotifier {
       _isSubmitting = false;
 
       if (response.statusCode == 200) {
+        // Remove from per-client Supabase table
+        final table = ClientConfig.templatesTable;
+        if (table != null && table.isNotEmpty) {
+          try {
+            await SupabaseService.adminClient
+                .from(table)
+                .delete()
+                .eq('template_name', name);
+          } catch (e) {
+            debugPrint('[deleteTemplate] Supabase cleanup error: $e');
+          }
+        }
         _templates.removeWhere((t) => t.name == name);
         notifyListeners();
         return null;
@@ -358,6 +376,30 @@ class TemplatesProvider extends ChangeNotifier {
 
       final now = DateTime.now().toIso8601String();
 
+      // Step 2: Build prefix sets for filtering templates per client.
+      // Only exclude templates that CLEARLY belong to another client
+      // (exact prefix match with a known slug).
+      final slug = ClientConfig.currentClient?.slug ?? '';
+      final clientPrefix = slug.isNotEmpty ? '${normalizeSlug(slug)}_' : '';
+
+      // Step 3: Set display_name for each template.
+      // If it starts with our prefix → strip for clean display_name.
+      // All other templates → display_name = full name (legacy/global).
+      // NOTE: We do NOT skip other clients' templates during sync —
+      // all templates are synced to all clients for backward compatibility.
+      // Prefix-based filtering will be opt-in in a future update.
+      final displayNames = <String, String>{}; // template.name → display_name
+
+      for (final t in _allMetaTemplates) {
+        if (clientPrefix.isNotEmpty && t.name.startsWith(clientPrefix)) {
+          displayNames[t.name] = t.name.substring(clientPrefix.length);
+        } else {
+          displayNames[t.name] = t.name;
+        }
+      }
+
+      debugPrint('[sync] ${_allMetaTemplates.length} Meta templates for "$slug" (prefix="$clientPrefix")');
+
       // Build rows sequentially, doing a per-template DB read to reliably
       // preserve human-set labels/sources/images instead of overwriting them.
       final rows = await Future.wait(_allMetaTemplates.map((t) async {
@@ -400,7 +442,7 @@ class TemplatesProvider extends ChangeNotifier {
           'meta_template_id': t.id,
           'client_id': clientId,
           'template_name': t.name,
-          'display_name': t.name,
+          'display_name': displayNames[t.name] ?? t.name,
           'language_code': t.language,
           'category': t.category,
           'status': t.status,
@@ -427,6 +469,24 @@ class TemplatesProvider extends ChangeNotifier {
           .from(tableName)
           .upsert(rows, onConflict: 'meta_template_id');
 
+      // Clean up stale rows — templates deleted from Meta but still in DB
+      final validIds = rows.map((r) => r['meta_template_id'] as String).toSet();
+      final dbRows = await SupabaseService.adminClient
+          .from(tableName)
+          .select('meta_template_id')
+          .eq('client_id', clientId);
+      final staleIds = (dbRows as List)
+          .map((r) => r['meta_template_id'] as String)
+          .where((id) => !validIds.contains(id))
+          .toList();
+      if (staleIds.isNotEmpty) {
+        await SupabaseService.adminClient
+            .from(tableName)
+            .delete()
+            .inFilter('meta_template_id', staleIds);
+        debugPrint('[sync] Removed ${staleIds.length} stale template(s) from $tableName');
+      }
+
       _isSyncing = false;
       // Refresh display from DB so newly synced templates appear
       await fetchTemplates();
@@ -451,6 +511,7 @@ class TemplatesProvider extends ChangeNotifier {
     required List<String> variableLabels,
     required List<String> variableSources,
     String? offerImageUrl,
+    String? displayName,
   }) async {
     final clientId = ClientConfig.currentClient?.id ?? '';
     if (clientId.isEmpty) return 'No client selected';
@@ -472,7 +533,7 @@ class TemplatesProvider extends ChangeNotifier {
         'meta_template_id': t.id,
         'client_id': clientId,
         'template_name': t.name,
-        'display_name': t.name,
+        'display_name': displayName ?? t.name,
         'language_code': t.language,
         'category': t.category,
         'status': t.status,
@@ -498,7 +559,7 @@ class TemplatesProvider extends ChangeNotifier {
       row['offer_image_url'] = await _resolveOfferImageUrl(t,
           callerProvidedUrl: offerImageUrl);
 
-      debugPrint('[syncSingleTemplate] Upserting ${t.name} (offer_image_url: ${row['offer_image_url'] ?? 'omitted'})');
+      debugPrint('[syncSingleTemplate] Upserting ${t.name} (display: ${displayName ?? t.name}, offer_image_url: ${row['offer_image_url'] ?? 'omitted'})');
       // Use adminClient to bypass RLS on per-client templates table writes.
       await SupabaseService.adminClient
           .from(tableName)

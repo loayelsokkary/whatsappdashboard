@@ -5,6 +5,7 @@ import 'dart:html' as html;
 import 'dart:typed_data';
 import 'package:excel/excel.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../models/models.dart';
@@ -1791,11 +1792,8 @@ class AnalyticsExporter {
     return v.toStringAsFixed(2);
   }
 
-  static String _fmtInt(int v) {
-    if (v < 1000) return v.toString();
-    if (v < 1000000) return '${(v / 1000).toStringAsFixed(1)}K';
-    return '${(v / 1000000).toStringAsFixed(1)}M';
-  }
+  static final _numFmt = NumberFormat('#,###');
+  static String _fmtInt(int v) => _numFmt.format(v);
 
   static String _fmtDurationCsv(double seconds) {
     if (seconds <= 0) return '0s';
@@ -2431,6 +2429,13 @@ class AnalyticsExporter {
     required Client client,
     ConversationClientAnalytics? conversationData,
     BroadcastClientAnalytics? broadcastData,
+    // New per-feature metrics (dynamic — only non-null sections are exported)
+    ClientOverviewMetrics? overview,
+    ConversationMetrics? conversations,
+    BroadcastMetrics? broadcasts,
+    ManagerChatMetrics? managerChat,
+    LabelMetrics? labels,
+    PredictiveMetrics? predictions,
   }) async {
     await Future.wait([_loadArabicFont(), _loadLogoImage()]);
 
@@ -2448,95 +2453,372 @@ class AnalyticsExporter {
           build: builder,
         );
 
-    if (conversationData != null) {
-      final d = conversationData;
-      pdf.addPage(makePage((_) => [
-        _pdfSectionTitle('Conversation Analytics', _pdf.navy),
-        pw.SizedBox(height: 14),
-        pw.Row(children: [
-          _pdfKpiCard('AI Messages', _fmtInt(d.totalAiMessages), _pdf.cyan),
-          pw.SizedBox(width: 8),
-          _pdfKpiCard('Manager Msgs', _fmtInt(d.totalManagerMessages), _pdf.orange),
-          pw.SizedBox(width: 8),
-          _pdfKpiCard('Automation', '${d.automationRate.toStringAsFixed(1)}%', _pdf.green),
-          pw.SizedBox(width: 8),
-          _pdfKpiCard('Customers', '${d.uniqueCustomers}', _pdf.blue),
-        ]),
-        pw.SizedBox(height: 12),
-        pw.Row(children: [
-          _pdfKpiCard('Conversations', '${d.totalConversations}', _pdf.purple),
-          pw.SizedBox(width: 8),
-          _pdfKpiCard('Avg Response', _fmtDurationCsv(d.avgResponseTime.inSeconds.toDouble()), _pdf.teal),
-          pw.SizedBox(width: 8),
-          _pdfKpiCard('Bookings', '${d.successfulBookings}', _pdf.amber),
-          pw.SizedBox(width: 8),
-          _pdfKpiCard('Days Active', '${d.daysSinceOnboarding}', _pdf.textMuted),
-        ]),
-        if (d.lastActivity != null) ...[
-          pw.SizedBox(height: 12),
-          pw.Text(
-            'Last Activity: ${_formatDateIso(d.lastActivity!)}',
-            style: pw.TextStyle(fontSize: 10, color: _pdf.textMuted),
-          ),
-        ],
+    final hasNewMetrics = overview != null || conversations != null ||
+        broadcasts != null || managerChat != null ||
+        labels != null || predictions != null;
 
-        pw.SizedBox(height: 20),
-        _pdfSectionTitle('Client Info', _pdf.teal),
-        pw.SizedBox(height: 10),
-        _buildClientInfoTable(client),
-      ]));
+    // ── New dynamic export (feature-based) ──
+
+    if (hasNewMetrics) {
+      // Page 1: Overview + Client Info
+      if (overview != null) {
+        final o = overview;
+        pdf.addPage(makePage((_) => [
+          _pdfSectionTitle('Overview', _pdf.navy),
+          pw.SizedBox(height: 14),
+          pw.Row(children: [
+            _pdfKpiCard('Days Active', '${o.daysActive}', _pdf.teal),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Features', '${o.enabledFeatureCount}', _pdf.blue),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Total Messages', _fmtInt(o.totalMessages), _pdf.cyan),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Unique Customers', _fmtInt(o.uniqueCustomers), _pdf.purple),
+          ]),
+          if (o.totalBroadcasts > 0 || o.totalManagerQueries > 0) ...[
+            pw.SizedBox(height: 12),
+            pw.Row(children: [
+              if (o.totalBroadcasts > 0) ...[
+                _pdfKpiCard('Broadcasts', _fmtInt(o.totalBroadcasts), _pdf.orange),
+                pw.SizedBox(width: 8),
+              ],
+              if (o.totalManagerQueries > 0) ...[
+                _pdfKpiCard('Manager Queries', _fmtInt(o.totalManagerQueries), _pdf.purple),
+                pw.SizedBox(width: 8),
+              ],
+              pw.Expanded(child: pw.SizedBox()),
+            ]),
+          ],
+          pw.SizedBox(height: 20),
+          _pdfSectionTitle('Client Info', _pdf.teal),
+          pw.SizedBox(height: 10),
+          _buildClientInfoTable(client),
+        ]));
+      }
+
+      // Page 2: Conversations
+      if (conversations != null) {
+        final c = conversations;
+        pdf.addPage(makePage((_) => [
+          _pdfSectionTitle('Conversations', _pdf.navy),
+          pw.SizedBox(height: 14),
+          pw.Row(children: [
+            _pdfKpiCard('Inbound', _fmtInt(c.inboundMessages), _pdf.cyan),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Outbound', _fmtInt(c.outboundMessages), _pdf.blue),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Customers', _fmtInt(c.uniqueCustomers), _pdf.purple),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('New This Month', _fmtInt(c.newCustomersThisMonth), _pdf.green),
+          ]),
+          pw.SizedBox(height: 12),
+          _pdfSectionTitle('AI Performance', _pdf.cyan),
+          pw.SizedBox(height: 10),
+          pw.Row(children: [
+            _pdfKpiCard('Automation', '${c.automationRate.toStringAsFixed(1)}%',
+                c.automationRate >= 80 ? _pdf.green : c.automationRate >= 60 ? _pdf.orange : _pdf.red),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('AI Messages', _fmtInt(c.aiMessages), _pdf.cyan),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Human Messages', _fmtInt(c.humanMessages), _pdf.blue),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Handoffs', _fmtInt(c.handoffCount), _pdf.orange),
+          ]),
+          if (c.hasTimestampColumns) ...[
+            pw.SizedBox(height: 12),
+            pw.Row(children: [
+              _pdfKpiCard('Avg Response', _fmtDurationCsv(c.avgFirstResponseTime.inSeconds.toDouble()), _pdf.teal),
+              pw.SizedBox(width: 8),
+              pw.Expanded(child: pw.SizedBox()),
+              pw.SizedBox(width: 8),
+              pw.Expanded(child: pw.SizedBox()),
+              pw.SizedBox(width: 8),
+              pw.Expanded(child: pw.SizedBox()),
+            ]),
+          ],
+          pw.SizedBox(height: 12),
+          _pdfSectionTitle('Customer Insights', _pdf.purple),
+          pw.SizedBox(height: 10),
+          pw.Row(children: [
+            _pdfKpiCard('Returning', _fmtInt(c.returningCustomers), _pdf.orange),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Single-Msg', _fmtInt(c.singleMessageCustomers), _pdf.red),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Avg Lifetime', '${c.avgCustomerLifetimeDays.toStringAsFixed(0)}d', _pdf.teal),
+            pw.SizedBox(width: 8),
+            pw.Expanded(child: pw.SizedBox()),
+          ]),
+          if (c.hasMediaColumns) ...[
+            pw.SizedBox(height: 12),
+            _pdfSectionTitle('Message Types', _pdf.purple),
+            pw.SizedBox(height: 10),
+            pw.Row(children: [
+              _pdfKpiCard('Text', _fmtInt(c.textMessages), _pdf.cyan),
+              pw.SizedBox(width: 8),
+              _pdfKpiCard('Voice', _fmtInt(c.voiceMessages), _pdf.orange),
+              pw.SizedBox(width: 8),
+              _pdfKpiCard('Media', _fmtInt(c.mediaMessages), _pdf.purple),
+              pw.SizedBox(width: 8),
+              pw.Expanded(child: pw.SizedBox()),
+            ]),
+          ],
+          if (c.hasSentByData && c.agentPerformance.isNotEmpty) ...[
+            pw.SizedBox(height: 12),
+            _pdfSectionTitle('Team Performance', _pdf.blue),
+            pw.SizedBox(height: 10),
+            _buildPdfTable(
+              headers: ['Agent', 'Messages', 'Avg Response', 'Active Days'],
+              rows: c.agentPerformance.map((a) => [
+                a.name,
+                _fmtInt(a.messageCount),
+                _fmtDurationCsv(a.avgResponseTime.inSeconds.toDouble()),
+                '${a.activeDays}',
+              ]).toList(),
+            ),
+          ],
+        ]));
+      }
+
+      // Page 3: Broadcasts
+      if (broadcasts != null) {
+        final b = broadcasts;
+        pdf.addPage(makePage((_) => [
+          _pdfSectionTitle('Broadcasts', _pdf.navy),
+          pw.SizedBox(height: 14),
+          pw.Row(children: [
+            _pdfKpiCard('Campaigns', _fmtInt(b.totalCampaigns), _pdf.orange),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Recipients', _fmtInt(b.totalRecipientsReached), _pdf.cyan),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Delivery %', '${b.deliveryRate.toStringAsFixed(1)}%', _pdf.green),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Fail %', '${b.failRate.toStringAsFixed(1)}%', b.failRate > 5 ? _pdf.red : _pdf.textMuted),
+          ]),
+          pw.SizedBox(height: 12),
+          pw.Row(children: [
+            _pdfKpiCard('Avg Size', b.avgCampaignSize.toStringAsFixed(0), _pdf.teal),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Unique Reach', _fmtInt(b.uniqueReach), _pdf.purple),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Unreachable', _fmtInt(b.unreachableCount), _pdf.red),
+            pw.SizedBox(width: 8),
+            pw.Expanded(child: pw.SizedBox()),
+          ]),
+          if (b.broadcastDrivenConversations > 0 || b.totalOfferValue > 0) ...[
+            pw.SizedBox(height: 12),
+            _pdfSectionTitle('ROI & Impact', _pdf.green),
+            pw.SizedBox(height: 10),
+            pw.Row(children: [
+              if (b.totalOfferValue > 0) ...[
+                _pdfKpiCard('Offer Value', '${_fmtInt(b.totalOfferValue.toInt())} BHD', _pdf.green),
+                pw.SizedBox(width: 8),
+              ],
+              _pdfKpiCard('Broadcast-Driven Convos', _fmtInt(b.broadcastDrivenConversations), _pdf.cyan),
+              pw.SizedBox(width: 8),
+              pw.Expanded(child: pw.SizedBox()),
+              pw.SizedBox(width: 8),
+              pw.Expanded(child: pw.SizedBox()),
+            ]),
+          ],
+          pw.SizedBox(height: 12),
+          _pdfSectionTitle('Delivery Breakdown', _pdf.blue),
+          pw.SizedBox(height: 10),
+          pw.Row(children: [
+            _pdfKpiCard('Accepted', _fmtInt(b.acceptedCount), _pdf.blue),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Delivered', _fmtInt(b.deliveredCount), _pdf.green),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Sent', _fmtInt(b.sentCount), _pdf.orange),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Failed', _fmtInt(b.failedCount), _pdf.red),
+          ]),
+          if (b.campaigns.isNotEmpty) ...[
+            pw.SizedBox(height: 12),
+            _pdfSectionTitle('Campaign History', _pdf.orange),
+            pw.SizedBox(height: 10),
+            _buildPdfTable(
+              headers: ['Campaign', 'Date', 'Recipients', 'Delivery %'],
+              rows: b.campaigns.take(15).map((c) => [
+                c.name,
+                _formatDateIso(c.date),
+                _fmtInt(c.recipients),
+                '${c.deliveryRate.toStringAsFixed(1)}%',
+              ]).toList(),
+            ),
+          ],
+        ]));
+      }
+
+      // Page 4: Manager Chat
+      if (managerChat != null) {
+        final m = managerChat;
+        pdf.addPage(makePage((_) => [
+          _pdfSectionTitle('Manager Chat', _pdf.navy),
+          pw.SizedBox(height: 14),
+          pw.Row(children: [
+            _pdfKpiCard('Total Queries', _fmtInt(m.totalQueries), _pdf.purple),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Unique Users', _fmtInt(m.uniqueUsers), _pdf.blue),
+            pw.SizedBox(width: 8),
+            pw.Expanded(child: pw.SizedBox()),
+            pw.SizedBox(width: 8),
+            pw.Expanded(child: pw.SizedBox()),
+          ]),
+          if (m.perUserBreakdown.isNotEmpty) ...[
+            pw.SizedBox(height: 12),
+            _pdfSectionTitle('Per-User Breakdown', _pdf.purple),
+            pw.SizedBox(height: 10),
+            _buildPdfTable(
+              headers: ['User', 'Queries', 'Last Query'],
+              rows: m.perUserBreakdown.map((u) => [
+                u.userName,
+                _fmtInt(u.queryCount),
+                _formatDateIso(u.lastQuery),
+              ]).toList(),
+            ),
+          ],
+        ]));
+      }
+
+      // Page 5: Labels
+      if (labels != null && labels.labelDistribution.isNotEmpty) {
+        pdf.addPage(makePage((_) => [
+          _pdfSectionTitle('Labels', _pdf.navy),
+          pw.SizedBox(height: 14),
+          _buildPdfTable(
+            headers: ['Label', 'Count', 'Unique Customers'],
+            rows: labels.labelDistribution.entries.map((e) => [
+              e.key,
+              _fmtInt(e.value),
+              _fmtInt(labels.labelByUniqueCustomer[e.key] ?? 0),
+            ]).toList(),
+          ),
+        ]));
+      }
+
+      // Page 6: Predictions
+      if (predictions != null) {
+        final p = predictions;
+        pdf.addPage(makePage((_) => [
+          _pdfSectionTitle('Predictive Intelligence', _pdf.navy),
+          pw.SizedBox(height: 14),
+          pw.Row(children: [
+            _pdfKpiCard('Retention', '${p.retentionRate.toStringAsFixed(1)}%', _pdf.green),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('At Risk', _fmtInt(p.atRiskCount), _pdf.orange),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Lapsed', _fmtInt(p.lapsedCount), _pdf.red),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Avg Gap', '${p.avgGapDays.toStringAsFixed(0)}d', _pdf.teal),
+          ]),
+          pw.SizedBox(height: 12),
+          pw.Row(children: [
+            _pdfKpiCard('Due This Week', _fmtInt(p.dueThisWeek), _pdf.amber),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Overdue', _fmtInt(p.overdueCount), _pdf.red),
+            pw.SizedBox(width: 8),
+            pw.Expanded(child: pw.SizedBox()),
+            pw.SizedBox(width: 8),
+            pw.Expanded(child: pw.SizedBox()),
+          ]),
+          if (p.categoryDistribution.isNotEmpty) ...[
+            pw.SizedBox(height: 12),
+            _pdfSectionTitle('Customer Categories', _pdf.teal),
+            pw.SizedBox(height: 10),
+            _buildPdfTable(
+              headers: ['Category', 'Count'],
+              rows: p.categoryDistribution.entries.map((e) => [e.key, _fmtInt(e.value)]).toList(),
+            ),
+          ],
+          if (p.topServices.isNotEmpty) ...[
+            pw.SizedBox(height: 12),
+            _pdfSectionTitle('Top Services', _pdf.amber),
+            pw.SizedBox(height: 10),
+            _buildPdfTable(
+              headers: ['Service', 'Count'],
+              rows: p.topServices.entries.take(10).map((e) => [e.key, _fmtInt(e.value)]).toList(),
+            ),
+          ],
+        ]));
+      }
     }
 
-    if (broadcastData != null) {
-      final d = broadcastData;
-      pdf.addPage(makePage((_) => [
-        _pdfSectionTitle('Broadcast Analytics', _pdf.navy),
-        pw.SizedBox(height: 14),
-        pw.Row(children: [
-          _pdfKpiCard('Broadcasts', '${d.totalBroadcastsSent}', _pdf.purple),
-          pw.SizedBox(width: 8),
-          _pdfKpiCard('Recipients', _fmtInt(d.totalRecipientsReached), _pdf.cyan),
-          pw.SizedBox(width: 8),
-          _pdfKpiCard('Delivery %', '${d.deliveryRate.toStringAsFixed(1)}%', _pdf.green),
-          pw.SizedBox(width: 8),
-          _pdfKpiCard('Read %', '${d.readRate.toStringAsFixed(1)}%', _pdf.blue),
-        ]),
-        pw.SizedBox(height: 12),
-        pw.Row(children: [
-          _pdfKpiCard('Failed %', '${d.failedRate.toStringAsFixed(1)}%', d.failedRate > 5 ? _pdf.red : _pdf.textMuted),
-          pw.SizedBox(width: 8),
-          _pdfKpiCard('Avg Campaign', d.avgCampaignSize.toStringAsFixed(0), _pdf.teal),
-          pw.SizedBox(width: 8),
-          _pdfKpiCard('Days Active', '${d.daysSinceOnboarding}', _pdf.textMuted),
-          pw.SizedBox(width: 8),
-          pw.Expanded(child: pw.SizedBox()),
-        ]),
-        if (d.lastActivity != null) ...[
+    // ── Legacy export (old models) — kept for backward compat ──
+
+    if (!hasNewMetrics) {
+      if (conversationData != null) {
+        final d = conversationData;
+        pdf.addPage(makePage((_) => [
+          _pdfSectionTitle('Conversation Analytics', _pdf.navy),
+          pw.SizedBox(height: 14),
+          pw.Row(children: [
+            _pdfKpiCard('AI Messages', _fmtInt(d.totalAiMessages), _pdf.cyan),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Manager Msgs', _fmtInt(d.totalManagerMessages), _pdf.orange),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Automation', '${d.automationRate.toStringAsFixed(1)}%', _pdf.green),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Customers', '${d.uniqueCustomers}', _pdf.blue),
+          ]),
           pw.SizedBox(height: 12),
-          pw.Text(
-            'Last Activity: ${_formatDateIso(d.lastActivity!)}',
-            style: pw.TextStyle(fontSize: 10, color: _pdf.textMuted),
-          ),
-        ],
+          pw.Row(children: [
+            _pdfKpiCard('Conversations', '${d.totalConversations}', _pdf.purple),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Avg Response', _fmtDurationCsv(d.avgResponseTime.inSeconds.toDouble()), _pdf.teal),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Bookings', '${d.successfulBookings}', _pdf.amber),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Days Active', '${d.daysSinceOnboarding}', _pdf.textMuted),
+          ]),
+          pw.SizedBox(height: 20),
+          _pdfSectionTitle('Client Info', _pdf.teal),
+          pw.SizedBox(height: 10),
+          _buildClientInfoTable(client),
+        ]));
+      }
 
-        pw.SizedBox(height: 20),
-        _pdfSectionTitle('Client Info', _pdf.teal),
-        pw.SizedBox(height: 10),
-        _buildClientInfoTable(client),
-      ]));
-    }
+      if (broadcastData != null) {
+        final d = broadcastData;
+        pdf.addPage(makePage((_) => [
+          _pdfSectionTitle('Broadcast Analytics', _pdf.navy),
+          pw.SizedBox(height: 14),
+          pw.Row(children: [
+            _pdfKpiCard('Broadcasts', '${d.totalBroadcastsSent}', _pdf.purple),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Recipients', _fmtInt(d.totalRecipientsReached), _pdf.cyan),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Delivery %', '${d.deliveryRate.toStringAsFixed(1)}%', _pdf.green),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Read %', '${d.readRate.toStringAsFixed(1)}%', _pdf.blue),
+          ]),
+          pw.SizedBox(height: 12),
+          pw.Row(children: [
+            _pdfKpiCard('Failed %', '${d.failedRate.toStringAsFixed(1)}%', d.failedRate > 5 ? _pdf.red : _pdf.textMuted),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Avg Campaign', d.avgCampaignSize.toStringAsFixed(0), _pdf.teal),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Days Active', '${d.daysSinceOnboarding}', _pdf.textMuted),
+            pw.SizedBox(width: 8),
+            pw.Expanded(child: pw.SizedBox()),
+          ]),
+          pw.SizedBox(height: 20),
+          _pdfSectionTitle('Client Info', _pdf.teal),
+          pw.SizedBox(height: 10),
+          _buildClientInfoTable(client),
+        ]));
+      }
 
-    // Fallback if no analytics data
-    if (conversationData == null && broadcastData == null) {
-      pdf.addPage(makePage((_) => [
-        _pdfSectionTitle('Client Report', _pdf.navy),
-        pw.SizedBox(height: 14),
-        pw.Text('No analytics data available for this client.', style: pw.TextStyle(fontSize: 12, color: _pdf.textMuted)),
-        pw.SizedBox(height: 20),
-        _pdfSectionTitle('Client Info', _pdf.teal),
-        pw.SizedBox(height: 10),
-        _buildClientInfoTable(client),
-      ]));
+      if (conversationData == null && broadcastData == null) {
+        pdf.addPage(makePage((_) => [
+          _pdfSectionTitle('Client Report', _pdf.navy),
+          pw.SizedBox(height: 14),
+          pw.Text('No analytics data available for this client.', style: pw.TextStyle(fontSize: 12, color: _pdf.textMuted)),
+          pw.SizedBox(height: 20),
+          _pdfSectionTitle('Client Info', _pdf.teal),
+          pw.SizedBox(height: 10),
+          _buildClientInfoTable(client),
+        ]));
+      }
     }
 
     final bytes = await pdf.save();
@@ -2544,6 +2826,31 @@ class AnalyticsExporter {
       content: bytes,
       filename: '${client.slug}_report_$timestamp.pdf',
       mimeType: 'application/pdf',
+    );
+  }
+
+  /// Generic PDF table helper
+  static pw.Widget _buildPdfTable({
+    required List<String> headers,
+    required List<List<String>> rows,
+  }) {
+    return pw.Table(
+      border: pw.TableBorder.all(color: _pdf.border, width: 0.5),
+      children: [
+        pw.TableRow(
+          decoration: pw.BoxDecoration(color: _pdf.navy),
+          children: headers.map((h) => pw.Padding(
+            padding: const pw.EdgeInsets.all(6),
+            child: pw.Text(h, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColors.white)),
+          )).toList(),
+        ),
+        ...rows.map((row) => pw.TableRow(
+          children: row.map((cell) => pw.Padding(
+            padding: const pw.EdgeInsets.all(6),
+            child: pw.Text(cell, style: const pw.TextStyle(fontSize: 9)),
+          )).toList(),
+        )),
+      ],
     );
   }
 

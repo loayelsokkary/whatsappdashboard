@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../models/models.dart';
 import '../providers/activity_logs_provider.dart';
@@ -66,15 +67,8 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
     }
   }
 
-  static String _formatCount(int count) {
-    if (count < 1000) return '$count';
-    if (count < 10000) {
-      final thousands = count ~/ 1000;
-      final remainder = (count % 1000) ~/ 100;
-      return remainder > 0 ? '$thousands,${(count % 1000).toString().padLeft(3, '0')}' : '${thousands}k';
-    }
-    return '${(count / 1000).toStringAsFixed(1)}k';
-  }
+  static final _numFmt = NumberFormat('#,###');
+  static String _formatCount(int count) => _numFmt.format(count);
 
   @override
   void dispose() {

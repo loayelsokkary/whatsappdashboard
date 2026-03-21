@@ -133,8 +133,13 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     final provider = context.read<TemplatesProvider>();
-    final templateName =
+    final userTemplateName =
         _nameController.text.trim().toLowerCase().replaceAll(' ', '_');
+    final slug = ClientConfig.currentClient?.slug ?? '';
+    final prefix = TemplatesProvider.normalizeSlug(slug);
+    final templateName = prefix.isNotEmpty
+        ? '${prefix}_$userTemplateName'
+        : userTemplateName;
 
     // ── Step 1: Upload image to Supabase Storage FIRST ─────────────────────
     // Must happen before any Meta API call so the permanent URL is always
@@ -274,6 +279,7 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
         variableLabels: variableLabels,
         variableSources: variableSources,
         offerImageUrl: offerImageUrl,
+        displayName: userTemplateName,
       );
       if (syncError != null) {
         debugPrint('[_submit] syncSingleTemplate error: $syncError');

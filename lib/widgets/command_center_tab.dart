@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/models.dart';
@@ -632,11 +633,8 @@ class _CommandCenterTabState extends State<CommandCenterTab> {
 
   // ── Helpers ─────────────────────────────────────────────
 
-  String _formatNumber(int n) {
-    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
-    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
-    return n.toString();
-  }
+  static final _numFmt = NumberFormat('#,###');
+  String _formatNumber(int n) => _numFmt.format(n);
 
   String _relativeTime(DateTime dt) {
     final diff = DateTime.now().difference(dt);

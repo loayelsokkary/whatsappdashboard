@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../providers/admin_analytics_provider.dart';
 import '../providers/admin_provider.dart';
@@ -259,21 +260,21 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                   label: 'Total Clients',
                   value: analytics.totalClients.toString(),
                   color: VividColors.brightBlue,
-                  description: 'Active accounts',
+                  description: 'Number of active client accounts on Vivid',
                 ),
                 _MetricCard(
                   icon: Icons.message,
                   label: 'Total Messages',
-                  value: _formatNumber(analytics.totalMessages),
+                  value: _fmtInt(analytics.totalMessages),
                   color: VividColors.cyan,
-                  description: 'All-time conversations',
+                  description: 'All WhatsApp messages across every client',
                 ),
                 _MetricCard(
                   icon: Icons.auto_awesome,
                   label: 'Automation Rate',
                   value: '${analytics.overallAutomationRate.toStringAsFixed(1)}%',
-                  color: analytics.overallAutomationRate >= 80 ? Colors.green : Colors.orange,
-                  description: analytics.overallAutomationRate >= 80 ? 'Excellent' : 'Good',
+                  color: analytics.overallAutomationRate >= 80 ? Colors.teal : VividColors.brightBlue,
+                  description: 'Percentage of messages handled by AI across all clients',
                   isHighlight: true,
                 ),
               ], isMobile: isMobile),
@@ -284,23 +285,23 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                 _MetricCard(
                   icon: Icons.smart_toy,
                   label: 'AI Messages',
-                  value: _formatNumber(analytics.totalAiMessages),
+                  value: _fmtInt(analytics.totalAiMessages),
                   color: VividColors.cyan,
-                  description: 'Handled by AI',
+                  description: 'Responses generated automatically by AI',
                 ),
                 _MetricCard(
                   icon: Icons.support_agent,
                   label: 'Manager Messages',
-                  value: _formatNumber(analytics.totalManagerMessages),
+                  value: _fmtInt(analytics.totalManagerMessages),
                   color: VividColors.brightBlue,
-                  description: 'Human interventions',
+                  description: 'Responses sent manually by human agents',
                 ),
                 _MetricCard(
                   icon: Icons.people,
                   label: 'Unique Customers',
-                  value: _formatNumber(analytics.totalUniqueCustomers),
-                  color: Colors.purple,
-                  description: 'Total people reached',
+                  value: _fmtInt(analytics.totalUniqueCustomers),
+                  color: Colors.blueGrey,
+                  description: 'Distinct phone numbers across all clients',
                 ),
               ], isMobile: isMobile),
               const SizedBox(height: 20),
@@ -311,22 +312,22 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                   icon: Icons.campaign,
                   label: 'Total Broadcasts',
                   value: analytics.totalBroadcasts.toString(),
-                  color: Colors.orange,
-                  description: 'Campaigns sent',
+                  color: Colors.blueGrey,
+                  description: 'Broadcast campaigns sent across all clients',
                 ),
                 _MetricCard(
                   icon: Icons.group,
                   label: 'Recipients Reached',
-                  value: _formatNumber(analytics.totalRecipientsReached),
+                  value: _fmtInt(analytics.totalRecipientsReached),
                   color: Colors.teal,
-                  description: 'Via broadcasts',
+                  description: 'Total broadcast recipients across all campaigns',
                 ),
                 _MetricCard(
                   icon: Icons.access_time,
                   label: 'Last Activity',
                   value: _formatLastActivity(analytics.lastActivityAcrossAll),
                   color: vc.textMuted,
-                  description: 'Most recent message',
+                  description: 'Most recent message or broadcast across all clients',
                 ),
               ], isMobile: isMobile),
               const SizedBox(height: 32),
@@ -346,23 +347,23 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                 _MetricCard(
                   icon: Icons.today,
                   label: 'Today',
-                  value: _formatNumber(analytics.todayMessages),
+                  value: _fmtInt(analytics.todayMessages),
                   color: VividColors.cyan,
-                  description: 'Messages today',
+                  description: 'Messages received and sent today across all clients',
                 ),
                 _MetricCard(
                   icon: Icons.view_week,
                   label: 'This Week',
-                  value: _formatNumber(analytics.thisWeekMessages),
+                  value: _fmtInt(analytics.thisWeekMessages),
                   color: VividColors.brightBlue,
-                  description: 'Messages this week',
+                  description: 'Total messages since Monday across all clients',
                 ),
                 _MetricCard(
                   icon: Icons.calendar_month,
                   label: 'This Month',
-                  value: _formatNumber(analytics.thisMonthMessages),
-                  color: Colors.purple,
-                  description: 'Messages this month',
+                  value: _fmtInt(analytics.thisMonthMessages),
+                  color: Colors.blueGrey,
+                  description: 'Total messages since the 1st of this month',
                 ),
               ], isMobile: isMobile),
               const SizedBox(height: 32),
@@ -379,23 +380,23 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                   _MetricCard(
                     icon: Icons.done_all,
                     label: 'Delivered',
-                    value: _formatNumber(analytics.broadcastDeliveredCount),
-                    color: Colors.green,
-                    description: '${(analytics.broadcastDeliveredCount / analytics.broadcastTotalRecipients * 100).toStringAsFixed(1)}% rate',
+                    value: _fmtInt(analytics.broadcastDeliveredCount),
+                    color: Colors.teal,
+                    description: '${(analytics.broadcastDeliveredCount / analytics.broadcastTotalRecipients * 100).toStringAsFixed(1)}% delivery rate across all broadcasts',
                   ),
                   _MetricCard(
                     icon: Icons.visibility,
                     label: 'Read',
-                    value: _formatNumber(analytics.broadcastReadCount),
-                    color: Colors.blue,
-                    description: '${(analytics.broadcastReadCount / analytics.broadcastTotalRecipients * 100).toStringAsFixed(1)}% rate',
+                    value: _fmtInt(analytics.broadcastReadCount),
+                    color: VividColors.brightBlue,
+                    description: '${(analytics.broadcastReadCount / analytics.broadcastTotalRecipients * 100).toStringAsFixed(1)}% of recipients opened the message',
                   ),
                   _MetricCard(
                     icon: Icons.error_outline,
                     label: 'Failed',
-                    value: _formatNumber(analytics.broadcastFailedCount),
-                    color: analytics.broadcastFailedCount > 0 ? Colors.red : Colors.orange,
-                    description: '${(analytics.broadcastFailedCount / analytics.broadcastTotalRecipients * 100).toStringAsFixed(1)}% rate',
+                    value: _fmtInt(analytics.broadcastFailedCount),
+                    color: analytics.broadcastFailedCount > 0 ? Colors.redAccent : Colors.blueGrey,
+                    description: '${(analytics.broadcastFailedCount / analytics.broadcastTotalRecipients * 100).toStringAsFixed(1)}% failed — check number quality',
                   ),
                 ], isMobile: isMobile),
               ],
@@ -559,12 +560,12 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.campaign, size: 14, color: Colors.orange),
+                    const Icon(Icons.campaign, size: 14, color: Colors.blueGrey),
                     const SizedBox(width: 4),
                     Text(
                       '${client.broadcastCount}',
                       style: const TextStyle(
-                        color: Colors.orange,
+                        color: Colors.blueGrey,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -719,10 +720,10 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: Colors.purple.withOpacity(0.15),
+                  color: Colors.blueGrey.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.table_chart, color: Colors.purple, size: 22),
+                child: const Icon(Icons.table_chart, color: Colors.blueGrey, size: 22),
               ),
               const SizedBox(width: 12),
               Text(
@@ -770,11 +771,11 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
               child: Row(
                 children: [
                   Expanded(flex: 3, child: Text(client.clientName, style: TextStyle(color: vc.textPrimary, fontSize: 13, fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis)),
-                  Expanded(flex: 2, child: Text(_formatNumber(client.messageCount), style: const TextStyle(color: VividColors.cyan, fontSize: 13, fontWeight: FontWeight.bold), textAlign: TextAlign.center)),
-                  Expanded(flex: 2, child: Text(_formatNumber(client.aiMessages), style: const TextStyle(color: VividColors.cyan, fontSize: 13), textAlign: TextAlign.center)),
-                  Expanded(flex: 2, child: Text(_formatNumber(client.managerMessages), style: const TextStyle(color: VividColors.brightBlue, fontSize: 13), textAlign: TextAlign.center)),
-                  Expanded(flex: 2, child: Text(client.uniqueCustomers.toString(), style: const TextStyle(color: Colors.purple, fontSize: 13), textAlign: TextAlign.center)),
-                  Expanded(flex: 2, child: Text('${client.automationRate.toStringAsFixed(0)}%', style: TextStyle(color: client.automationRate >= 80 ? Colors.green : Colors.orange, fontSize: 13, fontWeight: FontWeight.bold), textAlign: TextAlign.center)),
+                  Expanded(flex: 2, child: Text(_fmtInt(client.messageCount), style: const TextStyle(color: VividColors.cyan, fontSize: 13, fontWeight: FontWeight.bold), textAlign: TextAlign.center)),
+                  Expanded(flex: 2, child: Text(_fmtInt(client.aiMessages), style: const TextStyle(color: VividColors.cyan, fontSize: 13), textAlign: TextAlign.center)),
+                  Expanded(flex: 2, child: Text(_fmtInt(client.managerMessages), style: const TextStyle(color: VividColors.brightBlue, fontSize: 13), textAlign: TextAlign.center)),
+                  Expanded(flex: 2, child: Text(client.uniqueCustomers.toString(), style: const TextStyle(color: Colors.blueGrey, fontSize: 13), textAlign: TextAlign.center)),
+                  Expanded(flex: 2, child: Text('${client.automationRate.toStringAsFixed(0)}%', style: TextStyle(color: client.automationRate >= 80 ? Colors.teal : VividColors.brightBlue, fontSize: 13, fontWeight: FontWeight.bold), textAlign: TextAlign.center)),
                 ],
               ),
             )),
@@ -809,13 +810,13 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: (client.automationRate >= 80 ? Colors.green : Colors.orange).withOpacity(0.2),
+                  color: (client.automationRate >= 80 ? Colors.teal : VividColors.brightBlue).withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
                   '${client.automationRate.toStringAsFixed(0)}%',
                   style: TextStyle(
-                    color: client.automationRate >= 80 ? Colors.green : Colors.orange,
+                    color: client.automationRate >= 80 ? Colors.teal : VividColors.brightBlue,
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
                   ),
@@ -826,10 +827,10 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
           const SizedBox(height: 12),
           Row(
             children: [
-              Expanded(child: _buildMobileStatItem(context, 'Messages', _formatNumber(client.messageCount), VividColors.cyan)),
-              Expanded(child: _buildMobileStatItem(context, 'AI', _formatNumber(client.aiMessages), VividColors.cyan)),
-              Expanded(child: _buildMobileStatItem(context, 'Manager', _formatNumber(client.managerMessages), VividColors.brightBlue)),
-              Expanded(child: _buildMobileStatItem(context, 'Customers', client.uniqueCustomers.toString(), Colors.purple)),
+              Expanded(child: _buildMobileStatItem(context, 'Messages', _fmtInt(client.messageCount), VividColors.cyan)),
+              Expanded(child: _buildMobileStatItem(context, 'AI', _fmtInt(client.aiMessages), VividColors.cyan)),
+              Expanded(child: _buildMobileStatItem(context, 'Manager', _fmtInt(client.managerMessages), VividColors.brightBlue)),
+              Expanded(child: _buildMobileStatItem(context, 'Customers', client.uniqueCustomers.toString(), Colors.blueGrey)),
             ],
           ),
         ],
@@ -884,7 +885,7 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                       gradient: LinearGradient(
                         begin: Alignment.bottomCenter,
                         end: Alignment.topCenter,
-                        colors: [Colors.orange, Colors.amber],
+                        colors: [VividColors.brightBlue, VividColors.cyan],
                       ),
                       borderRadius: BorderRadius.circular(2),
                     ),
@@ -920,10 +921,10 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.15),
+                  color: VividColors.brightBlue.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.schedule, color: Colors.orange, size: 22),
+                child: const Icon(Icons.schedule, color: VividColors.brightBlue, size: 22),
               ),
               const SizedBox(width: 12),
               Text(
@@ -1038,7 +1039,7 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                       const Icon(Icons.message, size: 14, color: VividColors.cyan),
                       const SizedBox(width: 4),
                       Text(
-                        _formatNumber(customer.messageCount),
+                        _fmtInt(customer.messageCount),
                         style: const TextStyle(color: VividColors.cyan, fontWeight: FontWeight.bold, fontSize: 13),
                       ),
                     ],
@@ -1131,22 +1132,22 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
               icon: Icons.swap_horiz,
               label: 'Handoffs',
               value: analytics.handoffCount.toString(),
-              color: Colors.orange,
-              description: 'AI tried, manager stepped in',
+              color: Colors.blueGrey,
+              description: 'Messages where AI responded but manager also stepped in',
             ),
             _MetricCard(
               icon: Icons.check_circle,
               label: 'AI Enabled',
               value: analytics.aiEnabledCustomers.toString(),
-              color: Colors.green,
-              description: 'Customers with AI on',
+              color: Colors.teal,
+              description: 'Customer conversations with AI auto-reply turned on',
             ),
             _MetricCard(
               icon: Icons.cancel,
               label: 'AI Disabled',
               value: analytics.aiDisabledCustomers.toString(),
-              color: Colors.red,
-              description: 'Customers with AI off',
+              color: Colors.redAccent,
+              description: 'Customer conversations with AI auto-reply turned off',
             ),
           ], isMobile: isMobile),
         ],
@@ -1154,14 +1155,8 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
     );
   }
 
-  String _formatNumber(int number) {
-    if (number >= 1000000) {
-      return '${(number / 1000000).toStringAsFixed(1)}M';
-    } else if (number >= 1000) {
-      return '${(number / 1000).toStringAsFixed(1)}K';
-    }
-    return number.toString();
-  }
+  static final _numFmt = NumberFormat('#,###');
+  String _fmtInt(int number) => _numFmt.format(number);
 
   String _formatLastActivity(DateTime? date) {
     if (date == null) return 'N/A';

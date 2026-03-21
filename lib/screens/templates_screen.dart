@@ -501,7 +501,7 @@ class _TemplateCard extends StatelessWidget {
                         children: [
                           Expanded(
                             child: Text(
-                              template.name,
+                              template.label,
                               style: TextStyle(
                                 color: vc.textPrimary,
                                 fontSize: 13,

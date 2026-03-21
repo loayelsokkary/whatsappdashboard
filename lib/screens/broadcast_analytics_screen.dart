@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../providers/broadcast_analytics_provider.dart';
 import '../theme/vivid_theme.dart';
@@ -338,14 +339,8 @@ class _BroadcastAnalyticsScreenState extends State<BroadcastAnalyticsScreen> {
     );
   }
 
-  String _formatNumber(int number) {
-    if (number >= 1000000) {
-      return '${(number / 1000000).toStringAsFixed(1)}M';
-    } else if (number >= 1000) {
-      return '${(number / 1000).toStringAsFixed(1)}K';
-    }
-    return number.toString();
-  }
+  static final _numFmt = NumberFormat('#,###');
+  String _formatNumber(int number) => _numFmt.format(number);
 }
 
 // ============================================

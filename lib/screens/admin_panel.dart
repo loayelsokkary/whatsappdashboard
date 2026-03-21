@@ -10,6 +10,7 @@ import '../providers/admin_provider.dart';
 import '../services/supabase_service.dart';
 import '../providers/admin_analytics_provider.dart';
 import '../providers/agent_provider.dart';
+import '../providers/templates_provider.dart';
 import '../models/models.dart';
 import '../theme/vivid_theme.dart';
 import '../widgets/client_analytics_view.dart';
@@ -5740,18 +5741,21 @@ class _ClientListItem extends StatelessWidget {
                   const SizedBox(height: 2),
                   Row(
                     children: [
-                      Icon(
-                        client.hasFeature('conversations') 
-                            ? Icons.chat_bubble_outline 
-                            : Icons.campaign_outlined,
-                        size: 12,
-                        color: vc.textMuted.withOpacity(0.7),
-                      ),
-                      const SizedBox(width: 4),
+                      for (final f in client.enabledFeatures.take(3)) ...[
+                        Icon(
+                          f == 'conversations' ? Icons.chat_bubble_outline
+                              : f == 'broadcasts' ? Icons.campaign_outlined
+                              : f == 'manager_chat' ? Icons.smart_toy
+                              : f == 'labels' ? Icons.label_outline
+                              : f == 'predictive_intelligence' ? Icons.auto_graph
+                              : Icons.extension,
+                          size: 12,
+                          color: vc.textMuted.withOpacity(0.5),
+                        ),
+                        const SizedBox(width: 4),
+                      ],
                       Text(
-                        client.hasFeature('conversations') 
-                            ? 'Conversations' 
-                            : 'Broadcasts',
+                        '${client.enabledFeatures.length} features',
                         style: TextStyle(
                           color: vc.textMuted.withOpacity(0.7),
                           fontSize: 11,
@@ -6419,6 +6423,27 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
   String? _categoryFilter;
   WhatsAppTemplate? _selected;
   bool _isDeleting = false;
+  bool _isSyncingAll = false;
+
+  /// Maps normalized prefix → Client for badge display
+  Map<String, Client> _prefixMap = {};
+
+  void _buildPrefixMap() {
+    final clients = context.read<AdminProvider>().clients;
+    final map = <String, Client>{};
+    for (final c in clients) {
+      final p = '${TemplatesProvider.normalizeSlug(c.slug)}_';
+      if (p.length > 1) map[p] = c;
+    }
+    _prefixMap = map;
+  }
+
+  String? _clientForTemplate(String templateName) {
+    for (final entry in _prefixMap.entries) {
+      if (templateName.startsWith(entry.key)) return entry.value.name;
+    }
+    return null;
+  }
 
   static String get _baseUrl =>
       'https://graph.facebook.com/${SupabaseService.metaApiVersion}';
@@ -6462,10 +6487,13 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
       }
 
       all.sort((a, b) => a.name.compareTo(b.name));
-      print('ADMIN_TEMPLATES: fetched ${all.length} templates from Meta API');
-      if (mounted) setState(() => _templates = all);
+      debugPrint('ADMIN_TEMPLATES: fetched ${all.length} templates from Meta API');
+      if (mounted) {
+        _buildPrefixMap();
+        setState(() => _templates = all);
+      }
     } catch (e) {
-      print('ADMIN_TEMPLATES: error: $e');
+      debugPrint('ADMIN_TEMPLATES: error: $e');
       if (mounted) setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -6530,7 +6558,7 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
         }
       }
 
-      print('ADMIN_TEMPLATES: deleted "${t.name}" from Meta + $cleaned client tables');
+      debugPrint('ADMIN_TEMPLATES: deleted "${t.name}" from Meta + $cleaned client tables');
       if (mounted) {
         setState(() {
           _templates.removeWhere((x) => x.name == t.name);
@@ -6541,12 +6569,127 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
             type: ToastType.success);
       }
     } catch (e) {
-      print('ADMIN_TEMPLATES: delete error: $e');
+      debugPrint('ADMIN_TEMPLATES: delete error: $e');
       if (mounted) {
         VividToast.show(context, message: 'Delete failed: $e', type: ToastType.error);
       }
     } finally {
       if (mounted) setState(() => _isDeleting = false);
+    }
+  }
+
+  Future<void> _syncToAllClients() async {
+    setState(() => _isSyncingAll = true);
+    try {
+      final clients = context.read<AdminProvider>().clients;
+      final now = DateTime.now().toIso8601String();
+      int synced = 0;
+
+      for (final client in clients) {
+        final table = client.templatesTable;
+        if (table == null || table.isEmpty) continue;
+
+        final clientPrefix = '${TemplatesProvider.normalizeSlug(client.slug)}_';
+        // Build set of OTHER client prefixes
+        final otherPrefixes = <String>{};
+        for (final c in clients) {
+          final p = '${TemplatesProvider.normalizeSlug(c.slug)}_';
+          if (p != clientPrefix && p.length > 1) otherPrefixes.add(p);
+        }
+
+        final rows = <Map<String, dynamic>>[];
+        for (final t in _templates) {
+          String displayName;
+          if (clientPrefix.length > 1 && t.name.startsWith(clientPrefix)) {
+            // This client's template
+            displayName = t.name.substring(clientPrefix.length);
+          } else if (otherPrefixes.any((p) => t.name.startsWith(p))) {
+            // Another client's template — skip
+            continue;
+          } else {
+            // Global template
+            displayName = t.name;
+          }
+
+          // Read existing row to preserve labels/sources/image
+          final existing = await SupabaseService.adminClient
+              .from(table)
+              .select('body_variable_labels, body_variable_sources, offer_image_url')
+              .eq('template_name', t.name)
+              .eq('client_id', client.id)
+              .maybeSingle();
+
+          final varCount = RegExp(r'\{\{\d+\}\}').allMatches(t.body).length;
+
+          final existingLabels = existing?['body_variable_labels'];
+          final hasLabels = existingLabels is List && existingLabels.isNotEmpty &&
+              existingLabels.any((l) => (l as String?)?.trim().isNotEmpty == true);
+          final labels = hasLabels
+              ? List<String>.from(existingLabels)
+              : List.generate(varCount, (i) => 'Variable ${i + 1}');
+
+          final existingSources = existing?['body_variable_sources'];
+          final hasSources = existingSources is List && existingSources.isNotEmpty;
+          final sources = hasSources
+              ? List<String>.from(existingSources)
+              : List.generate(varCount, (_) => 'customer_data');
+
+          final existingImageUrl = existing?['offer_image_url'] as String?;
+          final offerImageUrl = (existingImageUrl != null &&
+                  existingImageUrl.contains('supabase.co/storage') &&
+                  !existingImageUrl.contains('scontent'))
+              ? existingImageUrl
+              : null;
+
+          final headerType = t.headerType.toLowerCase() == 'none'
+              ? 'none'
+              : t.headerType.toLowerCase();
+
+          rows.add({
+            'meta_template_id': t.id,
+            'client_id': client.id,
+            'template_name': t.name,
+            'display_name': displayName,
+            'language_code': t.language,
+            'category': t.category,
+            'status': t.status,
+            'header_type': headerType,
+            'header_text': t.headerText,
+            'header_media_url': null,
+            'header_has_variable': false,
+            'body_text': t.body,
+            'body_variable_count': varCount,
+            'body_variable_labels': labels,
+            'body_variable_descriptions': labels,
+            'body_variable_sources': sources,
+            'buttons': t.buttons.map((b) => {'type': b.type, 'text': b.text}).toList(),
+            'button_count': t.buttons.length,
+            'is_active': t.status == 'APPROVED',
+            'updated_at': now,
+            'offer_image_url': offerImageUrl,
+          });
+        }
+
+        if (rows.isNotEmpty) {
+          await SupabaseService.adminClient
+              .from(table)
+              .upsert(rows, onConflict: 'meta_template_id');
+          synced++;
+        }
+      }
+
+      if (mounted) {
+        VividToast.show(context,
+            message: 'Synced templates to $synced client${synced == 1 ? '' : 's'}',
+            type: ToastType.success);
+      }
+    } catch (e) {
+      debugPrint('ADMIN_TEMPLATES: sync all error: $e');
+      if (mounted) {
+        VividToast.show(context, message: 'Sync failed: $e', type: ToastType.error);
+      }
+    } finally {
+      if (mounted) setState(() => _isSyncingAll = false);
     }
   }
 
@@ -6655,6 +6798,22 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
                     icon: const Icon(Icons.delete_outline, color: VividColors.statusUrgent, size: 20),
                     onPressed: () => _deleteTemplate(_selected!),
                   ),
+          _isSyncingAll
+              ? const SizedBox(
+                  width: 20, height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: VividColors.cyan))
+              : OutlinedButton.icon(
+                  onPressed: _isLoading ? null : _syncToAllClients,
+                  icon: const Icon(Icons.sync, size: 16),
+                  label: const Text('Sync to All Clients'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: VividColors.statusSuccess,
+                    side: const BorderSide(color: VividColors.statusSuccess),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
+                ),
+          const SizedBox(width: 8),
           OutlinedButton.icon(
             onPressed: _isLoading ? null : _fetchTemplates,
             icon: const Icon(Icons.refresh, size: 16),
@@ -6842,6 +7001,25 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
                                 style: TextStyle(
                                     color: statusColor, fontSize: 10, fontWeight: FontWeight.w600)),
                           ),
+                          const SizedBox(width: 6),
+                          Builder(builder: (_) {
+                            final clientName = _clientForTemplate(t.name);
+                            final isGlobal = clientName == null;
+                            final badgeColor = isGlobal ? Colors.blueGrey : VividColors.cyan;
+                            return Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: badgeColor.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: badgeColor.withValues(alpha: 0.3)),
+                              ),
+                              child: Text(
+                                isGlobal ? 'Global' : clientName,
+                                style: TextStyle(
+                                    color: badgeColor, fontSize: 9, fontWeight: FontWeight.w600),
+                              ),
+                            );
+                          }),
                         ],
                       ),
                       const SizedBox(height: 6),
