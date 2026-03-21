@@ -151,10 +151,12 @@ class ManagerChatProvider extends ChangeNotifier {
 
   /// Dynamic table name from ClientConfig
   String get _managerChatsTable {
+    // Prefer the explicit managerChatsTable column from the clients row
+    final explicit = ClientConfig.managerChatsTableName;
+    if (explicit != null && explicit.isNotEmpty) return explicit;
+    // Fallback: derive from slug (supports older rows without the column set)
     final slug = ClientConfig.currentClient?.slug;
-    if (slug != null && slug.isNotEmpty) {
-      return '${slug}_manager_chats';
-    }
+    if (slug != null && slug.isNotEmpty) return '${slug}_manager_chats';
     return 'manager_chats';
   }
 

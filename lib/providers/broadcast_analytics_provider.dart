@@ -88,6 +88,8 @@ class BroadcastAnalyticsProvider extends ChangeNotifier {
   }
 
   String get _recipientsTable {
+    final explicit = ClientConfig.broadcastRecipientsTableName;
+    if (explicit != null && explicit.isNotEmpty) return explicit;
     final broadcastsTable = _broadcastsTable;
     if (broadcastsTable != 'broadcasts') {
       final prefix = broadcastsTable.replaceAll('_broadcasts', '');

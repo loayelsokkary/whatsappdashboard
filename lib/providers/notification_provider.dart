@@ -112,7 +112,7 @@ class NotificationProvider extends ChangeNotifier {
   Future<bool> _checkAiDisabled(String customerPhone) async {
     try {
       final response = await _client
-          .from('ai_chat_settings')
+          .from(ClientConfig.aiSettingsTableName ?? 'ai_chat_settings')
           .select('ai_enabled')
           .eq('ai_phone', ClientConfig.businessPhone)
           .eq('customer_phone', customerPhone)

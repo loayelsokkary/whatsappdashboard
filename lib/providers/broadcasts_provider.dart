@@ -150,6 +150,10 @@ class BroadcastsProvider extends ChangeNotifier {
   }
 
   String get _recipientsTable {
+    // Prefer the explicit broadcast_recipients_table column from the clients row
+    final explicit = ClientConfig.broadcastRecipientsTableName;
+    if (explicit != null && explicit.isNotEmpty) return explicit;
+    // Fallback: derive from the broadcasts table name (supports older rows)
     final broadcastsTable = _broadcastsTable;
     if (broadcastsTable != 'broadcasts') {
       final prefix = broadcastsTable.replaceAll('_broadcasts', '');

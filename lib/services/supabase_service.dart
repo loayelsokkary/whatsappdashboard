@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/models.dart';
@@ -111,6 +112,25 @@ class SupabaseService {
             ClientConfig.setAdmin(user);
             print('Admin login successful');
 
+            // If admin has a client_id (e.g. client-level admin like HOB Manager),
+            // load the client config so WABA ID and table routing work correctly.
+            if (user.clientId != null) {
+              try {
+                final adminClientResponse = await client
+                    .from('clients')
+                    .select()
+                    .eq('id', user.clientId!)
+                    .maybeSingle();
+                if (adminClientResponse != null) {
+                  final clientData = Client.fromJson(adminClientResponse);
+                  ClientConfig.setClientUser(clientData, user);
+                  _applyClientMetaConfig(clientData);
+                }
+              } catch (e) {
+                print('Could not load client config for admin: $e');
+              }
+            }
+
             // Log the login
             await logActivity(
               clientId: user.clientId,
@@ -120,7 +140,7 @@ class SupabaseService {
               actionType: ActionType.login.value,
               description: '${user.name} logged in',
             );
-            
+
             return user;
           }
 
@@ -134,6 +154,7 @@ class SupabaseService {
 
             final clientData = Client.fromJson(clientResponse);
             ClientConfig.setClientUser(clientData, user);
+            _applyClientMetaConfig(clientData);
           }
 
           // Log the login
@@ -184,6 +205,25 @@ class SupabaseService {
         // Admin user - no client needed
         ClientConfig.setAdmin(user);
         print('Admin logged in: ${user.name}');
+
+        // If admin has a client_id (e.g. client-level admin like HOB Manager),
+        // load the client config so WABA ID and table routing work correctly.
+        if (user.clientId != null) {
+          try {
+            final adminClientResponse = await client
+                .from('clients')
+                .select()
+                .eq('id', user.clientId!)
+                .maybeSingle();
+            if (adminClientResponse != null) {
+              final clientData = Client.fromJson(adminClientResponse);
+              ClientConfig.setClientUser(clientData, user);
+              _applyClientMetaConfig(clientData);
+            }
+          } catch (e) {
+            print('Could not load client config for admin: $e');
+          }
+        }
       } else {
         // Client user - fetch their client config
         if (user.clientId == null) {
@@ -206,6 +246,7 @@ class SupabaseService {
 
         final clientData = Client.fromJson(clientResponse);
         ClientConfig.setClientUser(clientData, user);
+        _applyClientMetaConfig(clientData);
 
         print('Logged in as ${user.name} for ${clientData.name}');
         print('Enabled features: ${clientData.enabledFeatures}');
@@ -229,6 +270,37 @@ class SupabaseService {
     }
   }
 
+  // ============================================
+  // PER-CLIENT META CONFIG
+  // ============================================
+
+  // These defaults are Karisma's credentials — they are used as fallbacks
+  // when a client row has null waba_id / meta_access_token.
+  static const String _defaultMetaAccessToken = 'EAAbZB1YmaTZBgBQ9VyQAhCOumHulultZAfCeC7srDnVTFH7VpPDmywE50zYi6Eq5uOVnVSjAL24ZASRNYZARFdH429CKEhcafZBhS5o4gAZCAF5YRoMWIV0kfwZBScUp7au1TDji2fSVvUMifGQqmjgxlxjYIpiRainEV1gSCO7EYeuY1PFcAtfB1fzsiP0eiwZDZD';
+  static const String _defaultMetaWabaId = '699577226572846';
+
+  /// Overrides metaWabaId / metaAccessToken from the client's DB row.
+  /// Falls back to the hardcoded defaults when the client has null values.
+  void _applyClientMetaConfig(Client client) {
+    if (client.wabaId != null && client.wabaId!.isNotEmpty) {
+      metaWabaId = client.wabaId!;
+    } else {
+      metaWabaId = _defaultMetaWabaId;
+    }
+    if (client.metaAccessToken != null && client.metaAccessToken!.isNotEmpty) {
+      metaAccessToken = client.metaAccessToken!;
+    } else {
+      metaAccessToken = _defaultMetaAccessToken;
+    }
+    debugPrint('📋 Client loaded: ${client.name}');
+    debugPrint('📋 Messages table: ${ClientConfig.messagesTable}');
+    debugPrint('📋 Templates table: ${ClientConfig.templatesTableName}');
+    debugPrint('📋 AI Settings table: ${ClientConfig.aiSettingsTableName}');
+    debugPrint('📋 Predictions table: ${ClientConfig.customerPredictionsTableName}');
+    debugPrint('📋 WABA ID: $metaWabaId');
+    debugPrint('📋 Conversations phone: ${ClientConfig.conversationsPhone}');
+  }
+
   /// Logout - clear client config
   Future<void> logout() async {
     // Log before clearing config
@@ -243,7 +315,11 @@ class SupabaseService {
         description: '${user.name} logged out',
       );
     }
-    
+
+    // Reset Meta credentials to defaults so the next login gets fresh values
+    metaWabaId = _defaultMetaWabaId;
+    metaAccessToken = _defaultMetaAccessToken;
+
     ClientConfig.clear();
     _cachedExchanges.clear();
     _channel?.unsubscribe();
@@ -1160,7 +1236,7 @@ class SupabaseService {
   Future<bool> getAiEnabled(String customerPhone) async {
     try {
       final response = await client
-          .from('ai_chat_settings')
+          .from(ClientConfig.aiSettingsTableName ?? 'ai_chat_settings')
           .select('ai_enabled')
           .eq('ai_phone', ClientConfig.conversationsPhone ?? '')
           .eq('customer_phone', customerPhone)
@@ -1184,8 +1260,9 @@ class SupabaseService {
       if (aiPhone == null) return false;
       
       // Check if setting exists
+      final aiTable = ClientConfig.aiSettingsTableName ?? 'ai_chat_settings';
       final existing = await client
-          .from('ai_chat_settings')
+          .from(aiTable)
           .select('id')
           .eq('ai_phone', aiPhone)
           .eq('customer_phone', customerPhone)
@@ -1194,7 +1271,7 @@ class SupabaseService {
       if (existing != null) {
         // Update existing
         await client
-            .from('ai_chat_settings')
+            .from(aiTable)
             .update({
               'ai_enabled': enabled,
               'last_changed_by': 'manager',
@@ -1204,7 +1281,7 @@ class SupabaseService {
             .eq('customer_phone', customerPhone);
       } else {
         // Insert new
-        await client.from('ai_chat_settings').insert({
+        await client.from(aiTable).insert({
           'ai_phone': aiPhone,
           'customer_phone': customerPhone,
           'ai_enabled': enabled,

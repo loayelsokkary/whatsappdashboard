@@ -76,7 +76,7 @@ class AiSettingsProvider extends ChangeNotifier {
 
     try {
       final response = await _client
-          .from('ai_chat_settings')
+          .from(ClientConfig.aiSettingsTableName ?? 'ai_chat_settings')
           .select()
           .eq('ai_phone', ClientConfig.businessPhone);
 
@@ -100,7 +100,7 @@ class AiSettingsProvider extends ChangeNotifier {
   Future<AiChatSetting?> fetchSetting(String customerPhone) async {
     try {
       final response = await _client
-          .from('ai_chat_settings')
+          .from(ClientConfig.aiSettingsTableName ?? 'ai_chat_settings')
           .select()
           .eq('ai_phone', ClientConfig.businessPhone)
           .eq('customer_phone', customerPhone)
@@ -140,7 +140,7 @@ class AiSettingsProvider extends ChangeNotifier {
       if (oldSetting != null) {
         // Update existing
         await _client
-            .from('ai_chat_settings')
+            .from(ClientConfig.aiSettingsTableName ?? 'ai_chat_settings')
             .update({
               'ai_enabled': enabled,
               'last_changed_by': 'manager',
@@ -149,7 +149,7 @@ class AiSettingsProvider extends ChangeNotifier {
             .eq('id', oldSetting.id);
       } else {
         // Create new
-        await _client.from('ai_chat_settings').insert({
+        await _client.from(ClientConfig.aiSettingsTableName ?? 'ai_chat_settings').insert({
           'ai_phone': ClientConfig.businessPhone,
           'customer_phone': customerPhone,
           'ai_enabled': enabled,

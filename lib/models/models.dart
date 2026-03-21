@@ -828,12 +828,19 @@ class ClientConfig {
   
   /// Messages table name (e.g., 'threeBs_messages')
   static String? get messagesTable => _currentClient?.messagesTable;
-  
+
   /// Broadcasts table name (e.g., 'karisma_broadcasts')
   static String? get broadcastsTable => _currentClient?.broadcastsTable;
-  
+
   /// Bookings table name (e.g., 'karisma_bookings')
   static String? get bookingsTable => _currentClient?.bookingsTable;
+
+  /// Per-client table names for features added in multi-tenant phase 2
+  static String? get templatesTableName => _currentClient?.templatesTable;
+  static String? get aiSettingsTableName => _currentClient?.aiSettingsTable;
+  static String? get customerPredictionsTableName => _currentClient?.customerPredictionsTable;
+  static String? get managerChatsTableName => _currentClient?.managerChatsTable;
+  static String? get broadcastRecipientsTableName => _currentClient?.broadcastRecipientsTable;
   
   /// Get messages table name, throws if not configured
   static String get messagesTableName {
@@ -980,7 +987,16 @@ class Client {
   final String? messagesTable;
   final String? broadcastsTable;
   final String? bookingsTable;
-  
+  final String? managerChatsTable;
+  final String? broadcastRecipientsTable;
+  final String? templatesTable;
+  final String? aiSettingsTable;
+  final String? customerPredictionsTable;
+
+  // Per-client Meta API credentials (override global defaults when non-null)
+  final String? wabaId;
+  final String? metaAccessToken;
+
   // Per-feature configuration
   final String? conversationsPhone;
   final String? conversationsWebhookUrl;
@@ -1007,6 +1023,13 @@ class Client {
     this.messagesTable,
     this.broadcastsTable,
     this.bookingsTable,
+    this.managerChatsTable,
+    this.broadcastRecipientsTable,
+    this.templatesTable,
+    this.aiSettingsTable,
+    this.customerPredictionsTable,
+    this.wabaId,
+    this.metaAccessToken,
     this.conversationsPhone,
     this.conversationsWebhookUrl,
     this.broadcastsPhone,
@@ -1041,6 +1064,13 @@ class Client {
       messagesTable: json['messages_table'] as String?,
       broadcastsTable: json['broadcasts_table'] as String?,
       bookingsTable: json['bookings_table'] as String?,
+      managerChatsTable: json['manager_chats_table'] as String?,
+      broadcastRecipientsTable: json['broadcast_recipients_table'] as String?,
+      templatesTable: json['templates_table'] as String?,
+      aiSettingsTable: json['ai_settings_table'] as String?,
+      customerPredictionsTable: json['customer_predictions_table'] as String?,
+      wabaId: json['waba_id'] as String?,
+      metaAccessToken: json['meta_access_token'] as String?,
       conversationsPhone: conversationsPhone,
       conversationsWebhookUrl: json['conversations_webhook_url'] as String?,
       broadcastsPhone: broadcastsPhone,
@@ -1065,6 +1095,13 @@ class Client {
       'messages_table': messagesTable,
       'broadcasts_table': broadcastsTable,
       'bookings_table': bookingsTable,
+      'manager_chats_table': managerChatsTable,
+      'broadcast_recipients_table': broadcastRecipientsTable,
+      'templates_table': templatesTable,
+      'ai_settings_table': aiSettingsTable,
+      'customer_predictions_table': customerPredictionsTable,
+      'waba_id': wabaId,
+      'meta_access_token': metaAccessToken,
       'conversations_phone': conversationsPhone,
       'conversations_webhook_url': conversationsWebhookUrl,
       'broadcasts_phone': broadcastsPhone,

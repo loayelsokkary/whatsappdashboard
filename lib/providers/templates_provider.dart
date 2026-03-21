@@ -39,6 +39,7 @@ class TemplatesProvider extends ChangeNotifier {
 
     try {
       final all = <WhatsAppTemplate>[];
+      debugPrint('📋 Fetching templates for WABA: ${SupabaseService.metaWabaId}');
       String? nextUrl =
           '$_baseUrl/${SupabaseService.metaWabaId}/message_templates?limit=100&fields=id,name,status,language,category,components';
 
@@ -66,6 +67,7 @@ class TemplatesProvider extends ChangeNotifier {
         nextUrl = (next != null && next.isNotEmpty) ? next : null;
       }
 
+      debugPrint('📋 Templates received: ${all.length} from WABA ${SupabaseService.metaWabaId}');
       _templates = all;
       _isLoading = false;
       notifyListeners();
@@ -271,7 +273,7 @@ class TemplatesProvider extends ChangeNotifier {
     if (clientId.isEmpty) return;
     try {
       final rows = await SupabaseService.adminClient
-          .from('whatsapp_templates')
+          .from(ClientConfig.templatesTableName ?? 'whatsapp_templates')
           .select('meta_template_id, body_variable_labels, offer_image_url, body_variable_count, header_type')
           .eq('client_id', clientId);
       _templateDbStatuses = {
@@ -307,7 +309,7 @@ class TemplatesProvider extends ChangeNotifier {
       final rows = await Future.wait(_templates.map((t) async {
         // Individual read — guaranteed to return the correct row for this client+template.
         final existing = await SupabaseService.adminClient
-            .from('whatsapp_templates')
+            .from(ClientConfig.templatesTableName ?? 'whatsapp_templates')
             .select('body_variable_labels, body_variable_sources, offer_image_url')
             .eq('template_name', t.name)
             .eq('client_id', clientId)
@@ -368,7 +370,7 @@ class TemplatesProvider extends ChangeNotifier {
 
       // Use adminClient to bypass RLS on whatsapp_templates writes.
       await SupabaseService.adminClient
-          .from('whatsapp_templates')
+          .from(ClientConfig.templatesTableName ?? 'whatsapp_templates')
           .upsert(rows, onConflict: 'meta_template_id');
 
       _isSyncing = false;
@@ -441,7 +443,7 @@ class TemplatesProvider extends ChangeNotifier {
       debugPrint('[syncSingleTemplate] Upserting ${t.name} (offer_image_url: ${row['offer_image_url'] ?? 'omitted'})');
       // Use adminClient to bypass RLS on whatsapp_templates writes.
       await SupabaseService.adminClient
-          .from('whatsapp_templates')
+          .from(ClientConfig.templatesTableName ?? 'whatsapp_templates')
           .upsert(row, onConflict: 'meta_template_id');
 
       debugPrint('[syncSingleTemplate] Done');
@@ -474,7 +476,7 @@ class TemplatesProvider extends ChangeNotifier {
     // Step 2: check existing DB value — filter by template_name
     try {
       final existing = await SupabaseService.adminClient
-          .from('whatsapp_templates')
+          .from(ClientConfig.templatesTableName ?? 'whatsapp_templates')
           .select('offer_image_url')
           .eq('template_name', t.name)
           .maybeSingle();

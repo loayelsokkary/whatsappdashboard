@@ -44,6 +44,58 @@ class CustomerNote {
   );
 }
 
+class CustomerPrediction {
+  final String phone;
+  final String customerName;
+  final int totalVisits;
+  final DateTime lastVisit;
+  final int daysSinceLastVisit;
+  final String primaryService;
+  final String lastService;
+  final int avgGapDays;
+  final DateTime predictedNextVisit;
+  final int daysUntilPredicted;
+  final String category;
+  final DateTime updatedAt;
+
+  const CustomerPrediction({
+    required this.phone,
+    required this.customerName,
+    required this.totalVisits,
+    required this.lastVisit,
+    required this.daysSinceLastVisit,
+    required this.primaryService,
+    required this.lastService,
+    required this.avgGapDays,
+    required this.predictedNextVisit,
+    required this.daysUntilPredicted,
+    required this.category,
+    required this.updatedAt,
+  });
+
+  factory CustomerPrediction.fromJson(Map<String, dynamic> json) =>
+      CustomerPrediction(
+        phone: json['phone']?.toString() ?? '',
+        customerName: json['customer_name']?.toString() ?? '',
+        totalVisits: (json['total_visits'] as num?)?.toInt() ?? 0,
+        lastVisit: DateTime.tryParse(json['last_visit']?.toString() ?? '') ??
+            DateTime.now(),
+        daysSinceLastVisit:
+            (json['days_since_last_visit'] as num?)?.toInt() ?? 0,
+        primaryService: json['primary_service']?.toString() ?? '',
+        lastService: json['last_service']?.toString() ?? '',
+        avgGapDays: (json['avg_gap_days'] as num?)?.toInt() ?? 0,
+        predictedNextVisit: DateTime.tryParse(
+                json['predicted_next_visit']?.toString() ?? '') ??
+            DateTime.now(),
+        daysUntilPredicted:
+            (json['days_until_predicted'] as num?)?.toInt() ?? 0,
+        category: json['category']?.toString() ?? 'New',
+        updatedAt: DateTime.tryParse(json['updated_at']?.toString() ?? '') ??
+            DateTime.now(),
+      );
+}
+
 class SideProfileData {
   final DateTime? lastCustomerMessage;
   final DateTime? customerSince;
@@ -91,6 +143,50 @@ bool _phonesWithNotesInitialized = false;
 Future<void> ensurePhonesWithNotesInitialized() => _ensurePhonesWithNotesInitialized();
 
 void invalidateSideProfileCache(String phone) => _profileCache.remove(phone);
+
+// ─── Prediction cache + fetcher ───────────────────────────────────────────────
+final Map<String, CustomerPrediction?> _predictionCache = {};
+
+Future<CustomerPrediction?> fetchCustomerPrediction(String phone) async {
+  if (_predictionCache.containsKey(phone)) return _predictionCache[phone];
+
+  final table = ClientConfig.customerPredictionsTableName;
+  if (table == null || table.isEmpty) {
+    _predictionCache[phone] = null;
+    return null;
+  }
+
+  // Build candidate list to handle POS vs WhatsApp phone format differences:
+  // 1. Exact match (e.g. "97333181104")
+  // 2. Without leading "+" (e.g. "+97333181104" → "97333181104")
+  // 3. Local format without country code (e.g. "97333181104" → "33181104")
+  final candidates = <String>[phone];
+  final withoutPlus = phone.startsWith('+') ? phone.substring(1) : phone;
+  if (withoutPlus != phone) candidates.add(withoutPlus);
+  if (withoutPlus.startsWith('973') && withoutPlus.length > 3) {
+    candidates.add(withoutPlus.substring(3));
+  }
+
+  try {
+    for (final candidate in candidates) {
+      final row = await SupabaseService.adminClient
+          .from(table)
+          .select()
+          .eq('phone', candidate)
+          .maybeSingle();
+      if (row != null) {
+        final prediction = CustomerPrediction.fromJson(row);
+        _predictionCache[phone] = prediction;
+        return prediction;
+      }
+    }
+    _predictionCache[phone] = null;
+    return null;
+  } catch (_) {
+    _predictionCache[phone] = null;
+    return null;
+  }
+}
 
 // ─── Data fetcher ─────────────────────────────────────────────────────────────
 
@@ -360,6 +456,9 @@ class _SideProfilePanelState extends State<SideProfilePanel>
   bool _loading = true;
   late AnimationController _shimmerCtrl;
 
+  // Prediction state
+  CustomerPrediction? _prediction;
+
   // Notes state
   List<CustomerNote> _notes = [];
   bool _notesLoading = true;
@@ -391,6 +490,7 @@ class _SideProfilePanelState extends State<SideProfilePanel>
         _addingNote = false;
         _showAllNotes = false;
         _noteCtrl.clear();
+        _prediction = null;
       });
       _load(widget.customerPhone);
     }
@@ -411,6 +511,12 @@ class _SideProfilePanelState extends State<SideProfilePanel>
       if (mounted) setState(() => _loading = false);
     }
     _loadNotes(phone);
+    _loadPrediction(phone);
+  }
+
+  Future<void> _loadPrediction(String phone) async {
+    final prediction = await fetchCustomerPrediction(phone);
+    if (mounted) setState(() => _prediction = prediction);
   }
 
   Future<void> _loadNotes(String phone) async {
@@ -1053,6 +1159,124 @@ class _SideProfilePanelState extends State<SideProfilePanel>
     );
   }
 
+  // ── Section 7: Predictive Intelligence ───────────────────────────────────
+  Widget _buildPredictiveIntelligence() {
+    final p = _prediction!;
+
+    final (catBg, catFg) = switch (p.category) {
+      'Returning' || 'Regular' => (const Color(0x1A34D399), const Color(0xFF34D399)),
+      'Lapsed' || 'At Risk'    => (const Color(0x14FBBF24), const Color(0xFFFBBF24)),
+      _                        => (const Color(0x1A06B6D4), const Color(0xFF22D3EE)),
+    };
+
+    // "New" with only 1 visit and a stale prediction → not enough data to show return estimate
+    final bool isFirstTimeNew =
+        p.category == 'New' && p.totalVisits == 1 && p.daysUntilPredicted < -60;
+
+    final String nextVisitStr;
+    final Color nextVisitColor;
+    if (!isFirstTimeNew) {
+      if (p.daysUntilPredicted < 0) {
+        nextVisitStr = 'Overdue by ${-p.daysUntilPredicted} days';
+        nextVisitColor = const Color(0xFFFBBF24);
+      } else if (p.daysUntilPredicted == 0) {
+        nextVisitStr = 'Expected today';
+        nextVisitColor = const Color(0xFF34D399);
+      } else if (p.daysUntilPredicted == 1) {
+        nextVisitStr = 'Expected tomorrow';
+        nextVisitColor = const Color(0xFF34D399);
+      } else {
+        nextVisitStr = 'In ${p.daysUntilPredicted} days';
+        nextVisitColor = const Color(0xFFE2E8F0);
+      }
+    } else {
+      nextVisitStr = '';
+      nextVisitColor = const Color(0xFFE2E8F0);
+    }
+
+    final updatedStr = _shortRelTime(p.updatedAt);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _sectionLabel('PREDICTIVE INTELLIGENCE'),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          decoration: BoxDecoration(
+            color: catBg,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(p.category,
+            style: TextStyle(
+              color: catFg, fontSize: 11, fontWeight: FontWeight.w600)),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter, end: Alignment.bottomCenter,
+              colors: [
+                Colors.white.withValues(alpha: 0.02),
+                Colors.white.withValues(alpha: 0.006),
+              ],
+            ),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Column(children: [
+            if (isFirstTimeNew) ...[
+              _predRow('Return Pattern', 'Not enough visits to predict',
+                valueColor: const Color(0xFF4B6584)),
+            ] else ...[
+              _predRow('Next Visit', nextVisitStr, valueColor: nextVisitColor),
+              _predDivider(),
+              _predRow('Predicted Date', _formatDate(p.predictedNextVisit)),
+            ],
+            _predDivider(),
+            _predRow('Last Visit', _formatDate(p.lastVisit)),
+            _predDivider(),
+            _predRow('Total Visits',
+              '${p.totalVisits} visit${p.totalVisits == 1 ? '' : 's'}'),
+            _predDivider(),
+            _predRow('Primary Service', p.primaryService),
+            if (p.avgGapDays > 0 && !isFirstTimeNew) ...[
+              _predDivider(),
+              _predRow('Avg Frequency', 'Every ${p.avgGapDays} days'),
+            ],
+          ]),
+        ),
+        const SizedBox(height: 8),
+        Text('Updated $updatedStr',
+          style: const TextStyle(
+            color: Color(0xFF3D5A80), fontSize: 10,
+            fontWeight: FontWeight.w500)),
+      ]),
+    );
+  }
+
+  Widget _predRow(String label, String value, {Color? valueColor}) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+    child: Row(children: [
+      Text(label, style: const TextStyle(
+        color: Color(0xFF4B6584), fontSize: 11, fontWeight: FontWeight.w500)),
+      const Spacer(),
+      Flexible(
+        child: Text(value,
+          textAlign: TextAlign.right,
+          overflow: TextOverflow.ellipsis, maxLines: 1,
+          style: TextStyle(
+            color: valueColor ?? const Color(0xFFE2E8F0),
+            fontSize: 12, fontWeight: FontWeight.w600)),
+      ),
+    ]),
+  );
+
+  Widget _predDivider() => Container(
+    height: 1,
+    margin: const EdgeInsets.symmetric(horizontal: 12),
+    color: Colors.white.withValues(alpha: 0.04),
+  );
+
   // ── build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
@@ -1099,6 +1323,11 @@ class _SideProfilePanelState extends State<SideProfilePanel>
         ],
         _divider(),
         _buildTeamNotes(),
+        if (ClientConfig.hasFeature('predictive_intelligence') &&
+            _prediction != null) ...[
+          _divider(),
+          _buildPredictiveIntelligence(),
+        ],
         if (d.broadcastTotal > 0 && d.lastBroadcast != null) ...[
           _divider(),
           _buildLastCampaign(),
