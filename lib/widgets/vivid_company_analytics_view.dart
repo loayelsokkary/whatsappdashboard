@@ -52,6 +52,16 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
               builder: (context, provider, _) {
                 final vc = context.vividColors;
                 final analytics = provider.companyAnalytics;
+
+                if (provider.isLoadingCompany || analytics == null && provider.error == null) {
+                  return const Center(
+                    child: CircularProgressIndicator(
+                      color: VividColors.cyan,
+                      strokeWidth: 2,
+                    ),
+                  );
+                }
+
                 if (analytics == null) {
                   return Center(
                     child: Column(
@@ -60,12 +70,13 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                         Icon(
                           Icons.analytics_outlined,
                           size: 64,
-                          color: vc.textMuted.withOpacity(0.3),
+                          color: vc.textMuted.withValues(alpha: 0.3),
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          'No analytics data available',
+                          provider.error ?? 'No analytics data available',
                           style: TextStyle(color: vc.textMuted),
+                          textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 24),
                         ElevatedButton.icon(
@@ -93,26 +104,8 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
       padding: const EdgeInsets.all(32),
       child: Row(
         children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              gradient: VividColors.primaryGradient,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: VividColors.cyan.withOpacity(0.3),
-                  blurRadius: 20,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
-            child: const Icon(
-              Icons.business,
-              color: Colors.white,
-              size: 32,
-            ),
-          ),
-          const SizedBox(width: 20),
+          Image.asset('assets/images/vivid_icon.png', width: 32, height: 32),
+          const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -121,8 +114,8 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                   'Vivid Company Analytics',
                   style: TextStyle(
                     color: vc.textPrimary,
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -261,6 +254,13 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                   value: analytics.totalClients.toString(),
                   color: VividColors.brightBlue,
                   description: 'Number of active client accounts on Vivid',
+                  onTap: () => _showMetricDrillDown(context,
+                    label: 'Total Clients',
+                    totalValue: analytics.totalClients.toString(),
+                    rows: analytics.allClientActivities
+                        .map((c) => MapEntry(c.clientName, _formatLastActivity(c.lastActivity)))
+                        .toList(),
+                  ),
                 ),
                 _MetricCard(
                   icon: Icons.message,
@@ -268,6 +268,15 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                   value: _fmtInt(analytics.totalMessages),
                   color: VividColors.cyan,
                   description: 'All WhatsApp messages across every client',
+                  onTap: () {
+                    final sorted = [...analytics.allClientActivities]
+                      ..sort((a, b) => b.messageCount.compareTo(a.messageCount));
+                    _showMetricDrillDown(context,
+                      label: 'Total Messages',
+                      totalValue: _fmtInt(analytics.totalMessages),
+                      rows: sorted.map((c) => MapEntry(c.clientName, _fmtInt(c.messageCount))).toList(),
+                    );
+                  },
                 ),
                 _MetricCard(
                   icon: Icons.auto_awesome,
@@ -276,6 +285,15 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                   color: analytics.overallAutomationRate >= 80 ? Colors.teal : VividColors.brightBlue,
                   description: 'Percentage of messages handled by AI across all clients',
                   isHighlight: true,
+                  onTap: () {
+                    final sorted = [...analytics.allClientActivities]
+                      ..sort((a, b) => b.automationRate.compareTo(a.automationRate));
+                    _showMetricDrillDown(context,
+                      label: 'Automation Rate',
+                      totalValue: '${analytics.overallAutomationRate.toStringAsFixed(1)}%',
+                      rows: sorted.map((c) => MapEntry(c.clientName, '${c.automationRate.toStringAsFixed(1)}%')).toList(),
+                    );
+                  },
                 ),
               ], isMobile: isMobile),
               const SizedBox(height: 20),
@@ -288,6 +306,15 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                   value: _fmtInt(analytics.totalAiMessages),
                   color: VividColors.cyan,
                   description: 'Responses generated automatically by AI',
+                  onTap: () {
+                    final sorted = [...analytics.allClientActivities]
+                      ..sort((a, b) => b.aiMessages.compareTo(a.aiMessages));
+                    _showMetricDrillDown(context,
+                      label: 'AI Messages',
+                      totalValue: _fmtInt(analytics.totalAiMessages),
+                      rows: sorted.map((c) => MapEntry(c.clientName, _fmtInt(c.aiMessages))).toList(),
+                    );
+                  },
                 ),
                 _MetricCard(
                   icon: Icons.support_agent,
@@ -295,6 +322,15 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                   value: _fmtInt(analytics.totalManagerMessages),
                   color: VividColors.brightBlue,
                   description: 'Responses sent manually by human agents',
+                  onTap: () {
+                    final sorted = [...analytics.allClientActivities]
+                      ..sort((a, b) => b.managerMessages.compareTo(a.managerMessages));
+                    _showMetricDrillDown(context,
+                      label: 'Manager Messages',
+                      totalValue: _fmtInt(analytics.totalManagerMessages),
+                      rows: sorted.map((c) => MapEntry(c.clientName, _fmtInt(c.managerMessages))).toList(),
+                    );
+                  },
                 ),
                 _MetricCard(
                   icon: Icons.people,
@@ -302,6 +338,15 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                   value: _fmtInt(analytics.totalUniqueCustomers),
                   color: Colors.blueGrey,
                   description: 'Distinct phone numbers across all clients',
+                  onTap: () {
+                    final sorted = [...analytics.allClientActivities]
+                      ..sort((a, b) => b.uniqueCustomers.compareTo(a.uniqueCustomers));
+                    _showMetricDrillDown(context,
+                      label: 'Unique Customers',
+                      totalValue: _fmtInt(analytics.totalUniqueCustomers),
+                      rows: sorted.map((c) => MapEntry(c.clientName, _fmtInt(c.uniqueCustomers))).toList(),
+                    );
+                  },
                 ),
               ], isMobile: isMobile),
               const SizedBox(height: 20),
@@ -314,6 +359,15 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                   value: analytics.totalBroadcasts.toString(),
                   color: Colors.blueGrey,
                   description: 'Broadcast campaigns sent across all clients',
+                  onTap: () {
+                    final sorted = [...analytics.allClientActivities]
+                      ..sort((a, b) => b.broadcastCount.compareTo(a.broadcastCount));
+                    _showMetricDrillDown(context,
+                      label: 'Total Broadcasts',
+                      totalValue: analytics.totalBroadcasts.toString(),
+                      rows: sorted.map((c) => MapEntry(c.clientName, '${c.broadcastCount} campaigns')).toList(),
+                    );
+                  },
                 ),
                 _MetricCard(
                   icon: Icons.group,
@@ -321,6 +375,15 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                   value: _fmtInt(analytics.totalRecipientsReached),
                   color: Colors.teal,
                   description: 'Total broadcast recipients across all campaigns',
+                  onTap: () {
+                    final sorted = [...analytics.allClientActivities]
+                      ..sort((a, b) => b.broadcastCount.compareTo(a.broadcastCount));
+                    _showMetricDrillDown(context,
+                      label: 'Recipients Reached',
+                      totalValue: _fmtInt(analytics.totalRecipientsReached),
+                      rows: sorted.map((c) => MapEntry(c.clientName, '${c.broadcastCount} bc')).toList(),
+                    );
+                  },
                 ),
                 _MetricCard(
                   icon: Icons.access_time,
@@ -328,6 +391,19 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                   value: _formatLastActivity(analytics.lastActivityAcrossAll),
                   color: vc.textMuted,
                   description: 'Most recent message or broadcast across all clients',
+                  onTap: () {
+                    final sorted = [...analytics.allClientActivities]
+                      ..sort((a, b) {
+                        if (a.lastActivity == null) return 1;
+                        if (b.lastActivity == null) return -1;
+                        return b.lastActivity!.compareTo(a.lastActivity!);
+                      });
+                    _showMetricDrillDown(context,
+                      label: 'Last Activity',
+                      totalValue: _formatLastActivity(analytics.lastActivityAcrossAll),
+                      rows: sorted.map((c) => MapEntry(c.clientName, _formatLastActivity(c.lastActivity))).toList(),
+                    );
+                  },
                 ),
               ], isMobile: isMobile),
               const SizedBox(height: 32),
@@ -412,10 +488,101 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
 
               // AI performance
               _buildAiPerformanceSection(context, analytics, isMobile: isMobile),
+              const SizedBox(height: 32),
+
+              // Client Retention Health
+              if (analytics.allClientActivities.isNotEmpty)
+                _buildRetentionHealthSection(context, analytics.allClientActivities),
             ],
           ),
         );
       },
+    );
+  }
+
+  Widget _buildRetentionHealthSection(BuildContext context, List<ClientActivity> clients) {
+    final vc = context.vividColors;
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: vc.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Client Retention Health',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.6),
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 16),
+          ...clients.asMap().entries.map((entry) {
+            final index = entry.key;
+            final client = entry.value;
+            // Status dot: green if automationRate > 5, amber if 2–5, grey otherwise
+            final Color dotColor = client.automationRate > 5
+                ? const Color(0xFF4CAF50)
+                : client.automationRate >= 2
+                    ? const Color(0xFFF59E0B)
+                    : const Color(0x4DFFFFFF);
+            final isLast = index == clients.length - 1;
+            return Column(
+              children: [
+                SizedBox(
+                  height: 48,
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: dotColor,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          client.clientName,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Text(
+                        '${client.automationRate.toStringAsFixed(0)}% AI',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.4),
+                          fontSize: 11,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Text(
+                        _fmtInt(client.messageCount),
+                        style: const TextStyle(
+                          color: VividColors.cyan,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (!isLast)
+                  Divider(height: 1, color: Colors.white.withValues(alpha: 0.08)),
+              ],
+            );
+          }),
+        ],
+      ),
     );
   }
 
@@ -426,7 +593,7 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
       decoration: BoxDecoration(
         color: vc.surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: vc.border),
+        border: Border.all(color: vc.border.withValues(alpha: 0.15)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -445,9 +612,9 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
               Text(
                 'Most Active Clients',
                 style: TextStyle(
-                  color: vc.textPrimary,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
+                  color: vc.textPrimary.withValues(alpha: 0.6),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ],
@@ -467,115 +634,68 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
             ...clients.asMap().entries.map((entry) {
               final index = entry.key;
               final client = entry.value;
-              return _buildClientActivityRow(context, index + 1, client);
+              return _buildClientActivityRow(context, index + 1, client,
+                  showDivider: index < clients.length - 1);
             }),
         ],
       ),
     );
   }
 
-  Widget _buildClientActivityRow(BuildContext context, int rank, ClientActivity client) {
-    final vc = context.vividColors;
-    final rankColor = rank == 1
-        ? Colors.amber
-        : rank == 2
-            ? Colors.grey[400]
-            : rank == 3
-                ? Colors.orange[700]
-                : vc.textMuted;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: vc.surfaceAlt,
-        borderRadius: BorderRadius.circular(12),
-        border: rank <= 3
-            ? Border.all(color: rankColor!.withOpacity(0.3))
-            : null,
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: rankColor!.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              '#$rank',
-              style: TextStyle(
-                color: rankColor,
-                fontWeight: FontWeight.bold,
-                fontSize: 12,
-              ),
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  client.clientName,
-                  style: TextStyle(
-                    color: vc.textPrimary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  client.lastActivity != null
-                      ? 'Last active: ${_formatLastActivity(client.lastActivity)}'
-                      : 'No recent activity',
-                  style: TextStyle(
-                    color: vc.textMuted.withOpacity(0.7),
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
+  Widget _buildClientActivityRow(BuildContext context, int rank, ClientActivity client, {bool showDivider = true}) {
+    return Column(
+      children: [
+        SizedBox(
+          height: 56,
+          child: Row(
             children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.message, size: 14, color: VividColors.cyan),
-                  const SizedBox(width: 4),
-                  Text(
-                    '${client.messageCount}',
-                    style: const TextStyle(
-                      color: VividColors.cyan,
-                      fontWeight: FontWeight.bold,
-                    ),
+              Text(
+                '$rank',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.25),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  client.clientName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w500,
+                    fontSize: 14,
                   ),
-                ],
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Text(
+                _fmtInt(client.messageCount),
+                style: const TextStyle(
+                  color: VividColors.cyan,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               if (client.broadcastCount > 0) ...[
-                const SizedBox(height: 4),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.campaign, size: 14, color: Colors.blueGrey),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${client.broadcastCount}',
-                      style: const TextStyle(
-                        color: Colors.blueGrey,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
+                const SizedBox(width: 12),
+                Text(
+                  '${client.broadcastCount} bc',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.35),
+                    fontSize: 11,
+                  ),
                 ),
               ],
             ],
           ),
-        ],
-      ),
+        ),
+        if (showDivider)
+          Divider(
+            height: 1,
+            color: Colors.white.withValues(alpha: 0.08),
+          ),
+      ],
     );
   }
 
@@ -597,7 +717,7 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
       decoration: BoxDecoration(
         color: vc.surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: vc.border),
+        border: Border.all(color: vc.border.withValues(alpha: 0.15)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -616,9 +736,9 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
               Text(
                 'Message Volume (Last 7 Days)',
                 style: TextStyle(
-                  color: vc.textPrimary,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
+                  color: vc.textPrimary.withValues(alpha: 0.6),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ],
@@ -642,24 +762,17 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                       children: [
                         Text(
                           count.toString(),
-                          style: const TextStyle(
-                            color: VividColors.cyan,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
+                          style: TextStyle(
+                            color: VividColors.cyan.withValues(alpha: 0.7),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                         const SizedBox(height: 4),
                         Container(
                           height: height.clamp(4.0, 120.0),
                           decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.bottomCenter,
-                              end: Alignment.topCenter,
-                              colors: [
-                                VividColors.brightBlue,
-                                VividColors.cyan,
-                              ],
-                            ),
+                            color: VividColors.cyan.withValues(alpha: 0.6),
                             borderRadius: BorderRadius.circular(4),
                           ),
                         ),
@@ -692,9 +805,9 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
         Text(
           title,
           style: TextStyle(
-            color: vc.textPrimary,
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
+            color: vc.textPrimary.withValues(alpha: 0.6),
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
           ),
         ),
       ],
@@ -710,7 +823,7 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
       decoration: BoxDecoration(
         color: vc.surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: vc.border),
+        border: Border.all(color: vc.border.withValues(alpha: 0.15)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -729,9 +842,9 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
               Text(
                 'Client Breakdown',
                 style: TextStyle(
-                  color: vc.textPrimary,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
+                  color: vc.textPrimary.withValues(alpha: 0.6),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ],
@@ -911,7 +1024,7 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
       decoration: BoxDecoration(
         color: vc.surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: vc.border),
+        border: Border.all(color: vc.border.withValues(alpha: 0.15)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -930,9 +1043,9 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
               Text(
                 'Busiest Hours',
                 style: TextStyle(
-                  color: vc.textPrimary,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
+                  color: vc.textPrimary.withValues(alpha: 0.6),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ],
@@ -959,7 +1072,7 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
       decoration: BoxDecoration(
         color: vc.surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: vc.border),
+        border: Border.all(color: vc.border.withValues(alpha: 0.15)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -978,9 +1091,9 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
               Text(
                 'Most Active Customers',
                 style: TextStyle(
-                  color: vc.textPrimary,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
+                  color: vc.textPrimary.withValues(alpha: 0.6),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ],
@@ -1064,7 +1177,7 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
       decoration: BoxDecoration(
         color: vc.surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: vc.border),
+        border: Border.all(color: vc.border.withValues(alpha: 0.15)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1083,9 +1196,9 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
               Text(
                 'AI Performance',
                 style: TextStyle(
-                  color: vc.textPrimary,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
+                  color: vc.textPrimary.withValues(alpha: 0.6),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ],
@@ -1158,6 +1271,106 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
   static final _numFmt = NumberFormat('#,###');
   String _fmtInt(int number) => _numFmt.format(number);
 
+  static String _initials(String name) {
+    final parts = name.trim().split(' ').where((p) => p.isNotEmpty).toList();
+    if (parts.isEmpty) return '?';
+    if (parts.length == 1) return parts[0].substring(0, 1).toUpperCase();
+    return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+  }
+
+  void _showMetricDrillDown(
+    BuildContext context, {
+    required String label,
+    required String totalValue,
+    required List<MapEntry<String, String>> rows,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1F2E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      isScrollControlled: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.55,
+        minChildSize: 0.35,
+        maxChildSize: 0.85,
+        expand: false,
+        builder: (_, sc) => Column(
+          children: [
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(top: 12),
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Expanded(
+                    child: Text(label, style: const TextStyle(
+                      color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600,
+                    )),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(totalValue, style: const TextStyle(
+                    color: VividColors.cyan, fontSize: 28, fontWeight: FontWeight.w700,
+                  )),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView.separated(
+                controller: sc,
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                itemCount: rows.length,
+                separatorBuilder: (_, __) => Divider(
+                  height: 1, color: Colors.white.withValues(alpha: 0.06),
+                ),
+                itemBuilder: (_, i) {
+                  final row = rows[i];
+                  return SizedBox(
+                    height: 56,
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 18,
+                          backgroundColor: VividColors.brightBlue.withValues(alpha: 0.2),
+                          child: Text(_initials(row.key),
+                            style: const TextStyle(
+                              color: VividColors.cyan, fontSize: 11, fontWeight: FontWeight.w600,
+                            )),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(child: Text(row.key, style: const TextStyle(
+                          color: Colors.white, fontWeight: FontWeight.w500, fontSize: 14,
+                        ))),
+                        Text(row.value, style: const TextStyle(
+                          color: VividColors.cyan, fontWeight: FontWeight.w600, fontSize: 14,
+                        )),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text('Close', style: TextStyle(color: Colors.white.withValues(alpha: 0.5))),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   String _formatLastActivity(DateTime? date) {
     if (date == null) return 'N/A';
 
@@ -1183,6 +1396,7 @@ class _MetricCard extends StatelessWidget {
   final Color color;
   final String? description;
   final bool isHighlight;
+  final VoidCallback? onTap;
 
   const _MetricCard({
     required this.icon,
@@ -1191,64 +1405,40 @@ class _MetricCard extends StatelessWidget {
     required this.color,
     this.description,
     this.isHighlight = false,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final vc = context.vividColors;
-    return Container(
+    final card = Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: vc.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isHighlight ? color.withOpacity(0.5) : vc.border,
-          width: isHighlight ? 2 : 1,
-        ),
-        boxShadow: isHighlight
-            ? [
-                BoxShadow(
-                  color: color.withOpacity(0.2),
-                  blurRadius: 20,
-                  offset: const Offset(0, 8),
-                ),
-              ]
-            : null,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(icon, color: color, size: 22),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: vc.textMuted,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
+          Icon(icon, color: color.withValues(alpha: 0.8), size: 28),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Color(0x80FFFFFF),
+              fontSize: 12,
+              fontWeight: FontWeight.w400,
+            ),
+            overflow: TextOverflow.ellipsis,
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 12),
           Text(
             value,
             style: TextStyle(
-              color: color,
-              fontSize: 36,
-              fontWeight: FontWeight.bold,
+              color: isHighlight ? color : Colors.white,
+              fontSize: 32,
+              fontWeight: FontWeight.w600,
               height: 1,
             ),
           ),
@@ -1256,13 +1446,23 @@ class _MetricCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               description!,
-              style: TextStyle(
-                color: vc.textMuted.withOpacity(0.7),
-                fontSize: 12,
+              style: const TextStyle(
+                color: Color(0x66FFFFFF),
+                fontSize: 11,
               ),
             ),
           ],
         ],
+      ),
+    );
+    if (onTap == null) return card;
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: card,
       ),
     );
   }
