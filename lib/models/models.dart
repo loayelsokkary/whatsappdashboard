@@ -27,25 +27,6 @@ enum ConversationStatus {
   const ConversationStatus(this.value, this.displayName);
 }
 
-/// Booking reminder status
-enum ReminderStatus {
-  pending('pending', 'Pending'),
-  reminderSent('reminder_sent', 'Reminder Sent'),
-  confirmed('confirmed', 'Confirmed'),
-  cancelled('cancelled', 'Cancelled');
-
-  final String value;
-  final String displayName;
-  const ReminderStatus(this.value, this.displayName);
-
-  static ReminderStatus fromString(String value) {
-    return ReminderStatus.values.firstWhere(
-      (s) => s.value == value,
-      orElse: () => ReminderStatus.pending,
-    );
-  }
-}
-
 /// Types of actions that can be logged
 enum ActionType {
   login('login'),
@@ -59,7 +40,8 @@ enum ActionType {
   userBlocked('user_blocked'),
   clientCreated('client_created'),
   clientUpdated('client_updated'),
-  bookingReminder('booking_reminder');
+  impersonationStart('impersonation_start'),
+  impersonationEnd('impersonation_end');
 
   final String value;
   const ActionType(this.value);
@@ -95,8 +77,10 @@ enum ActionType {
         return 'Client Created';
       case ActionType.clientUpdated:
         return 'Client Updated';
-      case ActionType.bookingReminder:
-        return 'Booking Reminder';
+      case ActionType.impersonationStart:
+        return 'Impersonation Started';
+      case ActionType.impersonationEnd:
+        return 'Impersonation Ended';
     }
   }
 }
@@ -454,9 +438,6 @@ enum Permission {
   viewUsers,
   manageUsers,
   
-  // Booking Reminders
-  viewBookingReminders,
-  
   // Activity Logs
   viewActivityLogs,
 
@@ -477,7 +458,6 @@ enum Permission {
       case Permission.useManagerChat: return 'use_manager_chat';
       case Permission.viewUsers: return 'view_users';
       case Permission.manageUsers: return 'manage_users';
-      case Permission.viewBookingReminders: return 'view_booking_reminders';
       case Permission.viewActivityLogs: return 'view_activity_logs';
       case Permission.viewTemplates: return 'view_templates';
       case Permission.manageTemplates: return 'manage_templates';
@@ -497,7 +477,6 @@ enum Permission {
       case Permission.useManagerChat: return 'Use AI Assistant';
       case Permission.viewUsers: return 'View Users';
       case Permission.manageUsers: return 'Manage Users';
-      case Permission.viewBookingReminders: return 'View Booking Reminders';
       case Permission.viewActivityLogs: return 'View Activity Logs';
       case Permission.viewTemplates: return 'View Templates';
       case Permission.manageTemplates: return 'Manage Templates';
@@ -522,8 +501,6 @@ enum Permission {
       case Permission.viewUsers:
       case Permission.manageUsers:
         return 'User Management';
-      case Permission.viewBookingReminders:
-        return 'Booking Reminders';
       case Permission.viewActivityLogs:
         return 'Activity Logs';
       case Permission.viewTemplates:
@@ -569,7 +546,7 @@ class Permissions {
       Permission.useManagerChat,
       Permission.viewUsers,
       Permission.manageUsers,
-      Permission.viewBookingReminders,
+
       Permission.viewActivityLogs,
       Permission.viewTemplates,
       Permission.manageTemplates,
@@ -583,7 +560,7 @@ class Permissions {
       Permission.sendBroadcasts,
       Permission.viewManagerChat,
       Permission.useManagerChat,
-      Permission.viewBookingReminders,
+
       Permission.viewTemplates,
       Permission.manageTemplates,
     },
@@ -591,7 +568,7 @@ class Permissions {
       Permission.viewDashboard,
       Permission.viewConversations,
       Permission.sendMessages,
-      Permission.viewBookingReminders,
+
     },
     UserRole.viewer: {
       Permission.viewDashboard,
@@ -599,7 +576,7 @@ class Permissions {
       Permission.viewConversations,
       Permission.viewBroadcasts,
       Permission.viewManagerChat,
-      Permission.viewBookingReminders,
+
     },
   };
 
@@ -796,6 +773,12 @@ class ClientConfig {
   static Client? _currentClient;
   static AppUser? _currentUser;
 
+  // Preview mode state
+  static bool _isPreviewMode = false;
+  static AppUser? _savedAdminUser;
+
+  static bool get isPreviewMode => _isPreviewMode;
+
   static Client? get currentClient => _currentClient;
   static AppUser? get currentUser => _currentUser;
 
@@ -832,16 +815,31 @@ class ClientConfig {
   /// Broadcasts table name (e.g., 'karisma_broadcasts')
   static String? get broadcastsTable => _currentClient?.broadcastsTable;
 
+
   /// Bookings table name (e.g., 'karisma_bookings')
   static String? get bookingsTable => _currentClient?.bookingsTable;
 
-  /// Per-client table names for features added in multi-tenant phase 2
-  static String? get templatesTableName => _currentClient?.templatesTable;
+  /// Templates table name (e.g., 'karisma_whatsapp_templates')
+  static String? get templatesTable => _currentClient?.templatesTable;
+
+  /// Manager chats table name (e.g., 'karisma_manager_chats')
+  static String? get managerChatsTable => _currentClient?.managerChatsTable;
+
+  /// Broadcast recipients table name (e.g., 'karisma_broadcast_recipients')
+  static String? get broadcastRecipientsTable => _currentClient?.broadcastRecipientsTable;
+
+  /// AI settings table name (e.g., 'threeBs_ai_chat_settings')
+  static String? get aiSettingsTable => _currentClient?.aiSettingsTable;
   static String? get aiSettingsTableName => _currentClient?.aiSettingsTable;
+
+  /// Customer predictions table name (e.g., 'HOB_customer_predictions')
+  static String? get customerPredictionsTable => _currentClient?.customerPredictionsTable;
   static String? get customerPredictionsTableName => _currentClient?.customerPredictionsTable;
-  static String? get managerChatsTableName => _currentClient?.managerChatsTable;
+
+  /// Broadcast recipients table name alias (nullable getter for HEAD callers)
   static String? get broadcastRecipientsTableName => _currentClient?.broadcastRecipientsTable;
-  
+
+
   /// Get messages table name, throws if not configured
   static String get messagesTableName {
     final table = _currentClient?.messagesTable;
@@ -860,11 +858,20 @@ class ClientConfig {
     return table;
   }
 
-  /// Get bookings table name, throws if not configured
-  static String get bookingsTableName {
-    final table = _currentClient?.bookingsTable;
+  /// Get templates table name, throws if not configured
+  static String get templatesTableName {
+    final table = _currentClient?.templatesTable;
     if (table == null || table.isEmpty) {
-      throw Exception('Bookings table not configured for this client');
+      throw Exception('Templates table not configured for this client');
+    }
+    return table;
+  }
+
+  /// Get manager chats table name, throws if not configured
+  static String get managerChatsTableName {
+    final table = _currentClient?.managerChatsTable;
+    if (table == null || table.isEmpty) {
+      throw Exception('Manager chats table not configured for this client');
     }
     return table;
   }
@@ -879,10 +886,6 @@ class ClientConfig {
     ((broadcastsPhone?.isNotEmpty ?? false) || (broadcastsWebhookUrl?.isNotEmpty ?? false)) && 
     (broadcastsTable?.isNotEmpty ?? false);
 
-  /// Check if bookings feature is fully configured
-  static bool get isBookingsConfigured => 
-    bookingsTable?.isNotEmpty ?? false;
-  
   // ============================================
   // PER-FEATURE PHONE GETTERS
   // ============================================
@@ -925,8 +928,6 @@ class ClientConfig {
         return user.hasPermission(Permission.viewManagerChat);
       case 'user_management':
         return user.hasPermission(Permission.viewUsers);
-      case 'booking_reminders':
-        return user.hasPermission(Permission.viewBookingReminders);
       default:
         return true;
     }
@@ -960,9 +961,27 @@ class ClientConfig {
     _currentClient = null;
   }
 
+  /// Enter preview mode — saves current admin state, sets client context.
+  static void enterPreview(Client client, AppUser tempUser) {
+    _savedAdminUser = _currentUser;
+    _currentClient = client;
+    _currentUser = tempUser;
+    _isPreviewMode = true;
+  }
+
+  /// Exit preview mode — restores admin state.
+  static void exitPreview() {
+    _currentUser = _savedAdminUser;
+    _currentClient = null;
+    _savedAdminUser = null;
+    _isPreviewMode = false;
+  }
+
   static void clear() {
     _currentClient = null;
     _currentUser = null;
+    _isPreviewMode = false;
+    _savedAdminUser = null;
   }
 
   static String get currentUserName => _currentUser?.name ?? 'User';
@@ -987,15 +1006,16 @@ class Client {
   final String? messagesTable;
   final String? broadcastsTable;
   final String? bookingsTable;
+  final String? templatesTable;
   final String? managerChatsTable;
   final String? broadcastRecipientsTable;
-  final String? templatesTable;
   final String? aiSettingsTable;
   final String? customerPredictionsTable;
 
   // Per-client Meta API credentials (override global defaults when non-null)
   final String? wabaId;
   final String? metaAccessToken;
+
 
   // Per-feature configuration
   final String? conversationsPhone;
@@ -1023,9 +1043,9 @@ class Client {
     this.messagesTable,
     this.broadcastsTable,
     this.bookingsTable,
+    this.templatesTable,
     this.managerChatsTable,
     this.broadcastRecipientsTable,
-    this.templatesTable,
     this.aiSettingsTable,
     this.customerPredictionsTable,
     this.wabaId,
@@ -1064,9 +1084,9 @@ class Client {
       messagesTable: json['messages_table'] as String?,
       broadcastsTable: json['broadcasts_table'] as String?,
       bookingsTable: json['bookings_table'] as String?,
+      templatesTable: json['templates_table'] as String?,
       managerChatsTable: json['manager_chats_table'] as String?,
       broadcastRecipientsTable: json['broadcast_recipients_table'] as String?,
-      templatesTable: json['templates_table'] as String?,
       aiSettingsTable: json['ai_settings_table'] as String?,
       customerPredictionsTable: json['customer_predictions_table'] as String?,
       wabaId: json['waba_id'] as String?,
@@ -1095,9 +1115,9 @@ class Client {
       'messages_table': messagesTable,
       'broadcasts_table': broadcastsTable,
       'bookings_table': bookingsTable,
+      'templates_table': templatesTable,
       'manager_chats_table': managerChatsTable,
       'broadcast_recipients_table': broadcastRecipientsTable,
-      'templates_table': templatesTable,
       'ai_settings_table': aiSettingsTable,
       'customer_predictions_table': customerPredictionsTable,
       'waba_id': wabaId,
@@ -1126,8 +1146,6 @@ class Client {
         return conversationsPhone ?? businessPhone;
       case 'broadcasts':
         return broadcastsPhone ?? businessPhone;
-      case 'booking_reminders':
-        return remindersPhone ?? businessPhone;
       default:
         return businessPhone;
     }
@@ -1140,8 +1158,6 @@ class Client {
         return conversationsWebhookUrl ?? webhookUrl;
       case 'broadcasts':
         return broadcastsWebhookUrl ?? webhookUrl;
-      case 'booking_reminders':
-        return remindersWebhookUrl;
       case 'manager_chat':
         return managerChatWebhookUrl ?? webhookUrl;
       default:
@@ -1168,249 +1184,6 @@ class Agent {
 }
 
 // ============================================
-// BOOKING (for Booking Reminders feature)
-// ============================================
-
-/// Booking model from client's bookings table
-class Booking {
-  final String id;
-  final String bookingId;
-  final String? odooUserId;
-  final String customerName;
-  final String customerPhone;
-  final String service;
-  final DateTime appointmentDate;
-  final String appointmentTime;
-  final String status;
-  final bool reminder3Day;
-  final bool reminder1Day;
-  final String? source;
-  final DateTime? manualReminderSentAt;
-  final DateTime createdAt;
-
-  const Booking({
-    required this.id,
-    required this.bookingId,
-    this.odooUserId,
-    required this.customerName,
-    required this.customerPhone,
-    required this.service,
-    required this.appointmentDate,
-    required this.appointmentTime,
-    required this.status,
-    required this.reminder3Day,
-    required this.reminder1Day,
-    this.source,
-    this.manualReminderSentAt,
-    required this.createdAt,
-  });
-
-  factory Booking.fromJson(Map<String, dynamic> json) {
-    return Booking(
-      id: json['id']?.toString() ?? '',
-      bookingId: json['booking_id']?.toString() ?? '',
-      odooUserId: json['user_id']?.toString(),
-      customerName: json['name'] as String? ?? 'Unknown',
-      customerPhone: json['phone']?.toString() ?? '',
-      service: json['service'] as String? ?? 'Service',
-      appointmentDate: json['appointment_date'] != null
-          ? DateTime.parse(json['appointment_date'] as String)
-          : DateTime.now(),
-      appointmentTime: json['appointment_time'] as String? ?? '00:00',
-      status: json['status'] as String? ?? 'pending',
-      reminder3Day: json['reminder_3day'] as bool? ?? false,
-      reminder1Day: json['reminder_1day'] as bool? ?? false,
-      source: json['source'] as String?,
-      manualReminderSentAt: json['manual_reminder_sent_at'] != null
-          ? DateTime.parse(json['manual_reminder_sent_at'] as String)
-          : null,
-      createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'] as String)
-          : DateTime.now(),
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'booking_id': bookingId,
-      'user_id': odooUserId,
-      'name': customerName,
-      'phone': customerPhone,
-      'service': service,
-      'appointment_date': appointmentDate.toIso8601String().split('T')[0],
-      'appointment_time': appointmentTime,
-      'status': status,
-      'reminder_3day': reminder3Day,
-      'reminder_1day': reminder1Day,
-      'source': source,
-      'manual_reminder_sent_at': manualReminderSentAt?.toIso8601String(),
-      'created_at': createdAt.toIso8601String(),
-    };
-  }
-
-  /// Get the computed reminder status based on flags and status
-  ReminderStatus get reminderStatus {
-    if (status.toLowerCase() == 'cancelled') return ReminderStatus.cancelled;
-    if (status.toLowerCase() == 'confirmed') return ReminderStatus.confirmed;
-    if (reminder1Day || reminder3Day || manualReminderSentAt != null) return ReminderStatus.reminderSent;
-    return ReminderStatus.pending;
-  }
-
-  /// Get full appointment DateTime
-  DateTime get appointmentDateTime {
-    final timeParts = appointmentTime.split(':');
-    final hour = int.tryParse(timeParts[0]) ?? 0;
-    final minute = timeParts.length > 1 ? int.tryParse(timeParts[1]) ?? 0 : 0;
-    return DateTime(
-      appointmentDate.year,
-      appointmentDate.month,
-      appointmentDate.day,
-      hour,
-      minute,
-    );
-  }
-
-  /// Check if appointment is upcoming (in the future)
-  bool get isUpcoming => appointmentDateTime.isAfter(DateTime.now());
-
-  /// Check if appointment is today
-  bool get isToday {
-    final now = DateTime.now();
-    return appointmentDate.year == now.year &&
-        appointmentDate.month == now.month &&
-        appointmentDate.day == now.day;
-  }
-
-  /// Days until appointment (negative if past)
-  int get daysUntil {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final apptDay = DateTime(
-      appointmentDate.year,
-      appointmentDate.month,
-      appointmentDate.day,
-    );
-    return apptDay.difference(today).inDays;
-  }
-
-  Booking copyWith({
-    String? id,
-    String? bookingId,
-    String? odooUserId,
-    String? customerName,
-    String? customerPhone,
-    String? service,
-    DateTime? appointmentDate,
-    String? appointmentTime,
-    String? status,
-    bool? reminder3Day,
-    bool? reminder1Day,
-    String? source,
-    DateTime? manualReminderSentAt,
-    DateTime? createdAt,
-  }) {
-    return Booking(
-      id: id ?? this.id,
-      bookingId: bookingId ?? this.bookingId,
-      odooUserId: odooUserId ?? this.odooUserId,
-      customerName: customerName ?? this.customerName,
-      customerPhone: customerPhone ?? this.customerPhone,
-      service: service ?? this.service,
-      appointmentDate: appointmentDate ?? this.appointmentDate,
-      appointmentTime: appointmentTime ?? this.appointmentTime,
-      status: status ?? this.status,
-      reminder3Day: reminder3Day ?? this.reminder3Day,
-      reminder1Day: reminder1Day ?? this.reminder1Day,
-      source: source ?? this.source,
-      manualReminderSentAt: manualReminderSentAt ?? this.manualReminderSentAt,
-      createdAt: createdAt ?? this.createdAt,
-    );
-  }
-}
-
-// ============================================
-// BOOKING REMINDER STATS
-// ============================================
-
-/// Statistics for booking reminders dashboard
-class BookingReminderStats {
-  final int totalBookings;
-  final int upcomingBookings;
-  final int remindersSent;
-  final int confirmed;
-  final int cancelled;
-  final int pendingReminders;
-
-  const BookingReminderStats({
-    required this.totalBookings,
-    required this.upcomingBookings,
-    required this.remindersSent,
-    required this.confirmed,
-    required this.cancelled,
-    required this.pendingReminders,
-  });
-
-  factory BookingReminderStats.empty() {
-    return const BookingReminderStats(
-      totalBookings: 0,
-      upcomingBookings: 0,
-      remindersSent: 0,
-      confirmed: 0,
-      cancelled: 0,
-      pendingReminders: 0,
-    );
-  }
-
-  factory BookingReminderStats.fromBookings(List<Booking> bookings) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    
-    int upcoming = 0;
-    int sent = 0;
-    int confirmed = 0;
-    int cancelled = 0;
-    int pending = 0;
-
-    for (final booking in bookings) {
-      final apptDate = DateTime(
-        booking.appointmentDate.year,
-        booking.appointmentDate.month,
-        booking.appointmentDate.day,
-      );
-      
-      if (apptDate.isAfter(today) || apptDate.isAtSameMomentAs(today)) {
-        upcoming++;
-      }
-
-      switch (booking.reminderStatus) {
-        case ReminderStatus.reminderSent:
-          sent++;
-          break;
-        case ReminderStatus.confirmed:
-          confirmed++;
-          break;
-        case ReminderStatus.cancelled:
-          cancelled++;
-          break;
-        case ReminderStatus.pending:
-          if (booking.isUpcoming) pending++;
-          break;
-      }
-    }
-
-    return BookingReminderStats(
-      totalBookings: bookings.length,
-      upcomingBookings: upcoming,
-      remindersSent: sent,
-      confirmed: confirmed,
-      cancelled: cancelled,
-      pendingReminders: pending,
-    );
-  }
-}
-
-// ============================================
 // WHATSAPP TEMPLATE MODELS
 // ============================================
 
@@ -1431,6 +1204,7 @@ class TemplateButton {
 class WhatsAppTemplate {
   final String id;
   final String name;
+  final String? displayName;
   final String status;
   final String language;
   final String category;
@@ -1442,9 +1216,13 @@ class WhatsAppTemplate {
   final List<TemplateButton> buttons;
   final List<dynamic> componentsJson;
 
+  /// Returns display_name if set, otherwise falls back to raw template name.
+  String get label => displayName?.isNotEmpty == true ? displayName! : name;
+
   const WhatsAppTemplate({
     required this.id,
     required this.name,
+    this.displayName,
     required this.status,
     required this.language,
     required this.category,
@@ -1494,6 +1272,7 @@ class WhatsAppTemplate {
     return WhatsAppTemplate(
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? '',
+      displayName: json['display_name'] as String?,
       status: json['status'] as String? ?? '',
       language: json['language'] as String? ?? '',
       category: json['category'] as String? ?? '',
@@ -1534,4 +1313,52 @@ class CustomerProfileStats {
     this.labelsHistory = const [],
     this.lastHandledBy,
   });
+}
+
+// ============================================
+// CUSTOMER PREDICTION (Predictive Intelligence)
+// ============================================
+
+class CustomerPrediction {
+  final String phone;
+  final String? customerName;
+  final int totalVisits;
+  final DateTime? lastVisit;
+  final int daysSinceLastVisit;
+  final String? primaryService;
+  final String? lastService;
+  final int avgGapDays;
+  final DateTime? predictedNextVisit;
+  final int daysUntilPredicted;
+  final String category; // "New", "Returning", "Regular", "At Risk", "Lapsed"
+
+  const CustomerPrediction({
+    required this.phone,
+    this.customerName,
+    required this.totalVisits,
+    this.lastVisit,
+    required this.daysSinceLastVisit,
+    this.primaryService,
+    this.lastService,
+    required this.avgGapDays,
+    this.predictedNextVisit,
+    required this.daysUntilPredicted,
+    required this.category,
+  });
+
+  factory CustomerPrediction.fromJson(Map<String, dynamic> json) {
+    return CustomerPrediction(
+      phone: json['phone'] as String,
+      customerName: json['customer_name'] as String?,
+      totalVisits: json['total_visits'] as int? ?? 0,
+      lastVisit: json['last_visit'] != null ? DateTime.parse(json['last_visit'] as String) : null,
+      daysSinceLastVisit: json['days_since_last_visit'] as int? ?? 0,
+      primaryService: json['primary_service'] as String?,
+      lastService: json['last_service'] as String?,
+      avgGapDays: json['avg_gap_days'] as int? ?? 0,
+      predictedNextVisit: json['predicted_next_visit'] != null ? DateTime.parse(json['predicted_next_visit'] as String) : null,
+      daysUntilPredicted: json['days_until_predicted'] as int? ?? 0,
+      category: json['category'] as String? ?? 'New',
+    );
+  }
 }

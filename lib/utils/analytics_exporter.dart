@@ -5,10 +5,13 @@ import 'dart:html' as html;
 import 'dart:typed_data';
 import 'package:excel/excel.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../models/models.dart';
+import '../providers/admin_analytics_provider.dart';
 import '../providers/roi_analytics_provider.dart';
+import 'health_scorer.dart';
 import 'initials_helper.dart';
 
 /// Returns [numerator] / [denominator], or [fallback] if [denominator] is zero,
@@ -1789,11 +1792,8 @@ class AnalyticsExporter {
     return v.toStringAsFixed(2);
   }
 
-  static String _fmtInt(int v) {
-    if (v < 1000) return v.toString();
-    if (v < 1000000) return '${(v / 1000).toStringAsFixed(1)}K';
-    return '${(v / 1000000).toStringAsFixed(1)}M';
-  }
+  static final _numFmt = NumberFormat('#,###');
+  static String _fmtInt(int v) => _numFmt.format(v);
 
   static String _fmtDurationCsv(double seconds) {
     if (seconds <= 0) return '0s';
@@ -2211,6 +2211,888 @@ class AnalyticsExporter {
     }
     buffer.writeln('</table></body></html>');
     _downloadFile(content: utf8.encode(buffer.toString()), filename: '${filename}_$timestamp.xls', mimeType: 'application/vnd.ms-excel');
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // ADMIN: COMPANY ANALYTICS CSV EXPORT
+  // ─────────────────────────────────────────────────────────────────
+
+  static void exportCompanyAnalyticsCsv(VividCompanyAnalytics data) {
+    final buffer = StringBuffer();
+    final timestamp = _formatDateIso(DateTime.now());
+
+    buffer.writeln('# ═══════════════════════════════════════');
+    buffer.writeln('# VIVID COMPANY ANALYTICS REPORT');
+    buffer.writeln('# ═══════════════════════════════════════');
+    buffer.writeln('Generated,$timestamp');
+    buffer.writeln('');
+
+    buffer.writeln('# ─── OVERVIEW ───');
+    buffer.writeln('Metric,Value');
+    buffer.writeln('Total Clients,${data.totalClients}');
+    buffer.writeln('Total Messages,${data.totalMessages}');
+    buffer.writeln('Total Broadcasts,${data.totalBroadcasts}');
+    buffer.writeln('Total Recipients Reached,${data.totalRecipientsReached}');
+    buffer.writeln('Unique Customers,${data.totalUniqueCustomers}');
+    buffer.writeln('AI Messages,${data.totalAiMessages}');
+    buffer.writeln('Manager Messages,${data.totalManagerMessages}');
+    buffer.writeln('Automation Rate,${data.overallAutomationRate.toStringAsFixed(1)}%');
+    buffer.writeln('Handoff Count,${data.handoffCount}');
+    buffer.writeln('AI Enabled Customers,${data.aiEnabledCustomers}');
+    buffer.writeln('AI Disabled Customers,${data.aiDisabledCustomers}');
+    buffer.writeln('Today Messages,${data.todayMessages}');
+    buffer.writeln('This Week Messages,${data.thisWeekMessages}');
+    buffer.writeln('This Month Messages,${data.thisMonthMessages}');
+    if (data.lastActivityAcrossAll != null) {
+      buffer.writeln('Last Activity,${_formatDateIso(data.lastActivityAcrossAll!)}');
+    }
+    buffer.writeln('');
+
+    buffer.writeln('# ─── BROADCAST DELIVERY ───');
+    buffer.writeln('Metric,Value');
+    buffer.writeln('Total Recipients,${data.broadcastTotalRecipients}');
+    buffer.writeln('Delivered,${data.broadcastDeliveredCount}');
+    buffer.writeln('Read,${data.broadcastReadCount}');
+    buffer.writeln('Failed,${data.broadcastFailedCount}');
+    if (data.broadcastTotalRecipients > 0) {
+      buffer.writeln('Delivery Rate,${(data.broadcastDeliveredCount / data.broadcastTotalRecipients * 100).toStringAsFixed(1)}%');
+      buffer.writeln('Read Rate,${(data.broadcastReadCount / data.broadcastTotalRecipients * 100).toStringAsFixed(1)}%');
+    }
+    buffer.writeln('');
+
+    if (data.allClientActivities.isNotEmpty) {
+      buffer.writeln('# ─── CLIENT BREAKDOWN ───');
+      buffer.writeln('Client,Messages,Broadcasts,AI Messages,Manager Messages,Unique Customers,Automation Rate,Last Activity');
+      for (final ca in data.allClientActivities) {
+        final lastAct = ca.lastActivity != null ? _formatDateIso(ca.lastActivity!) : 'N/A';
+        buffer.writeln(
+          '${_escapeCsv(ca.clientName)},${ca.messageCount},${ca.broadcastCount},${ca.aiMessages},${ca.managerMessages},${ca.uniqueCustomers},${ca.automationRate.toStringAsFixed(1)}%,$lastAct',
+        );
+      }
+      buffer.writeln('');
+    }
+
+    if (data.topCustomers.isNotEmpty) {
+      buffer.writeln('# ─── TOP CUSTOMERS ───');
+      buffer.writeln('Phone,Name,Messages,Client');
+      for (final tc in data.topCustomers) {
+        buffer.writeln('${tc.phone},${_escapeCsv(tc.name ?? '')},${tc.messageCount},${_escapeCsv(tc.clientName)}');
+      }
+      buffer.writeln('');
+    }
+
+    if (data.messagesByDay.isNotEmpty) {
+      buffer.writeln('# ─── MESSAGES BY DAY (LAST 7 DAYS) ───');
+      buffer.writeln('Date,Messages');
+      final sortedDays = data.messagesByDay.entries.toList()..sort((a, b) => a.key.compareTo(b.key));
+      for (final entry in sortedDays) {
+        buffer.writeln('${entry.key},${entry.value}');
+      }
+      buffer.writeln('');
+    }
+
+    if (data.messagesByHour.isNotEmpty) {
+      buffer.writeln('# ─── MESSAGES BY HOUR ───');
+      buffer.writeln('Hour,Messages');
+      for (int h = 0; h < 24; h++) {
+        final count = data.messagesByHour[h] ?? 0;
+        if (count > 0) buffer.writeln('$h,$count');
+      }
+    }
+
+    _downloadFile(
+      content: utf8.encode(buffer.toString()),
+      filename: 'vivid_company_analytics_$timestamp.csv',
+      mimeType: 'text/csv',
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // ADMIN: COMPANY ANALYTICS PDF EXPORT
+  // ─────────────────────────────────────────────────────────────────
+
+  static Future<void> exportCompanyAnalyticsPdf(VividCompanyAnalytics data) async {
+    await Future.wait([_loadArabicFont(), _loadLogoImage()]);
+
+    final pdf = pw.Document();
+    final timestamp = _formatDateIso(DateTime.now());
+    final subtitle = 'Generated $timestamp';
+    const margin = pw.EdgeInsets.fromLTRB(28, 16, 28, 24);
+
+    pw.MultiPage makePage(List<pw.Widget> Function(pw.Context) builder) =>
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: margin,
+          header: (ctx) => _pdfPageHeader('Vivid Systems', subtitle),
+          footer: (ctx) => _buildPdfFooter(ctx),
+          build: builder,
+        );
+
+    // Page 1: Executive Summary
+    pdf.addPage(makePage((_) => [
+      _pdfSectionTitle('Company Overview', _pdf.navy),
+      pw.SizedBox(height: 14),
+      pw.Row(children: [
+        _pdfKpiCard('Clients', '${data.totalClients}', _pdf.blue),
+        pw.SizedBox(width: 8),
+        _pdfKpiCard('Messages', _fmtInt(data.totalMessages), _pdf.cyan),
+        pw.SizedBox(width: 8),
+        _pdfKpiCard('Broadcasts', '${data.totalBroadcasts}', _pdf.purple),
+        pw.SizedBox(width: 8),
+        _pdfKpiCard('Customers', _fmtInt(data.totalUniqueCustomers), _pdf.green),
+      ]),
+      pw.SizedBox(height: 12),
+      pw.Row(children: [
+        _pdfKpiCard('AI Messages', _fmtInt(data.totalAiMessages), _pdf.teal),
+        pw.SizedBox(width: 8),
+        _pdfKpiCard('Manager Msgs', _fmtInt(data.totalManagerMessages), _pdf.orange),
+        pw.SizedBox(width: 8),
+        _pdfKpiCard('Automation', '${data.overallAutomationRate.toStringAsFixed(1)}%', _pdf.cyan),
+        pw.SizedBox(width: 8),
+        _pdfKpiCard('Handoffs', '${data.handoffCount}', _pdf.amber),
+      ]),
+      pw.SizedBox(height: 12),
+      pw.Row(children: [
+        _pdfKpiCard('Today', '${data.todayMessages}', _pdf.green),
+        pw.SizedBox(width: 8),
+        _pdfKpiCard('This Week', '${data.thisWeekMessages}', _pdf.blue),
+        pw.SizedBox(width: 8),
+        _pdfKpiCard('This Month', '${data.thisMonthMessages}', _pdf.purple),
+        pw.SizedBox(width: 8),
+        _pdfKpiCard('Recipients', _fmtInt(data.totalRecipientsReached), _pdf.teal),
+      ]),
+
+      // Broadcast delivery summary
+      if (data.broadcastTotalRecipients > 0) ...[
+        pw.SizedBox(height: 20),
+        _pdfSectionTitle('Broadcast Delivery', _pdf.purple),
+        pw.SizedBox(height: 10),
+        pw.Row(children: [
+          _pdfKpiCard('Delivered', '${data.broadcastDeliveredCount}', _pdf.green),
+          pw.SizedBox(width: 8),
+          _pdfKpiCard('Read', '${data.broadcastReadCount}', _pdf.blue),
+          pw.SizedBox(width: 8),
+          _pdfKpiCard('Failed', '${data.broadcastFailedCount}', data.broadcastFailedCount > 0 ? _pdf.red : _pdf.textMuted),
+          pw.SizedBox(width: 8),
+          _pdfKpiCard('Delivery %', '${(data.broadcastDeliveredCount / data.broadcastTotalRecipients * 100).toStringAsFixed(1)}%', _pdf.green),
+        ]),
+      ],
+
+      // Messages by day bar chart (text-based)
+      if (data.messagesByDay.isNotEmpty) ...[
+        pw.SizedBox(height: 20),
+        _pdfSectionTitle('Last 7 Days Activity', _pdf.teal),
+        pw.SizedBox(height: 10),
+        _buildTextBarChart(data.messagesByDay, _pdf.cyan),
+      ],
+    ]));
+
+    // Page 2: Client Breakdown Table
+    if (data.allClientActivities.isNotEmpty) {
+      pdf.addPage(makePage((_) => [
+        _pdfSectionTitle('Client Breakdown', _pdf.navy),
+        pw.SizedBox(height: 14),
+        _buildClientBreakdownTable(data.allClientActivities),
+      ]));
+    }
+
+    // Page 3: Top Customers + Busiest Hours
+    if (data.topCustomers.isNotEmpty || data.messagesByHour.isNotEmpty) {
+      pdf.addPage(makePage((_) => [
+        if (data.topCustomers.isNotEmpty) ...[
+          _pdfSectionTitle('Top Customers', _pdf.blue),
+          pw.SizedBox(height: 10),
+          _buildTopCustomersTable(data.topCustomers),
+          pw.SizedBox(height: 20),
+        ],
+        if (data.messagesByHour.isNotEmpty) ...[
+          _pdfSectionTitle('Busiest Hours', _pdf.orange),
+          pw.SizedBox(height: 10),
+          _buildHourlyChart(data.messagesByHour, _pdf.orange),
+        ],
+      ]));
+    }
+
+    final bytes = await pdf.save();
+    _downloadFile(
+      content: bytes,
+      filename: 'vivid_company_analytics_$timestamp.pdf',
+      mimeType: 'application/pdf',
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // ADMIN: CLIENT REPORT PDF EXPORT
+  // ─────────────────────────────────────────────────────────────────
+
+  static Future<void> exportClientReportPdf({
+    required Client client,
+    ConversationClientAnalytics? conversationData,
+    BroadcastClientAnalytics? broadcastData,
+    // New per-feature metrics (dynamic — only non-null sections are exported)
+    ClientOverviewMetrics? overview,
+    ConversationMetrics? conversations,
+    BroadcastMetrics? broadcasts,
+    ManagerChatMetrics? managerChat,
+    LabelMetrics? labels,
+    PredictiveMetrics? predictions,
+  }) async {
+    await Future.wait([_loadArabicFont(), _loadLogoImage()]);
+
+    final pdf = pw.Document();
+    final timestamp = _formatDateIso(DateTime.now());
+    final subtitle = 'Generated $timestamp';
+    const margin = pw.EdgeInsets.fromLTRB(28, 16, 28, 24);
+
+    pw.MultiPage makePage(List<pw.Widget> Function(pw.Context) builder) =>
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: margin,
+          header: (ctx) => _pdfPageHeader(client.name, subtitle),
+          footer: (ctx) => _buildPdfFooter(ctx),
+          build: builder,
+        );
+
+    final hasNewMetrics = overview != null || conversations != null ||
+        broadcasts != null || managerChat != null ||
+        labels != null || predictions != null;
+
+    // ── New dynamic export (feature-based) ──
+
+    if (hasNewMetrics) {
+      // Page 1: Overview + Client Info
+      if (overview != null) {
+        final o = overview;
+        pdf.addPage(makePage((_) => [
+          _pdfSectionTitle('Overview', _pdf.navy),
+          pw.SizedBox(height: 14),
+          pw.Row(children: [
+            _pdfKpiCard('Days Active', '${o.daysActive}', _pdf.teal),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Features', '${o.enabledFeatureCount}', _pdf.blue),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Total Messages', _fmtInt(o.totalMessages), _pdf.cyan),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Unique Customers', _fmtInt(o.uniqueCustomers), _pdf.purple),
+          ]),
+          if (o.totalBroadcasts > 0 || o.totalManagerQueries > 0) ...[
+            pw.SizedBox(height: 12),
+            pw.Row(children: [
+              if (o.totalBroadcasts > 0) ...[
+                _pdfKpiCard('Broadcasts', _fmtInt(o.totalBroadcasts), _pdf.orange),
+                pw.SizedBox(width: 8),
+              ],
+              if (o.totalManagerQueries > 0) ...[
+                _pdfKpiCard('Manager Queries', _fmtInt(o.totalManagerQueries), _pdf.purple),
+                pw.SizedBox(width: 8),
+              ],
+              pw.Expanded(child: pw.SizedBox()),
+            ]),
+          ],
+          pw.SizedBox(height: 20),
+          _pdfSectionTitle('Client Info', _pdf.teal),
+          pw.SizedBox(height: 10),
+          _buildClientInfoTable(client),
+        ]));
+      }
+
+      // Page 2: Conversations
+      if (conversations != null) {
+        final c = conversations;
+        pdf.addPage(makePage((_) => [
+          _pdfSectionTitle('Conversations', _pdf.navy),
+          pw.SizedBox(height: 14),
+          pw.Row(children: [
+            _pdfKpiCard('Inbound', _fmtInt(c.inboundMessages), _pdf.cyan),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Outbound', _fmtInt(c.outboundMessages), _pdf.blue),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Customers', _fmtInt(c.uniqueCustomers), _pdf.purple),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('New This Month', _fmtInt(c.newCustomersThisMonth), _pdf.green),
+          ]),
+          pw.SizedBox(height: 12),
+          _pdfSectionTitle('AI Performance', _pdf.cyan),
+          pw.SizedBox(height: 10),
+          pw.Row(children: [
+            _pdfKpiCard('Automation', '${c.automationRate.toStringAsFixed(1)}%',
+                c.automationRate >= 80 ? _pdf.green : c.automationRate >= 60 ? _pdf.orange : _pdf.red),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('AI Messages', _fmtInt(c.aiMessages), _pdf.cyan),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Human Messages', _fmtInt(c.humanMessages), _pdf.blue),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Handoffs', _fmtInt(c.handoffCount), _pdf.orange),
+          ]),
+          if (c.hasTimestampColumns) ...[
+            pw.SizedBox(height: 12),
+            pw.Row(children: [
+              _pdfKpiCard('Avg Response', _fmtDurationCsv(c.avgFirstResponseTime.inSeconds.toDouble()), _pdf.teal),
+              pw.SizedBox(width: 8),
+              pw.Expanded(child: pw.SizedBox()),
+              pw.SizedBox(width: 8),
+              pw.Expanded(child: pw.SizedBox()),
+              pw.SizedBox(width: 8),
+              pw.Expanded(child: pw.SizedBox()),
+            ]),
+          ],
+          pw.SizedBox(height: 12),
+          _pdfSectionTitle('Customer Insights', _pdf.purple),
+          pw.SizedBox(height: 10),
+          pw.Row(children: [
+            _pdfKpiCard('Returning', _fmtInt(c.returningCustomers), _pdf.orange),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Single-Msg', _fmtInt(c.singleMessageCustomers), _pdf.red),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Avg Lifetime', '${c.avgCustomerLifetimeDays.toStringAsFixed(0)}d', _pdf.teal),
+            pw.SizedBox(width: 8),
+            pw.Expanded(child: pw.SizedBox()),
+          ]),
+          if (c.hasMediaColumns) ...[
+            pw.SizedBox(height: 12),
+            _pdfSectionTitle('Message Types', _pdf.purple),
+            pw.SizedBox(height: 10),
+            pw.Row(children: [
+              _pdfKpiCard('Text', _fmtInt(c.textMessages), _pdf.cyan),
+              pw.SizedBox(width: 8),
+              _pdfKpiCard('Voice', _fmtInt(c.voiceMessages), _pdf.orange),
+              pw.SizedBox(width: 8),
+              _pdfKpiCard('Media', _fmtInt(c.mediaMessages), _pdf.purple),
+              pw.SizedBox(width: 8),
+              pw.Expanded(child: pw.SizedBox()),
+            ]),
+          ],
+          if (c.hasSentByData && c.agentPerformance.isNotEmpty) ...[
+            pw.SizedBox(height: 12),
+            _pdfSectionTitle('Team Performance', _pdf.blue),
+            pw.SizedBox(height: 10),
+            _buildPdfTable(
+              headers: ['Agent', 'Messages', 'Avg Response', 'Active Days'],
+              rows: c.agentPerformance.map((a) => [
+                a.name,
+                _fmtInt(a.messageCount),
+                _fmtDurationCsv(a.avgResponseTime.inSeconds.toDouble()),
+                '${a.activeDays}',
+              ]).toList(),
+            ),
+          ],
+        ]));
+      }
+
+      // Page 3: Broadcasts
+      if (broadcasts != null) {
+        final b = broadcasts;
+        pdf.addPage(makePage((_) => [
+          _pdfSectionTitle('Broadcasts', _pdf.navy),
+          pw.SizedBox(height: 14),
+          pw.Row(children: [
+            _pdfKpiCard('Campaigns', _fmtInt(b.totalCampaigns), _pdf.orange),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Recipients', _fmtInt(b.totalRecipientsReached), _pdf.cyan),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Delivery %', '${b.deliveryRate.toStringAsFixed(1)}%', _pdf.green),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Fail %', '${b.failRate.toStringAsFixed(1)}%', b.failRate > 5 ? _pdf.red : _pdf.textMuted),
+          ]),
+          pw.SizedBox(height: 12),
+          pw.Row(children: [
+            _pdfKpiCard('Avg Size', b.avgCampaignSize.toStringAsFixed(0), _pdf.teal),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Unique Reach', _fmtInt(b.uniqueReach), _pdf.purple),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Unreachable', _fmtInt(b.unreachableCount), _pdf.red),
+            pw.SizedBox(width: 8),
+            pw.Expanded(child: pw.SizedBox()),
+          ]),
+          if (b.broadcastDrivenConversations > 0 || b.totalOfferValue > 0) ...[
+            pw.SizedBox(height: 12),
+            _pdfSectionTitle('ROI & Impact', _pdf.green),
+            pw.SizedBox(height: 10),
+            pw.Row(children: [
+              if (b.totalOfferValue > 0) ...[
+                _pdfKpiCard('Offer Value', '${_fmtInt(b.totalOfferValue.toInt())} BHD', _pdf.green),
+                pw.SizedBox(width: 8),
+              ],
+              _pdfKpiCard('Broadcast-Driven Convos', _fmtInt(b.broadcastDrivenConversations), _pdf.cyan),
+              pw.SizedBox(width: 8),
+              pw.Expanded(child: pw.SizedBox()),
+              pw.SizedBox(width: 8),
+              pw.Expanded(child: pw.SizedBox()),
+            ]),
+          ],
+          pw.SizedBox(height: 12),
+          _pdfSectionTitle('Delivery Breakdown', _pdf.blue),
+          pw.SizedBox(height: 10),
+          pw.Row(children: [
+            _pdfKpiCard('Accepted', _fmtInt(b.acceptedCount), _pdf.blue),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Delivered', _fmtInt(b.deliveredCount), _pdf.green),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Sent', _fmtInt(b.sentCount), _pdf.orange),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Failed', _fmtInt(b.failedCount), _pdf.red),
+          ]),
+          if (b.campaigns.isNotEmpty) ...[
+            pw.SizedBox(height: 12),
+            _pdfSectionTitle('Campaign History', _pdf.orange),
+            pw.SizedBox(height: 10),
+            _buildPdfTable(
+              headers: ['Campaign', 'Date', 'Recipients', 'Delivery %'],
+              rows: b.campaigns.take(15).map((c) => [
+                c.name,
+                _formatDateIso(c.date),
+                _fmtInt(c.recipients),
+                '${c.deliveryRate.toStringAsFixed(1)}%',
+              ]).toList(),
+            ),
+          ],
+        ]));
+      }
+
+      // Page 4: Manager Chat
+      if (managerChat != null) {
+        final m = managerChat;
+        pdf.addPage(makePage((_) => [
+          _pdfSectionTitle('Manager Chat', _pdf.navy),
+          pw.SizedBox(height: 14),
+          pw.Row(children: [
+            _pdfKpiCard('Total Queries', _fmtInt(m.totalQueries), _pdf.purple),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Unique Users', _fmtInt(m.uniqueUsers), _pdf.blue),
+            pw.SizedBox(width: 8),
+            pw.Expanded(child: pw.SizedBox()),
+            pw.SizedBox(width: 8),
+            pw.Expanded(child: pw.SizedBox()),
+          ]),
+          if (m.perUserBreakdown.isNotEmpty) ...[
+            pw.SizedBox(height: 12),
+            _pdfSectionTitle('Per-User Breakdown', _pdf.purple),
+            pw.SizedBox(height: 10),
+            _buildPdfTable(
+              headers: ['User', 'Queries', 'Last Query'],
+              rows: m.perUserBreakdown.map((u) => [
+                u.userName,
+                _fmtInt(u.queryCount),
+                _formatDateIso(u.lastQuery),
+              ]).toList(),
+            ),
+          ],
+        ]));
+      }
+
+      // Page 5: Labels
+      if (labels != null && labels.labelDistribution.isNotEmpty) {
+        pdf.addPage(makePage((_) => [
+          _pdfSectionTitle('Labels', _pdf.navy),
+          pw.SizedBox(height: 14),
+          _buildPdfTable(
+            headers: ['Label', 'Count', 'Unique Customers'],
+            rows: labels.labelDistribution.entries.map((e) => [
+              e.key,
+              _fmtInt(e.value),
+              _fmtInt(labels.labelByUniqueCustomer[e.key] ?? 0),
+            ]).toList(),
+          ),
+        ]));
+      }
+
+      // Page 6: Predictions
+      if (predictions != null) {
+        final p = predictions;
+        pdf.addPage(makePage((_) => [
+          _pdfSectionTitle('Predictive Intelligence', _pdf.navy),
+          pw.SizedBox(height: 14),
+          pw.Row(children: [
+            _pdfKpiCard('Retention', '${p.retentionRate.toStringAsFixed(1)}%', _pdf.green),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('At Risk', _fmtInt(p.atRiskCount), _pdf.orange),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Lapsed', _fmtInt(p.lapsedCount), _pdf.red),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Avg Gap', '${p.avgGapDays.toStringAsFixed(0)}d', _pdf.teal),
+          ]),
+          pw.SizedBox(height: 12),
+          pw.Row(children: [
+            _pdfKpiCard('Due This Week', _fmtInt(p.dueThisWeek), _pdf.amber),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Overdue', _fmtInt(p.overdueCount), _pdf.red),
+            pw.SizedBox(width: 8),
+            pw.Expanded(child: pw.SizedBox()),
+            pw.SizedBox(width: 8),
+            pw.Expanded(child: pw.SizedBox()),
+          ]),
+          if (p.categoryDistribution.isNotEmpty) ...[
+            pw.SizedBox(height: 12),
+            _pdfSectionTitle('Customer Categories', _pdf.teal),
+            pw.SizedBox(height: 10),
+            _buildPdfTable(
+              headers: ['Category', 'Count'],
+              rows: p.categoryDistribution.entries.map((e) => [e.key, _fmtInt(e.value)]).toList(),
+            ),
+          ],
+          if (p.topServices.isNotEmpty) ...[
+            pw.SizedBox(height: 12),
+            _pdfSectionTitle('Top Services', _pdf.amber),
+            pw.SizedBox(height: 10),
+            _buildPdfTable(
+              headers: ['Service', 'Count'],
+              rows: p.topServices.entries.take(10).map((e) => [e.key, _fmtInt(e.value)]).toList(),
+            ),
+          ],
+        ]));
+      }
+    }
+
+    // ── Legacy export (old models) — kept for backward compat ──
+
+    if (!hasNewMetrics) {
+      if (conversationData != null) {
+        final d = conversationData;
+        pdf.addPage(makePage((_) => [
+          _pdfSectionTitle('Conversation Analytics', _pdf.navy),
+          pw.SizedBox(height: 14),
+          pw.Row(children: [
+            _pdfKpiCard('AI Messages', _fmtInt(d.totalAiMessages), _pdf.cyan),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Manager Msgs', _fmtInt(d.totalManagerMessages), _pdf.orange),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Automation', '${d.automationRate.toStringAsFixed(1)}%', _pdf.green),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Customers', '${d.uniqueCustomers}', _pdf.blue),
+          ]),
+          pw.SizedBox(height: 12),
+          pw.Row(children: [
+            _pdfKpiCard('Conversations', '${d.totalConversations}', _pdf.purple),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Avg Response', _fmtDurationCsv(d.avgResponseTime.inSeconds.toDouble()), _pdf.teal),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Bookings', '${d.successfulBookings}', _pdf.amber),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Days Active', '${d.daysSinceOnboarding}', _pdf.textMuted),
+          ]),
+          pw.SizedBox(height: 20),
+          _pdfSectionTitle('Client Info', _pdf.teal),
+          pw.SizedBox(height: 10),
+          _buildClientInfoTable(client),
+        ]));
+      }
+
+      if (broadcastData != null) {
+        final d = broadcastData;
+        pdf.addPage(makePage((_) => [
+          _pdfSectionTitle('Broadcast Analytics', _pdf.navy),
+          pw.SizedBox(height: 14),
+          pw.Row(children: [
+            _pdfKpiCard('Broadcasts', '${d.totalBroadcastsSent}', _pdf.purple),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Recipients', _fmtInt(d.totalRecipientsReached), _pdf.cyan),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Delivery %', '${d.deliveryRate.toStringAsFixed(1)}%', _pdf.green),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Read %', '${d.readRate.toStringAsFixed(1)}%', _pdf.blue),
+          ]),
+          pw.SizedBox(height: 12),
+          pw.Row(children: [
+            _pdfKpiCard('Failed %', '${d.failedRate.toStringAsFixed(1)}%', d.failedRate > 5 ? _pdf.red : _pdf.textMuted),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Avg Campaign', d.avgCampaignSize.toStringAsFixed(0), _pdf.teal),
+            pw.SizedBox(width: 8),
+            _pdfKpiCard('Days Active', '${d.daysSinceOnboarding}', _pdf.textMuted),
+            pw.SizedBox(width: 8),
+            pw.Expanded(child: pw.SizedBox()),
+          ]),
+          pw.SizedBox(height: 20),
+          _pdfSectionTitle('Client Info', _pdf.teal),
+          pw.SizedBox(height: 10),
+          _buildClientInfoTable(client),
+        ]));
+      }
+
+      if (conversationData == null && broadcastData == null) {
+        pdf.addPage(makePage((_) => [
+          _pdfSectionTitle('Client Report', _pdf.navy),
+          pw.SizedBox(height: 14),
+          pw.Text('No analytics data available for this client.', style: pw.TextStyle(fontSize: 12, color: _pdf.textMuted)),
+          pw.SizedBox(height: 20),
+          _pdfSectionTitle('Client Info', _pdf.teal),
+          pw.SizedBox(height: 10),
+          _buildClientInfoTable(client),
+        ]));
+      }
+    }
+
+    final bytes = await pdf.save();
+    _downloadFile(
+      content: bytes,
+      filename: '${client.slug}_report_$timestamp.pdf',
+      mimeType: 'application/pdf',
+    );
+  }
+
+  /// Generic PDF table helper
+  static pw.Widget _buildPdfTable({
+    required List<String> headers,
+    required List<List<String>> rows,
+  }) {
+    return pw.Table(
+      border: pw.TableBorder.all(color: _pdf.border, width: 0.5),
+      children: [
+        pw.TableRow(
+          decoration: pw.BoxDecoration(color: _pdf.navy),
+          children: headers.map((h) => pw.Padding(
+            padding: const pw.EdgeInsets.all(6),
+            child: pw.Text(h, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColors.white)),
+          )).toList(),
+        ),
+        ...rows.map((row) => pw.TableRow(
+          children: row.map((cell) => pw.Padding(
+            padding: const pw.EdgeInsets.all(6),
+            child: pw.Text(cell, style: const pw.TextStyle(fontSize: 9)),
+          )).toList(),
+        )),
+      ],
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // ADMIN: COMMAND CENTER SUMMARY CSV
+  // ─────────────────────────────────────────────────────────────────
+
+  static void exportCommandCenterCsv({
+    required VividCompanyAnalytics? analytics,
+    required List<Client> clients,
+    required List<ClientHealthScore> healthScores,
+  }) {
+    final buffer = StringBuffer();
+    final timestamp = _formatDateIso(DateTime.now());
+
+    buffer.writeln('# ═══════════════════════════════════════');
+    buffer.writeln('# VIVID COMMAND CENTER SUMMARY');
+    buffer.writeln('# ═══════════════════════════════════════');
+    buffer.writeln('Generated,$timestamp');
+    buffer.writeln('Total Clients,${clients.length}');
+    buffer.writeln('');
+
+    if (analytics != null) {
+      buffer.writeln('# ─── PLATFORM METRICS ───');
+      buffer.writeln('Metric,Value');
+      buffer.writeln('Total Messages,${analytics.totalMessages}');
+      buffer.writeln('Total Broadcasts,${analytics.totalBroadcasts}');
+      buffer.writeln('Unique Customers,${analytics.totalUniqueCustomers}');
+      buffer.writeln('Automation Rate,${analytics.overallAutomationRate.toStringAsFixed(1)}%');
+      buffer.writeln('Today Messages,${analytics.todayMessages}');
+      buffer.writeln('This Week Messages,${analytics.thisWeekMessages}');
+      buffer.writeln('This Month Messages,${analytics.thisMonthMessages}');
+      buffer.writeln('');
+    }
+
+    if (healthScores.isNotEmpty) {
+      buffer.writeln('# ─── CLIENT HEALTH SCORES ───');
+      buffer.writeln('Client,Score,Grade,Activity Recency,Message Volume,Feature Adoption,User Engagement,Config Completeness');
+      for (final hs in healthScores) {
+        final factors = <String>[];
+        for (final f in hs.factors) {
+          factors.add(f.score.round().toString());
+        }
+        // Pad to 5 factors
+        while (factors.length < 5) {
+          factors.add('0');
+        }
+        buffer.writeln('${_escapeCsv(hs.clientName)},${hs.score},${hs.grade},${factors.join(",")}');
+      }
+      buffer.writeln('');
+    }
+
+    _downloadFile(
+      content: utf8.encode(buffer.toString()),
+      filename: 'vivid_command_center_$timestamp.csv',
+      mimeType: 'text/csv',
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // ADMIN PDF HELPERS
+  // ─────────────────────────────────────────────────────────────────
+
+  static pw.Widget _buildTextBarChart(Map<String, int> dayData, PdfColor barColor) {
+    final sortedDays = dayData.entries.toList()..sort((a, b) => a.key.compareTo(b.key));
+    final maxVal = sortedDays.fold<int>(1, (mx, e) => e.value > mx ? e.value : mx);
+
+    return pw.Column(
+      children: sortedDays.map((entry) {
+        final ratio = entry.value / maxVal;
+        return pw.Padding(
+          padding: const pw.EdgeInsets.only(bottom: 4),
+          child: pw.Row(
+            children: [
+              pw.SizedBox(
+                width: 70,
+                child: pw.Text(entry.key, style: pw.TextStyle(fontSize: 8, color: _pdf.textMuted)),
+              ),
+              pw.Expanded(
+                child: pw.Stack(
+                  children: [
+                    pw.Container(height: 14, color: PdfColor.fromHex('#F1F5F9')),
+                    pw.Container(
+                      height: 14,
+                      width: ratio * 400,
+                      color: barColor,
+                    ),
+                  ],
+                ),
+              ),
+              pw.SizedBox(width: 8),
+              pw.SizedBox(
+                width: 30,
+                child: pw.Text('${entry.value}', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold), textAlign: pw.TextAlign.right),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  static pw.Widget _buildHourlyChart(Map<int, int> hourData, PdfColor barColor) {
+    final maxVal = hourData.values.fold<int>(1, (mx, v) => v > mx ? v : mx);
+    // Show only hours with data
+    final hours = hourData.entries.toList()..sort((a, b) => a.key.compareTo(b.key));
+
+    return pw.Column(
+      children: hours.map((entry) {
+        final ratio = entry.value / maxVal;
+        final label = '${entry.key.toString().padLeft(2, '0')}:00';
+        return pw.Padding(
+          padding: const pw.EdgeInsets.only(bottom: 3),
+          child: pw.Row(
+            children: [
+              pw.SizedBox(width: 40, child: pw.Text(label, style: pw.TextStyle(fontSize: 8, color: _pdf.textMuted))),
+              pw.Expanded(
+                child: pw.Stack(
+                  children: [
+                    pw.Container(height: 12, color: PdfColor.fromHex('#F1F5F9')),
+                    pw.Container(height: 12, width: ratio * 400, color: barColor),
+                  ],
+                ),
+              ),
+              pw.SizedBox(width: 8),
+              pw.SizedBox(width: 30, child: pw.Text('${entry.value}', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold), textAlign: pw.TextAlign.right)),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  static pw.Widget _buildClientBreakdownTable(List<ClientActivity> clients) {
+    final sorted = [...clients]..sort((a, b) => b.messageCount.compareTo(a.messageCount));
+    return pw.Table(
+      border: pw.TableBorder.all(color: _pdf.border, width: 0.5),
+      columnWidths: {
+        0: const pw.FlexColumnWidth(2.5),
+        1: const pw.FixedColumnWidth(50),
+        2: const pw.FixedColumnWidth(50),
+        3: const pw.FixedColumnWidth(45),
+        4: const pw.FixedColumnWidth(45),
+        5: const pw.FixedColumnWidth(45),
+        6: const pw.FixedColumnWidth(50),
+      },
+      children: [
+        pw.TableRow(
+          decoration: pw.BoxDecoration(color: _pdf.navy),
+          children: ['Client', 'Messages', 'Broadcasts', 'AI', 'Manager', 'Customers', 'Auto %'].map((h) => pw.Padding(
+            padding: const pw.EdgeInsets.all(6),
+            child: pw.Text(h, style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: PdfColors.white)),
+          )).toList(),
+        ),
+        ...List.generate(sorted.length, (i) {
+          final ca = sorted[i];
+          final bg = i % 2 == 0 ? PdfColors.white : PdfColor.fromHex('#F8F9FA');
+          return pw.TableRow(
+            decoration: pw.BoxDecoration(color: bg),
+            children: [
+              pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text(ca.clientName, style: const pw.TextStyle(fontSize: 8))),
+              pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text('${ca.messageCount}', style: const pw.TextStyle(fontSize: 8), textAlign: pw.TextAlign.center)),
+              pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text('${ca.broadcastCount}', style: const pw.TextStyle(fontSize: 8), textAlign: pw.TextAlign.center)),
+              pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text('${ca.aiMessages}', style: const pw.TextStyle(fontSize: 8), textAlign: pw.TextAlign.center)),
+              pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text('${ca.managerMessages}', style: const pw.TextStyle(fontSize: 8), textAlign: pw.TextAlign.center)),
+              pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text('${ca.uniqueCustomers}', style: const pw.TextStyle(fontSize: 8), textAlign: pw.TextAlign.center)),
+              pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text('${ca.automationRate.toStringAsFixed(0)}%', style: pw.TextStyle(fontSize: 8, color: ca.automationRate >= 70 ? _pdf.green : ca.automationRate >= 40 ? _pdf.amber : _pdf.red), textAlign: pw.TextAlign.center)),
+            ],
+          );
+        }),
+      ],
+    );
+  }
+
+  static pw.Widget _buildTopCustomersTable(List<TopCustomerInfo> customers) {
+    return pw.Table(
+      border: pw.TableBorder.all(color: _pdf.border, width: 0.5),
+      columnWidths: {
+        0: const pw.FlexColumnWidth(2),
+        1: const pw.FlexColumnWidth(2),
+        2: const pw.FixedColumnWidth(55),
+        3: const pw.FlexColumnWidth(2),
+      },
+      children: [
+        pw.TableRow(
+          decoration: pw.BoxDecoration(color: _pdf.navy),
+          children: ['Phone', 'Name', 'Messages', 'Client'].map((h) => pw.Padding(
+            padding: const pw.EdgeInsets.all(6),
+            child: pw.Text(h, style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: PdfColors.white)),
+          )).toList(),
+        ),
+        ...List.generate(customers.length, (i) {
+          final tc = customers[i];
+          final bg = i % 2 == 0 ? PdfColors.white : PdfColor.fromHex('#F8F9FA');
+          final name = _sanitizePdfName(tc.name ?? '-');
+          return pw.TableRow(
+            decoration: pw.BoxDecoration(color: bg),
+            children: [
+              pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text(tc.phone, style: const pw.TextStyle(fontSize: 8))),
+              pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text(
+                name,
+                style: _arStyle(const pw.TextStyle(fontSize: 8), tc.name ?? ''),
+                textDirection: isArabicText(tc.name ?? '') ? pw.TextDirection.rtl : pw.TextDirection.ltr,
+              )),
+              pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text('${tc.messageCount}', style: const pw.TextStyle(fontSize: 8), textAlign: pw.TextAlign.center)),
+              pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text(tc.clientName, style: const pw.TextStyle(fontSize: 8))),
+            ],
+          );
+        }),
+      ],
+    );
+  }
+
+  static pw.Widget _buildClientInfoTable(Client client) {
+    final rows = <List<String>>[
+      ['Name', client.name],
+      ['Slug', client.slug],
+      ['Features', client.enabledFeatures.join(', ')],
+      if (client.conversationsPhone != null) ['Conversations Phone', client.conversationsPhone!],
+      if (client.broadcastsPhone != null) ['Broadcasts Phone', client.broadcastsPhone!],
+      ['Created', _formatDateIso(client.createdAt)],
+    ];
+
+    return pw.Table(
+      border: pw.TableBorder.all(color: _pdf.border, width: 0.5),
+      columnWidths: {
+        0: const pw.FixedColumnWidth(120),
+        1: const pw.FlexColumnWidth(3),
+      },
+      children: rows.map((row) => pw.TableRow(
+        children: [
+          pw.Padding(
+            padding: const pw.EdgeInsets.all(6),
+            child: pw.Text(row[0], style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: _pdf.navy)),
+          ),
+          pw.Padding(
+            padding: const pw.EdgeInsets.all(6),
+            child: pw.Text(row[1], style: const pw.TextStyle(fontSize: 9)),
+          ),
+        ],
+      )).toList(),
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────

@@ -5,6 +5,7 @@ import '../providers/templates_provider.dart';
 import '../theme/vivid_theme.dart';
 import 'new_template_screen.dart';
 import 'template_detail_screen.dart';
+import '../utils/toast_service.dart';
 
 class TemplatesScreen extends StatefulWidget {
   const TemplatesScreen({super.key});
@@ -30,6 +31,28 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
   Widget build(BuildContext context) {
     final vc = context.vividColors;
     final provider = context.watch<TemplatesProvider>();
+
+    // Check if templates table is configured
+    final table = ClientConfig.templatesTable;
+    if (table == null || table.isEmpty) {
+      return Container(
+        color: vc.background,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.description_outlined, size: 64, color: vc.textMuted),
+              const SizedBox(height: 16),
+              Text('Templates Not Configured',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: vc.textPrimary)),
+              const SizedBox(height: 8),
+              Text('Please contact your administrator to set up the templates table.',
+                  style: TextStyle(color: vc.textSecondary, fontSize: 14)),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Container(
       color: vc.background,
@@ -74,7 +97,7 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Manage your approved WhatsApp message templates',
+                  'Manage your WhatsApp message templates',
                   style: TextStyle(
                     color: vc.textSecondary,
                     fontSize: 13,
@@ -107,60 +130,55 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
                   const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
             ),
           ),
-          const SizedBox(width: 10),
-          // Sync to AI button
-          OutlinedButton.icon(
-            onPressed: provider.isSyncing
-                ? null
-                : () async {
-                    final error =
-                        await provider.syncTemplatesToSupabase();
-                    if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          error ?? 'Templates synced to AI ✓',
-                        ),
-                        backgroundColor:
-                            error == null ? Colors.green[700] : Colors.red[700],
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
-                  },
-            icon: provider.isSyncing
-                ? SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: vc.textMuted),
-                  )
-                : const Icon(Icons.cloud_upload_rounded, size: 16),
-            label: const Text('Sync to AI'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: vc.textSecondary,
-              side: BorderSide(
-                  color: VividColors.tealBlue.withValues(alpha: 0.4)),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              textStyle:
-                  const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+          // Sync to AI + New Template — admin only (Meta API access)
+          if (ClientConfig.isVividAdmin) ...[
+            const SizedBox(width: 10),
+            OutlinedButton.icon(
+              onPressed: provider.isSyncing
+                  ? null
+                  : () async {
+                      final error =
+                          await provider.syncTemplatesToSupabase();
+                      if (!context.mounted) return;
+                      VividToast.show(context,
+                        message: error ?? 'Templates synced to AI',
+                        type: error == null ? ToastType.success : ToastType.error,
+                      );
+                    },
+              icon: provider.isSyncing
+                  ? SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: vc.textMuted),
+                    )
+                  : const Icon(Icons.cloud_upload_rounded, size: 16),
+              label: const Text('Sync to AI'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: vc.textSecondary,
+                side: BorderSide(
+                    color: VividColors.tealBlue.withValues(alpha: 0.4)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                textStyle:
+                    const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+              ),
             ),
-          ),
-          const SizedBox(width: 10),
-          // New Template button
-          FilledButton.icon(
-            onPressed: () => _openNewTemplate(context),
-            icon: const Icon(Icons.add_rounded, size: 18),
-            label: const Text('New Template'),
-            style: FilledButton.styleFrom(
-              backgroundColor: VividColors.cyan,
-              foregroundColor: vc.background,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              textStyle:
-                  const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            const SizedBox(width: 10),
+            FilledButton.icon(
+              onPressed: () => _openNewTemplate(context),
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: const Text('New Template'),
+              style: FilledButton.styleFrom(
+                backgroundColor: VividColors.cyan,
+                foregroundColor: vc.background,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                textStyle:
+                    const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -343,17 +361,15 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
     final err = await provider.deleteTemplate(name, id);
     if (!context.mounted) return;
     if (err != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Delete failed: $err'),
-        backgroundColor: VividColors.statusUrgent,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      ));
+      VividToast.show(context,
+        message: 'Delete failed: $err',
+        type: ToastType.error,
+      );
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Template deleted successfully'),
-        behavior: SnackBarBehavior.floating,
-      ));
+      VividToast.show(context,
+        message: 'Template deleted successfully',
+        type: ToastType.success,
+      );
     }
   }
 }
@@ -485,7 +501,7 @@ class _TemplateCard extends StatelessWidget {
                         children: [
                           Expanded(
                             child: Text(
-                              template.name,
+                              template.label,
                               style: TextStyle(
                                 color: vc.textPrimary,
                                 fontSize: 13,
@@ -547,35 +563,36 @@ class _TemplateCard extends StatelessWidget {
                 ),
               ),
 
-              // Divider + action row (Delete only — card tap opens preview)
-              Container(
-                height: 1,
-                color: vc.border,
-              ),
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    // Delete
-                    TextButton.icon(
-                      onPressed: () => onDelete(template.name, template.id),
-                      icon: const Icon(Icons.delete_outline_rounded, size: 14),
-                      label: const Text('Delete'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: VividColors.statusUrgent,
-                        textStyle: const TextStyle(
-                            fontSize: 12, fontWeight: FontWeight.w500),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                    ),
-                  ],
+              // Divider + action row — admin only (delete hits Meta API)
+              if (ClientConfig.isVividAdmin) ...[
+                Container(
+                  height: 1,
+                  color: vc.border,
                 ),
-              ),
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton.icon(
+                        onPressed: () => onDelete(template.name, template.id),
+                        icon: const Icon(Icons.delete_outline_rounded, size: 14),
+                        label: const Text('Delete'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: VividColors.statusUrgent,
+                          textStyle: const TextStyle(
+                              fontSize: 12, fontWeight: FontWeight.w500),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ),
         ),

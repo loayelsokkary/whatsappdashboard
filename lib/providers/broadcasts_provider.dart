@@ -280,7 +280,8 @@ class BroadcastsProvider extends ChangeNotifier {
     try {
       print('📢 Fetching from table: $_broadcastsTable');
       
-      final response = await SupabaseService.client
+      // Use adminClient to bypass RLS on per-client tables
+      final response = await SupabaseService.adminClient
           .from(_broadcastsTable)
           .select()
           .order('sent_at', ascending: false);
@@ -337,7 +338,8 @@ class BroadcastsProvider extends ChangeNotifier {
 
   Future<int> _fetchRecipientCount(String broadcastId) async {
     try {
-      final result = await SupabaseService.client
+      // Use adminClient to bypass RLS on per-client tables
+      final result = await SupabaseService.adminClient
           .from(_recipientsTable)
           .select()
           .eq('broadcast_id', broadcastId)
@@ -351,7 +353,8 @@ class BroadcastsProvider extends ChangeNotifier {
 
   Future<void> fetchRecipients(String broadcastId) async {
     try {
-      final response = await SupabaseService.client
+      // Use adminClient to bypass RLS on per-client tables
+      final response = await SupabaseService.adminClient
           .from(_recipientsTable)
           .select('id, customer_name, customer_phone, status')
           .eq('broadcast_id', broadcastId)
@@ -372,7 +375,8 @@ class BroadcastsProvider extends ChangeNotifier {
     notifyListeners();
     try {
       final broadcastId = _selectedBroadcast!.id;
-      final response = await SupabaseService.client
+      // Use adminClient to bypass RLS on per-client tables
+      final response = await SupabaseService.adminClient
           .from(_recipientsTable)
           .select('id, customer_name, customer_phone, status')
           .eq('broadcast_id', broadcastId)
@@ -393,7 +397,8 @@ class BroadcastsProvider extends ChangeNotifier {
 
   Future<void> _fetchRecipientStats(String broadcastId) async {
     try {
-      final result = await SupabaseService.client
+      // Use adminClient to bypass RLS on per-client tables
+      final result = await SupabaseService.adminClient
           .from(_recipientsTable)
           .select()
           .eq('broadcast_id', broadcastId)
@@ -411,8 +416,8 @@ class BroadcastsProvider extends ChangeNotifier {
       final now = DateTime.now();
       final startOfMonth = DateTime(now.year, now.month, 1).toIso8601String();
 
-      // Get IDs of broadcasts sent this month
-      final broadcastsResponse = await SupabaseService.client
+      // Use adminClient to bypass RLS on per-client tables
+      final broadcastsResponse = await SupabaseService.adminClient
           .from(_broadcastsTable)
           .select('id')
           .gte('sent_at', startOfMonth);
@@ -428,8 +433,8 @@ class BroadcastsProvider extends ChangeNotifier {
         return;
       }
 
-      // Count actual recipients for those broadcasts
-      final countResult = await SupabaseService.client
+      // Count actual recipients for those broadcasts (adminClient bypasses RLS)
+      final countResult = await SupabaseService.adminClient
           .from(_recipientsTable)
           .select()
           .inFilter('broadcast_id', ids)
@@ -444,13 +449,14 @@ class BroadcastsProvider extends ChangeNotifier {
   /// Rename a broadcast campaign
   Future<void> renameBroadcast(String broadcastId, String newName) async {
     try {
-      await SupabaseService.client
+      // Use adminClient to bypass RLS on per-client tables
+      await SupabaseService.adminClient
           .from(_broadcastsTable)
           .update({'campaign_name': newName})
           .eq('id', broadcastId);
 
-      // Verify the update actually persisted (RLS may silently block)
-      final verify = await SupabaseService.client
+      // Verify the update actually persisted
+      final verify = await SupabaseService.adminClient
           .from(_broadcastsTable)
           .select('campaign_name')
           .eq('id', broadcastId)

@@ -15,9 +15,9 @@ enum NavDestination {
   conversations,
   broadcasts,
   templates,
+  bookingReminders,
   analytics,
   managerChat,
-  bookingReminders,
   activityLogs,
 }
 
@@ -159,7 +159,7 @@ class Sidebar extends StatelessWidget {
                   !ClientConfig.canPerformAction('send_broadcast'),
             ),
 
-          if (ClientConfig.hasFeature('broadcasts'))
+          if (ClientConfig.hasFeature('whatsapp_templates') || ClientConfig.hasFeature('broadcasts'))
             _NavItem(
               icon: Icons.article_outlined,
               label: 'Templates',

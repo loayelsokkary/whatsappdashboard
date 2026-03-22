@@ -7,6 +7,7 @@ import '../models/models.dart';
 import '../providers/templates_provider.dart';
 import '../services/supabase_service.dart';
 import '../theme/vivid_theme.dart';
+import '../utils/toast_service.dart';
 
 class TemplateDetailScreen extends StatefulWidget {
   final WhatsAppTemplate template;
@@ -57,7 +58,7 @@ class _TemplateDetailScreenState extends State<TemplateDetailScreen> {
     });
     try {
       final row = await SupabaseService.adminClient
-          .from(ClientConfig.templatesTableName ?? 'whatsapp_templates')
+          .from(ClientConfig.templatesTableName)
           .select(
               'id, body_variable_count, body_variable_labels, body_variable_sources, offer_image_url, body_text, template_name, header_type')
           .eq('meta_template_id', widget.template.id)
@@ -118,11 +119,10 @@ class _TemplateDetailScreenState extends State<TemplateDetailScreen> {
     if (file.bytes == null) return;
     if (file.bytes!.lengthInBytes > 5 * 1024 * 1024) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Image exceeds 5 MB limit'),
-        backgroundColor: VividColors.statusUrgent,
-        behavior: SnackBarBehavior.floating,
-      ));
+      VividToast.show(context,
+        message: 'Image exceeds 5 MB limit',
+        type: ToastType.error,
+      );
       return;
     }
     final ext = (file.extension ?? 'jpg').toLowerCase();
@@ -152,7 +152,7 @@ class _TemplateDetailScreenState extends State<TemplateDetailScreen> {
 
       final clientId = ClientConfig.currentClient?.id ?? '';
       await SupabaseService.adminClient
-          .from(ClientConfig.templatesTableName ?? 'whatsapp_templates')
+          .from(ClientConfig.templatesTableName)
           .update({
             'body_variable_labels': _labels,
             'body_variable_descriptions': _labels,
@@ -172,19 +172,17 @@ class _TemplateDetailScreenState extends State<TemplateDetailScreen> {
         _newImageMimeType = null;
         _isSaving = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Saved ✓'),
-        backgroundColor: VividColors.statusSuccess,
-        behavior: SnackBarBehavior.floating,
-      ));
+      VividToast.show(context,
+        message: 'Saved successfully',
+        type: ToastType.success,
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() => _isSaving = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Save failed: $e'),
-        backgroundColor: VividColors.statusUrgent,
-        behavior: SnackBarBehavior.floating,
-      ));
+      VividToast.show(context,
+        message: 'Save failed: $e',
+        type: ToastType.error,
+      );
     }
   }
 

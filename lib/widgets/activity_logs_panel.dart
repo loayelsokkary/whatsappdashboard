@@ -1,18 +1,25 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../models/models.dart';
 import '../providers/activity_logs_provider.dart';
+import '../providers/admin_provider.dart';
 import '../theme/vivid_theme.dart';
 import '../utils/analytics_exporter.dart';
+import '../utils/toast_service.dart';
 
 class ActivityLogsPanel extends StatefulWidget {
   final String? clientId; // null for Vivid admin viewing all
   final String? clientName;
+  final bool isAdmin; // true when used inside AdminPanel
 
   const ActivityLogsPanel({
     super.key,
     this.clientId,
     this.clientName,
+    this.isAdmin = false,
   });
 
   @override
@@ -21,6 +28,13 @@ class ActivityLogsPanel extends StatefulWidget {
 
 class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+
+  // Track which log entries have expanded metadata
+  final Set<String> _expandedMetadata = {};
+
+  // Date preset selection
+  String _datePreset = 'all'; // 'all', 'today', '7days', '30days', 'custom'
 
   @override
   void initState() {
@@ -28,6 +42,7 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadLogs();
     });
+    _scrollController.addListener(_onScroll);
   }
 
   void _loadLogs() {
@@ -39,65 +54,92 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
     }
   }
 
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
+      final provider = context.read<ActivityLogsProvider>();
+      // First exhaust the local display buffer, then fetch more from server
+      if (provider.hasMoreToDisplay) {
+        provider.showMore();
+      } else if (provider.hasMore && !provider.isLoadingMore) {
+        provider.loadMore();
+      }
+    }
+  }
+
+  static final _numFmt = NumberFormat('#,###');
+  static String _formatCount(int count) => _numFmt.format(count);
+
   @override
   void dispose() {
     _searchController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final vc = context.vividColors;
     return Consumer<ActivityLogsProvider>(
       builder: (context, provider, _) {
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildHeader(provider),
-            const SizedBox(height: 16),
-            _buildFilters(provider),
-            const SizedBox(height: 16),
-            _buildStats(provider),
-            const SizedBox(height: 16),
-            Expanded(child: _buildLogsList(provider)),
-          ],
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final isMobile = constraints.maxWidth < 600;
+            return Padding(
+              padding: EdgeInsets.all(isMobile ? 12 : 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildHeader(provider, isMobile),
+                  const SizedBox(height: 16),
+                  _buildFilters(provider, isMobile),
+                  const SizedBox(height: 16),
+                  _buildStats(provider, isMobile),
+                  const SizedBox(height: 16),
+                  Expanded(child: _buildLogsList(provider, isMobile)),
+                ],
+              ),
+            );
+          },
         );
       },
     );
   }
 
-  Widget _buildHeader(ActivityLogsProvider provider) {
+  // ══════════════════════════════════════════════════════
+  // HEADER
+  // ══════════════════════════════════════════════════════
+
+  Widget _buildHeader(ActivityLogsProvider provider, bool isMobile) {
     final vc = context.vividColors;
     return Row(
       children: [
-        Icon(Icons.history, color: VividColors.cyan, size: 28),
-        const SizedBox(width: 12),
+        Icon(Icons.history, color: VividColors.cyan, size: isMobile ? 22 : 28),
+        SizedBox(width: isMobile ? 8 : 12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                widget.clientName != null
-                    ? '${widget.clientName} Activity Logs'
-                    : 'All Activity Logs',
+                widget.isAdmin
+                    ? 'Activity Logs'
+                    : widget.clientName != null
+                        ? '${widget.clientName} Activity Logs'
+                        : 'All Activity Logs',
                 style: TextStyle(
-                  fontSize: 20,
+                  fontSize: isMobile ? 16 : 20,
                   fontWeight: FontWeight.bold,
                   color: vc.textPrimary,
                 ),
+                overflow: TextOverflow.ellipsis,
               ),
               Text(
-                '${provider.logs.length} activities${provider.allLogs.length != provider.logs.length ? " (filtered from ${provider.allLogs.length})" : ""}',
-                style: TextStyle(
-                  color: vc.textMuted,
-                  fontSize: 12,
-                ),
+                '${_formatCount(provider.filteredCount)} activities${provider.filteredCount != provider.totalFetchedCount ? " (filtered from ${_formatCount(provider.totalFetchedCount)})" : ""}${provider.hasMore ? "+" : ""}',
+                style: TextStyle(color: vc.textMuted, fontSize: 12),
               ),
             ],
           ),
         ),
-        if (provider.logs.isNotEmpty)
-          _buildExportButton(provider),
+        if (provider.logs.isNotEmpty) _buildExportButton(provider),
         const SizedBox(width: 4),
         IconButton(
           onPressed: _loadLogs,
@@ -216,23 +258,30 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
         break;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Row(children: [
-        const Icon(Icons.check_circle, color: Colors.white, size: 20),
-        const SizedBox(width: 12),
-        Text('${format.toUpperCase()} exported successfully'),
-      ]),
-      backgroundColor: VividColors.statusSuccess,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      margin: const EdgeInsets.all(16),
-    ));
+    VividToast.show(context,
+      message: '${format.toUpperCase()} exported successfully',
+      type: ToastType.success,
+    );
   }
 
-  Widget _buildFilters(ActivityLogsProvider provider) {
+  // ══════════════════════════════════════════════════════
+  // FILTERS
+  // ══════════════════════════════════════════════════════
+
+  bool get _hasActiveFilters {
+    final provider = context.read<ActivityLogsProvider>();
+    return provider.selectedClientId != null ||
+        provider.selectedUserId != null ||
+        provider.selectedActionType != null ||
+        provider.startDate != null ||
+        provider.searchQuery.isNotEmpty ||
+        provider.filterAiOnly;
+  }
+
+  Widget _buildFilters(ActivityLogsProvider provider, bool isMobile) {
     final vc = context.vividColors;
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(isMobile ? 12 : 16),
       decoration: BoxDecoration(
         color: vc.surface,
         borderRadius: BorderRadius.circular(12),
@@ -253,18 +302,15 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
                 ),
               ),
               const Spacer(),
-              if (provider.selectedUserId != null ||
-                  provider.selectedActionType != null ||
-                  provider.startDate != null ||
-                  provider.searchQuery.isNotEmpty ||
-                  provider.filterAiOnly)
+              if (_hasActiveFilters)
                 TextButton.icon(
                   onPressed: () {
                     provider.clearFilters();
                     _searchController.clear();
+                    setState(() => _datePreset = 'all');
                   },
                   icon: const Icon(Icons.clear, size: 16),
-                  label: const Text('Clear All'),
+                  label: const Text('Reset Filters'),
                   style: TextButton.styleFrom(
                     foregroundColor: VividColors.statusUrgent,
                   ),
@@ -272,97 +318,199 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
             ],
           ),
           const SizedBox(height: 12),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              // Search
-              SizedBox(
-                width: 250,
-                child: TextField(
-                  controller: _searchController,
-                  onChanged: provider.setSearchQuery,
-                  decoration: InputDecoration(
-                    hintText: 'Search by name or description...',
-                    prefixIcon: const Icon(Icons.search, size: 20),
-                    filled: true,
-                    fillColor: vc.background,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
-                  style: const TextStyle(fontSize: 13),
-                ),
-              ),
 
-              // User filter
-              _buildDropdown<String?>(
-                value: provider.selectedUserId,
-                hint: 'All Users',
-                items: [
-                  const DropdownMenuItem(value: null, child: Text('All Users')),
-                  ...provider.uniqueUsers.map((user) {
-                    final isBlocked = provider.blockedUserIds.contains(user['id']);
-                    final displayName = (user['name'] ?? 'Unknown') + (isBlocked ? ' (Blocked)' : '');
-                    return DropdownMenuItem(
-                      value: user['id'],
-                      child: Text(
-                        displayName,
-                        style: TextStyle(
-                          color: isBlocked ? Colors.red.withOpacity(0.7) : null,
-                        ),
-                      ),
-                    );
-                  }),
-                ],
-                onChanged: provider.setUserFilter,
-                width: 200,
-              ),
-
-              // Action type filter
-              _buildDropdown<ActionType?>(
-                value: provider.selectedActionType,
-                hint: 'All Actions',
-                items: [
-                  const DropdownMenuItem(value: null, child: Text('All Actions')),
-                  ...ActionType.values
-                    .where((type) => type != ActionType.aiToggled || ClientConfig.hasAiConversations)
-                    .map((type) => DropdownMenuItem(
-                      value: type,
-                      child: Text(type.displayName),
-                    )),
-                ],
-                onChanged: provider.setActionTypeFilter,
-                width: 180,
-              ),
-
-              // Date range
-              _buildDateRangeButton(provider),
-
-              // AI filter (only for AI-enabled clients)
-              if (ClientConfig.hasAiConversations)
-                FilterChip(
-                  label: const Text('AI Activity'),
-                  selected: provider.filterAiOnly,
-                  onSelected: (value) => provider.setAiFilter(value),
-                  avatar: const Icon(Icons.smart_toy, size: 16),
-                  selectedColor: VividColors.brightBlue.withOpacity(0.3),
-                  checkmarkColor: VividColors.brightBlue,
-                  labelStyle: TextStyle(
-                    color: provider.filterAiOnly ? VividColors.brightBlue : vc.textSecondary,
-                    fontSize: 13,
-                  ),
-                  side: BorderSide(
-                    color: provider.filterAiOnly ? VividColors.brightBlue : vc.popupBorder,
-                  ),
-                  backgroundColor: vc.background,
-                ),
+          // Row 1: Client dropdown (admin) + Search + User dropdown
+          if (isMobile) ...[
+            // Mobile: stack vertically
+            if (widget.isAdmin) ...[
+              _buildClientDropdown(provider),
+              const SizedBox(height: 8),
             ],
-          ),
+            _buildSearchField(provider),
+            const SizedBox(height: 8),
+            _buildDropdown<String?>(
+              value: provider.selectedUserId,
+              hint: 'All Users',
+              items: [
+                const DropdownMenuItem(value: null, child: Text('All Users')),
+                ...provider.uniqueUsers.map((user) {
+                  final isBlocked = provider.blockedUserIds.contains(user['id']);
+                  final displayName = (user['name'] ?? 'Unknown') + (isBlocked ? ' (Blocked)' : '');
+                  return DropdownMenuItem(
+                    value: user['id'],
+                    child: Text(
+                      displayName,
+                      style: TextStyle(
+                        color: isBlocked ? Colors.red.withOpacity(0.7) : null,
+                      ),
+                    ),
+                  );
+                }),
+              ],
+              onChanged: provider.setUserFilter,
+            ),
+            const SizedBox(height: 8),
+            _buildDropdown<ActionType?>(
+              value: provider.selectedActionType,
+              hint: 'All Actions',
+              items: [
+                const DropdownMenuItem(value: null, child: Text('All Actions')),
+                ...ActionType.values.map((type) => DropdownMenuItem(
+                      value: type,
+                      child: Row(
+                        children: [
+                          Icon(_getActionIcon(type), size: 14, color: _getActionColor(type)),
+                          const SizedBox(width: 6),
+                          Text(type.displayName),
+                        ],
+                      ),
+                    )),
+              ],
+              onChanged: provider.setActionTypeFilter,
+            ),
+            const SizedBox(height: 8),
+            _buildDatePresets(provider),
+          ] else ...[
+            // Desktop: horizontal wrap
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                if (widget.isAdmin)
+                  SizedBox(width: 200, child: _buildClientDropdown(provider)),
+                SizedBox(width: 250, child: _buildSearchField(provider)),
+                SizedBox(
+                  width: 200,
+                  child: _buildDropdown<String?>(
+                    value: provider.selectedUserId,
+                    hint: 'All Users',
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('All Users')),
+                      ...provider.uniqueUsers.map((user) {
+                        final isBlocked = provider.blockedUserIds.contains(user['id']);
+                        final displayName = (user['name'] ?? 'Unknown') + (isBlocked ? ' (Blocked)' : '');
+                        return DropdownMenuItem(
+                          value: user['id'],
+                          child: Text(
+                            displayName,
+                            style: TextStyle(
+                              color: isBlocked ? Colors.red.withOpacity(0.7) : null,
+                            ),
+                          ),
+                        );
+                      }),
+                    ],
+                    onChanged: provider.setUserFilter,
+                  ),
+                ),
+                SizedBox(
+                  width: 200,
+                  child: _buildDropdown<ActionType?>(
+                    value: provider.selectedActionType,
+                    hint: 'All Actions',
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('All Actions')),
+                      ...ActionType.values.map((type) => DropdownMenuItem(
+                            value: type,
+                            child: Row(
+                              children: [
+                                Icon(_getActionIcon(type), size: 14, color: _getActionColor(type)),
+                                const SizedBox(width: 6),
+                                Text(type.displayName),
+                              ],
+                            ),
+                          )),
+                    ],
+                    onChanged: provider.setActionTypeFilter,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _buildDatePresets(provider),
+          ],
+
+          // AI filter (only for AI-enabled clients, non-admin)
+          if (!widget.isAdmin && ClientConfig.hasAiConversations) ...[
+            const SizedBox(height: 8),
+            FilterChip(
+              label: const Text('AI Activity'),
+              selected: provider.filterAiOnly,
+              onSelected: (value) => provider.setAiFilter(value),
+              avatar: const Icon(Icons.smart_toy, size: 16),
+              selectedColor: VividColors.brightBlue.withOpacity(0.3),
+              checkmarkColor: VividColors.brightBlue,
+              labelStyle: TextStyle(
+                color: provider.filterAiOnly ? VividColors.brightBlue : vc.textSecondary,
+                fontSize: 13,
+              ),
+              side: BorderSide(
+                color: provider.filterAiOnly ? VividColors.brightBlue : vc.popupBorder,
+              ),
+              backgroundColor: vc.background,
+            ),
+          ],
         ],
       ),
+    );
+  }
+
+  Widget _buildClientDropdown(ActivityLogsProvider provider) {
+    final vc = context.vividColors;
+    final clients = context.watch<AdminProvider>().clients;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: vc.background,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String?>(
+          value: provider.selectedClientId,
+          hint: Text('All Clients', style: TextStyle(color: vc.textMuted)),
+          isExpanded: true,
+          dropdownColor: vc.surface,
+          items: [
+            DropdownMenuItem<String?>(
+              value: null,
+              child: Row(
+                children: [
+                  Icon(Icons.all_inclusive, size: 14, color: VividColors.cyan),
+                  const SizedBox(width: 6),
+                  Text('All Clients'),
+                ],
+              ),
+            ),
+            ...clients.map((c) => DropdownMenuItem<String?>(
+                  value: c.id,
+                  child: Text(c.name, overflow: TextOverflow.ellipsis),
+                )),
+          ],
+          onChanged: provider.setClientFilter,
+          style: TextStyle(color: vc.textPrimary, fontSize: 13),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchField(ActivityLogsProvider provider) {
+    final vc = context.vividColors;
+    return TextField(
+      controller: _searchController,
+      onChanged: provider.setSearchQuery,
+      decoration: InputDecoration(
+        hintText: 'Search by name or description...',
+        prefixIcon: const Icon(Icons.search, size: 20),
+        filled: true,
+        fillColor: vc.background,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide.none,
+        ),
+      ),
+      style: const TextStyle(fontSize: 13),
     );
   }
 
@@ -371,11 +519,9 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
     required String hint,
     required List<DropdownMenuItem<T>> items,
     required ValueChanged<T?> onChanged,
-    required double width,
   }) {
     final vc = context.vividColors;
     return Container(
-      width: width,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
         color: vc.background,
@@ -395,31 +541,66 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
     );
   }
 
-  Widget _buildDateRangeButton(ActivityLogsProvider provider) {
+  Widget _buildDatePresets(ActivityLogsProvider provider) {
     final vc = context.vividColors;
-    final hasDateFilter = provider.startDate != null || provider.endDate != null;
+    final presets = <String, String>{
+      'all': 'All Time',
+      'today': 'Today',
+      '7days': 'Last 7 Days',
+      '30days': 'Last 30 Days',
+      'custom': 'Custom',
+    };
 
-    return OutlinedButton.icon(
-      onPressed: () => _showDateRangePicker(provider),
-      icon: const Icon(Icons.date_range, size: 18),
-      label: Text(
-        hasDateFilter
-            ? '${_formatDate(provider.startDate)} - ${_formatDate(provider.endDate)}'
-            : 'Date Range',
-      ),
-      style: OutlinedButton.styleFrom(
-        foregroundColor: hasDateFilter ? VividColors.cyan : vc.textSecondary,
-        side: BorderSide(
-          color: hasDateFilter ? VividColors.cyan : vc.popupBorder,
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      ),
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: presets.entries.map((entry) {
+        final isActive = _datePreset == entry.key;
+        return ChoiceChip(
+          label: Text(entry.value),
+          selected: isActive,
+          onSelected: (_) => _applyDatePreset(entry.key, provider),
+          selectedColor: VividColors.cyan.withOpacity(0.2),
+          checkmarkColor: VividColors.cyan,
+          labelStyle: TextStyle(
+            color: isActive ? VividColors.cyan : vc.textSecondary,
+            fontSize: 12,
+            fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
+          ),
+          side: BorderSide(
+            color: isActive ? VividColors.cyan : vc.popupBorder,
+          ),
+          backgroundColor: vc.background,
+          avatar: entry.key == 'custom' && isActive
+              ? const Icon(Icons.date_range, size: 14, color: VividColors.cyan)
+              : null,
+        );
+      }).toList(),
     );
   }
 
-  String _formatDate(DateTime? date) {
-    if (date == null) return 'Any';
-    return '${date.day}/${date.month}/${date.year}';
+  void _applyDatePreset(String preset, ActivityLogsProvider provider) {
+    setState(() => _datePreset = preset);
+    final now = DateTime.now();
+
+    switch (preset) {
+      case 'all':
+        provider.setDateRange(null, null);
+        break;
+      case 'today':
+        final startOfDay = DateTime(now.year, now.month, now.day);
+        provider.setDateRange(startOfDay, now);
+        break;
+      case '7days':
+        provider.setDateRange(now.subtract(const Duration(days: 7)), now);
+        break;
+      case '30days':
+        provider.setDateRange(now.subtract(const Duration(days: 30)), now);
+        break;
+      case 'custom':
+        _showDateRangePicker(provider);
+        break;
+    }
   }
 
   Future<void> _showDateRangePicker(ActivityLogsProvider provider) async {
@@ -451,7 +632,11 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
     }
   }
 
-  Widget _buildStats(ActivityLogsProvider provider) {
+  // ══════════════════════════════════════════════════════
+  // STATS
+  // ══════════════════════════════════════════════════════
+
+  Widget _buildStats(ActivityLogsProvider provider, bool isMobile) {
     final todayCount = provider.todayLogs.length;
     final weekCount = provider.thisWeekLogs.length;
     final typeBreakdown = provider.logCountsByType;
@@ -463,24 +648,23 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
       _buildStatCard('Broadcasts Sent', (typeBreakdown[ActionType.broadcastSent] ?? 0).toString(), Icons.campaign, VividColors.statusWarning, 'Bulk broadcasts dispatched'),
     ];
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        if (constraints.maxWidth < 500) {
-          return Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: cards,
-          );
-        }
-        return Row(
-          children: [
-            for (int i = 0; i < cards.length; i++) ...[
-              if (i > 0) const SizedBox(width: 12),
-              Expanded(child: cards[i]),
-            ],
-          ],
-        );
-      },
+    if (isMobile) {
+      return Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: cards.map((c) => SizedBox(
+          width: double.infinity,
+          child: c,
+        )).toList(),
+      );
+    }
+    return Row(
+      children: [
+        for (int i = 0; i < cards.length; i++) ...[
+          if (i > 0) const SizedBox(width: 12),
+          Expanded(child: cards[i]),
+        ],
+      ],
     );
   }
 
@@ -510,26 +694,13 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
               children: [
                 Text(
                   value,
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: color,
-                  ),
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: color),
                 ),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: vc.textMuted,
-                  ),
-                ),
+                Text(label, style: TextStyle(fontSize: 11, color: vc.textMuted)),
                 const SizedBox(height: 2),
                 Text(
                   subtitle,
-                  style: TextStyle(
-                    fontSize: 9,
-                    color: vc.textMuted.withValues(alpha: 0.6),
-                  ),
+                  style: TextStyle(fontSize: 9, color: vc.textMuted.withValues(alpha: 0.6)),
                 ),
               ],
             ),
@@ -539,9 +710,19 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
     );
   }
 
-  Widget _buildLogsList(ActivityLogsProvider provider) {
+  // ══════════════════════════════════════════════════════
+  // LOG LIST
+  // ══════════════════════════════════════════════════════
+
+  Widget _buildLogsList(ActivityLogsProvider provider, bool isMobile) {
     final vc = context.vividColors;
-    if (provider.error != null) {
+    if (provider.isLoading && provider.allLogs.isEmpty) {
+      return const Center(
+        child: CircularProgressIndicator(color: VividColors.cyan),
+      );
+    }
+
+    if (provider.error != null && provider.allLogs.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -560,7 +741,7 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
       );
     }
 
-    if (provider.logs.isEmpty) {
+    if (provider.filteredCount == 0) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -571,12 +752,13 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
               'No activity logs found',
               style: TextStyle(color: vc.textMuted, fontSize: 16),
             ),
-            if (provider.allLogs.isNotEmpty) ...[
+            if (provider.totalFetchedCount > 0) ...[
               const SizedBox(height: 8),
               TextButton(
                 onPressed: () {
                   provider.clearFilters();
                   _searchController.clear();
+                  setState(() => _datePreset = 'all');
                 },
                 child: const Text('Clear filters'),
               ),
@@ -586,155 +768,266 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
       );
     }
 
+    // Use displayedLogs for lazy rendering, show footer when more available
+    final displayed = provider.displayedLogs;
+    final showFooter = provider.hasMoreToDisplay || provider.hasMore || provider.isLoadingMore;
+
     return Container(
       decoration: BoxDecoration(
         color: vc.surface,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: vc.border),
       ),
-      child: ListView.separated(
+      child: ListView.builder(
+        controller: _scrollController,
         padding: const EdgeInsets.all(8),
-        itemCount: provider.logs.length,
-        separatorBuilder: (_, __) => Divider(
-          color: vc.borderSubtle,
-          height: 1,
-        ),
+        itemCount: displayed.length + (showFooter ? 1 : 0),
         itemBuilder: (context, index) {
-          final log = provider.logs[index];
-          return _buildLogItem(log);
+          if (index >= displayed.length) {
+            return _buildLoadMoreFooter(provider);
+          }
+          final log = displayed[index];
+          final showDivider = index < displayed.length - 1;
+          return Column(
+            children: [
+              _buildLogItem(log, isMobile),
+              if (showDivider) Divider(color: vc.borderSubtle, height: 1),
+            ],
+          );
         },
       ),
     );
   }
 
-  Widget _buildLogItem(ActivityLog log) {
+  Widget _buildLoadMoreFooter(ActivityLogsProvider provider) {
     final vc = context.vividColors;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Action icon
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: _getActionColor(log.actionType).withOpacity(0.15),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(
-              _getActionIcon(log.actionType),
-              color: _getActionColor(log.actionType),
-              size: 18,
-            ),
+    if (provider.isLoadingMore) {
+      return const Padding(
+        padding: EdgeInsets.all(20),
+        child: Center(
+          child: SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(strokeWidth: 2, color: VividColors.cyan),
           ),
-          const SizedBox(width: 12),
+        ),
+      );
+    }
 
-          // Details
-          Expanded(
-            child: Column(
+    // Show how many are displayed vs total
+    final displayedCount = provider.displayedLogs.length;
+    final totalFiltered = provider.filteredCount;
+
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Center(
+        child: Column(
+          children: [
+            Text(
+              'Showing $displayedCount of ${_formatCount(totalFiltered)}${provider.hasMore ? "+" : ""}',
+              style: TextStyle(color: vc.textMuted, fontSize: 11),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: provider.hasMoreToDisplay
+                  ? provider.showMore
+                  : provider.hasMore
+                      ? provider.loadMore
+                      : null,
+              icon: const Icon(Icons.expand_more, size: 18),
+              label: Text(provider.hasMoreToDisplay ? 'Show More' : 'Load More'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: VividColors.cyan,
+                side: const BorderSide(color: VividColors.cyan),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════
+  // LOG ITEM
+  // ══════════════════════════════════════════════════════
+
+  Widget _buildLogItem(ActivityLog log, bool isMobile) {
+    final vc = context.vividColors;
+    final isExpanded = _expandedMetadata.contains(log.id);
+    final hasMetadata = log.metadata.isNotEmpty;
+
+    return InkWell(
+      onTap: hasMetadata
+          ? () {
+              setState(() {
+                if (isExpanded) {
+                  _expandedMetadata.remove(log.id);
+                } else {
+                  _expandedMetadata.add(log.id);
+                }
+              });
+            }
+          : null,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
+                // Action icon
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: _getActionColor(log.actionType).withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    _getActionIcon(log.actionType),
+                    color: _getActionColor(log.actionType),
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 12),
+
+                // Details
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // User name + action type badge row
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(
+                            log.userName,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: vc.textPrimary,
+                              fontSize: 13,
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: _getActionColor(log.actionType).withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              log.actionType.displayName,
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: _getActionColor(log.actionType),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          // Client badge (admin mode)
+                          if (widget.isAdmin && log.clientId != null)
+                            _buildClientBadge(log.clientId!),
+                          // AI status badge
+                          if (log.actionType == ActionType.aiToggled)
+                            _buildAiBadge(log),
+                        ],
+                      ),
+                      // User email
+                      if (log.userEmail != null && log.userEmail!.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          log.userEmail!,
+                          style: TextStyle(color: vc.textMuted, fontSize: 11),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                      const SizedBox(height: 4),
+                      Text(
+                        log.description,
+                        style: TextStyle(color: vc.textSecondary, fontSize: 12),
+                      ),
+                      // Metadata chips (collapsed view)
+                      if (hasMetadata && !isExpanded) ...[
+                        const SizedBox(height: 4),
+                        _buildMetadataChips(log.metadata),
+                      ],
+                    ],
+                  ),
+                ),
+
+                // Timestamp + expand indicator
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      log.userName,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: vc.textPrimary,
-                        fontSize: 13,
-                      ),
+                      _formatRelativeTime(log.createdAt),
+                      style: TextStyle(color: vc.textMuted, fontSize: 11),
                     ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: _getActionColor(log.actionType).withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        log.actionType.displayName,
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: _getActionColor(log.actionType),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    // AI status badge (only for AI-enabled clients)
-                    if (ClientConfig.hasAiConversations && log.actionType == ActionType.aiToggled)
+                    if (hasMetadata)
                       Padding(
-                        padding: const EdgeInsets.only(left: 6),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: (log.metadata['ai_enabled'] == true
-                                    ? VividColors.statusSuccess
-                                    : VividColors.statusUrgent)
-                                .withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.smart_toy,
-                                size: 10,
-                                color: log.metadata['ai_enabled'] == true
-                                    ? VividColors.statusSuccess
-                                    : VividColors.statusUrgent,
-                              ),
-                              const SizedBox(width: 3),
-                              Text(
-                                log.metadata['ai_enabled'] == true ? 'AI On' : 'AI Off',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: log.metadata['ai_enabled'] == true
-                                      ? VividColors.statusSuccess
-                                      : VividColors.statusUrgent,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Icon(
+                          isExpanded ? Icons.expand_less : Icons.expand_more,
+                          size: 16,
+                          color: vc.textMuted,
                         ),
                       ),
                   ],
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  log.description,
-                  style: TextStyle(
-                    color: vc.textSecondary,
-                    fontSize: 12,
-                  ),
-                ),
-                if (log.metadata.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  _buildMetadataChips(log.metadata),
-                ],
               ],
             ),
-          ),
 
-          // Timestamp
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                _formatTime(log.createdAt),
-                style: TextStyle(
-                  color: vc.textMuted,
-                  fontSize: 11,
-                ),
-              ),
-              Text(
-                _formatDateShort(log.createdAt),
-                style: TextStyle(
-                  color: vc.textMuted,
-                  fontSize: 10,
-                ),
-              ),
+            // Expanded metadata section
+            if (isExpanded && hasMetadata) ...[
+              const SizedBox(height: 8),
+              _buildExpandedMetadata(log.metadata),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildClientBadge(String clientId) {
+    final clients = context.read<AdminProvider>().clients;
+    final client = clients.where((c) => c.id == clientId).firstOrNull;
+    final name = client?.name ?? 'Unknown';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: VividColors.brightBlue.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        name,
+        style: const TextStyle(
+          fontSize: 10,
+          color: VividColors.cyan,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAiBadge(ActivityLog log) {
+    final aiEnabled = log.metadata['ai_enabled'] == true;
+    final color = aiEnabled ? VividColors.statusSuccess : VividColors.statusUrgent;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.smart_toy, size: 10, color: color),
+          const SizedBox(width: 3),
+          Text(
+            aiEnabled ? 'AI On' : 'AI Off',
+            style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.w600),
           ),
         ],
       ),
@@ -762,15 +1055,57 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
           ),
           child: Text(
             '${_formatKey(entry.key)}: ${_formatValue(entry.value)}',
-            style: TextStyle(
-              fontSize: 10,
-              color: vc.textMuted,
-            ),
+            style: TextStyle(fontSize: 10, color: vc.textMuted),
           ),
         );
       }).toList(),
     );
   }
+
+  Widget _buildExpandedMetadata(Map<String, dynamic> metadata) {
+    final vc = context.vividColors;
+    return Container(
+      margin: const EdgeInsets.only(left: 46), // align with content after icon
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: vc.surfaceAlt,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: vc.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.data_object, size: 14, color: vc.textMuted),
+              const SizedBox(width: 6),
+              Text(
+                'Metadata',
+                style: TextStyle(
+                  color: vc.textMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SelectableText(
+            const JsonEncoder.withIndent('  ').convert(metadata),
+            style: TextStyle(
+              fontFamily: 'monospace',
+              fontSize: 11,
+              color: vc.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════
+  // HELPERS
+  // ══════════════════════════════════════════════════════
 
   String _formatKey(String key) {
     return key.replaceAll('_', ' ').split(' ').map((word) {
@@ -809,18 +1144,18 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
         return Icons.business;
       case ActionType.clientUpdated:
         return Icons.edit_note;
-      case ActionType.bookingReminder:
-        return Icons.calendar_month;
+      case ActionType.impersonationStart:
+      case ActionType.impersonationEnd:
+        return Icons.admin_panel_settings;
     }
   }
 
   Color _getActionColor(ActionType type) {
-    final vc = context.vividColors;
     switch (type) {
       case ActionType.login:
         return VividColors.statusSuccess;
       case ActionType.logout:
-        return vc.textMuted;
+        return Colors.grey;
       case ActionType.messageSent:
         return VividColors.cyan;
       case ActionType.broadcastSent:
@@ -839,27 +1174,24 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
         return VividColors.statusSuccess;
       case ActionType.clientUpdated:
         return VividColors.brightBlue;
-      case ActionType.bookingReminder:
-        return VividColors.cyan;
+      case ActionType.impersonationStart:
+      case ActionType.impersonationEnd:
+        return VividColors.statusWarning;
     }
   }
 
-  String _formatTime(DateTime dt) {
+  String _formatRelativeTime(DateTime dt) {
+    final now = DateTime.now().toUtc().add(const Duration(hours: 3));
     final bh = dt.toUtc().add(const Duration(hours: 3));
-    final hour = bh.hour.toString().padLeft(2, '0');
-    final minute = bh.minute.toString().padLeft(2, '0');
-    return '$hour:$minute';
-  }
-
-  String _formatDateShort(DateTime dt) {
-    final bh = dt.toUtc().add(const Duration(hours: 3));
-    final nowBh = DateTime.now().toUtc().add(const Duration(hours: 3));
-    final diff = nowBh.difference(bh);
+    final diff = now.difference(bh);
 
     if (diff.inMinutes < 1) return 'Just now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-    if (diff.inHours < 24 && bh.day == nowBh.day) return 'Today';
-    if (diff.inHours < 48) return 'Yesterday';
-    return '${bh.day}/${bh.month}/${bh.year}';
+    if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
+    if (diff.inHours < 24 && bh.day == now.day) return '${diff.inHours}h ago';
+    if (diff.inHours < 48 && now.day - bh.day == 1) return 'Yesterday';
+    if (diff.inDays < 7) return '${diff.inDays}d ago';
+
+    final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return '${months[bh.month - 1]} ${bh.day}';
   }
 }

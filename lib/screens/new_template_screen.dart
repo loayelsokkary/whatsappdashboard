@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../models/models.dart';
 import '../providers/templates_provider.dart';
 import '../theme/vivid_theme.dart';
+import '../utils/toast_service.dart';
 
 class NewTemplateScreen extends StatefulWidget {
   const NewTemplateScreen({super.key});
@@ -132,8 +133,13 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     final provider = context.read<TemplatesProvider>();
-    final templateName =
+    final userTemplateName =
         _nameController.text.trim().toLowerCase().replaceAll(' ', '_');
+    final slug = ClientConfig.currentClient?.slug ?? '';
+    final prefix = TemplatesProvider.normalizeSlug(slug);
+    final templateName = prefix.isNotEmpty
+        ? '${prefix}_$userTemplateName'
+        : userTemplateName;
 
     // ── Step 1: Upload image to Supabase Storage FIRST ─────────────────────
     // Must happen before any Meta API call so the permanent URL is always
@@ -273,6 +279,7 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
         variableLabels: variableLabels,
         variableSources: variableSources,
         offerImageUrl: offerImageUrl,
+        displayName: userTemplateName,
       );
       if (syncError != null) {
         debugPrint('[_submit] syncSingleTemplate error: $syncError');
@@ -280,11 +287,10 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
     }
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content: Text('Template submitted for Meta approval'),
-      behavior: SnackBarBehavior.floating,
-      backgroundColor: VividColors.statusSuccess,
-    ));
+    VividToast.show(context,
+      message: 'Template submitted for Meta approval',
+      type: ToastType.success,
+    );
     await provider.fetchTemplates();
     if (mounted) Navigator.pop(context);
   }
@@ -326,11 +332,10 @@ class _NewTemplateScreenState extends State<NewTemplateScreen> {
     if (file.bytes == null) return;
     if (file.bytes!.lengthInBytes > 5 * 1024 * 1024) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Image exceeds 5 MB limit'),
-        backgroundColor: VividColors.statusUrgent,
-        behavior: SnackBarBehavior.floating,
-      ));
+      VividToast.show(context,
+        message: 'Image exceeds 5 MB limit',
+        type: ToastType.error,
+      );
       return;
     }
     final ext = (file.extension ?? 'jpg').toLowerCase();

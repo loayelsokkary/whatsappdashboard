@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/models.dart';
+import '../services/supabase_service.dart';
 
 /// Broadcast Analytics data
 class BroadcastAnalyticsData {
@@ -72,7 +73,8 @@ class BroadcastAnalyticsProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
 
-  SupabaseClient get _client => Supabase.instance.client;
+  /// Use adminClient to bypass RLS on per-client dynamic tables
+  SupabaseClient get _client => SupabaseService.adminClient;
 
   /// Get dynamic table names from ClientConfig
   String get _broadcastsTable {

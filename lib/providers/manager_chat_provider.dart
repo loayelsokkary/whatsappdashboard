@@ -149,16 +149,16 @@ class ManagerChatProvider extends ChangeNotifier {
     return result;
   }
 
-  /// Dynamic table name from ClientConfig
-  String get _managerChatsTable {
-    // Prefer the explicit managerChatsTable column from the clients row
-    final explicit = ClientConfig.managerChatsTableName;
-    if (explicit != null && explicit.isNotEmpty) return explicit;
-    // Fallback: derive from slug (supports older rows without the column set)
-    final slug = ClientConfig.currentClient?.slug;
-    if (slug != null && slug.isNotEmpty) return '${slug}_manager_chats';
-    return 'manager_chats';
+  /// Get dynamic table name from ClientConfig.
+  /// Returns null if not configured — callers must check.
+  String? get _managerChatsTable {
+    final table = ClientConfig.managerChatsTable;
+    if (table == null || table.isEmpty) return null;
+    return table;
   }
+
+  /// Whether the manager chat table is properly configured
+  bool get isConfigured => _managerChatsTable != null;
 
   // ─── Initialization ────────────────────────────────────────
 
@@ -181,6 +181,14 @@ class ManagerChatProvider extends ChangeNotifier {
     _initialized = true;
 
     print('💬 Initializing chat for user: $_currentUserId');
+    print('💬 Manager chats table: ${_managerChatsTable ?? "NOT CONFIGURED"}');
+
+    if (_managerChatsTable == null) {
+      _error = 'Manager chats table not configured for this client';
+      notifyListeners();
+      return;
+    }
+
     _loadAllMessages();
     _subscribeToMessages();
   }
@@ -189,18 +197,19 @@ class ManagerChatProvider extends ChangeNotifier {
   void _subscribeToMessages() {
     _chatChannel?.unsubscribe();
 
+    final table = _managerChatsTable;
     final userId = _currentUserId;
-    if (userId == null) {
-      print('💬 No user ID, skipping realtime subscription');
+    if (table == null || userId == null) {
+      print('💬 Cannot subscribe: table=$table, userId=$userId');
       return;
     }
 
     _chatChannel = SupabaseService.client
-        .channel('manager_chat_${_managerChatsTable}_$userId')
+        .channel('manager_chat_${table}_$userId')
         .onPostgresChanges(
           event: PostgresChangeEvent.insert,
           schema: 'public',
-          table: _managerChatsTable,
+          table: table,
           filter: PostgresChangeFilter(
             type: PostgresChangeFilterType.eq,
             column: 'user_id',
@@ -214,7 +223,7 @@ class ManagerChatProvider extends ChangeNotifier {
         .onPostgresChanges(
           event: PostgresChangeEvent.update,
           schema: 'public',
-          table: _managerChatsTable,
+          table: table,
           filter: PostgresChangeFilter(
             type: PostgresChangeFilterType.eq,
             column: 'user_id',
@@ -227,7 +236,7 @@ class ManagerChatProvider extends ChangeNotifier {
         )
         .subscribe();
 
-    print('💬 Subscribed to $_managerChatsTable for user: $userId');
+    print('💬 Subscribed to $table for user: $userId');
   }
 
   // ─── Message handlers ──────────────────────────────────────
@@ -351,8 +360,8 @@ class ManagerChatProvider extends ChangeNotifier {
     try {
       // Skip patching temp IDs — they're not in the DB yet
       if (messageId.startsWith('temp_')) return;
-      await SupabaseService.client
-          .from(_managerChatsTable)
+      await SupabaseService.adminClient
+          .from(_managerChatsTable!)
           .update({'session_id': sessionId})
           .eq('id', messageId);
       print('💬 Patched session_id=$sessionId on message $messageId');
@@ -379,8 +388,9 @@ class ManagerChatProvider extends ChangeNotifier {
 
       print('💬 Loading all messages from: $_managerChatsTable for user: $userId');
 
-      final response = await SupabaseService.client
-          .from(_managerChatsTable)
+      // Use adminClient to bypass RLS on per-client tables
+      final response = await SupabaseService.adminClient
+          .from(_managerChatsTable!)
           .select()
           .eq('user_id', userId)
           .order('created_at', ascending: true)
@@ -421,8 +431,9 @@ class ManagerChatProvider extends ChangeNotifier {
       final userId = _currentUserId;
       if (userId == null) return;
 
-      final response = await SupabaseService.client
-          .from(_managerChatsTable)
+      // Use adminClient to bypass RLS on per-client tables
+      final response = await SupabaseService.adminClient
+          .from(_managerChatsTable!)
           .select()
           .eq('user_id', userId)
           .order('created_at', ascending: true)
@@ -575,8 +586,9 @@ class ManagerChatProvider extends ChangeNotifier {
       final userId = _currentUserId;
       if (userId == null) return;
 
-      final response = await SupabaseService.client
-          .from(_managerChatsTable)
+      // Use adminClient to bypass RLS on per-client tables
+      final response = await SupabaseService.adminClient
+          .from(_managerChatsTable!)
           .select()
           .eq('user_id', userId)
           .order('created_at', ascending: true)

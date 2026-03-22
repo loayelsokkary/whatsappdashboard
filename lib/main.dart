@@ -12,10 +12,11 @@ import 'providers/broadcasts_provider.dart';
 import 'providers/admin_provider.dart';
 import 'providers/manager_chat_provider.dart';
 import 'providers/user_management_provider.dart';
-import 'providers/booking_reminders_provider.dart';
 import 'providers/activity_logs_provider.dart';
 import 'providers/templates_provider.dart';
 import 'providers/theme_provider.dart';
+import 'providers/outreach_provider.dart';
+import 'providers/financials_provider.dart';
 import 'models/models.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
@@ -26,7 +27,6 @@ import 'screens/admin_panel.dart';
 import 'widgets/sidebar.dart';
 import 'widgets/broadcasts_panel.dart';
 import 'widgets/manager_chat_panel.dart';
-import 'widgets/booking_reminders_panel.dart';
 import 'widgets/activity_logs_panel.dart';
 import 'theme/vivid_theme.dart';
 import 'utils/audio_controller.dart';
@@ -34,6 +34,7 @@ import 'utils/audio_controller.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SupabaseService.initialize();
+  await SupabaseService.instance.loadAndApplySystemSettings();
   AudioController.instance.init();
   runApp(const VividDashboardApp());
 }
@@ -55,10 +56,11 @@ class VividDashboardApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AdminProvider()),
         ChangeNotifierProvider(create: (_) => ManagerChatProvider()),
         ChangeNotifierProvider(create: (_) => UserManagementProvider()),
-        ChangeNotifierProvider(create: (_) => BookingRemindersProvider()),
         ChangeNotifierProvider(create: (_) => ActivityLogsProvider()),
         ChangeNotifierProvider(create: (_) => TemplatesProvider()),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(create: (_) => OutreachProvider()),
+        ChangeNotifierProvider(create: (_) => FinancialsProvider()),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) => MaterialApp(
@@ -139,26 +141,26 @@ class _MainScaffoldState extends State<MainScaffold> {
     
     // Initialize providers ONLY for properly configured features
     Future.microtask(() {
+      if (ClientConfig.isPreviewMode) {
+        // Preview mode: skip realtime subscriptions, only fetch static data
+        if (_isFeatureConfigured('broadcasts')) {
+          context.read<BroadcastsProvider>().fetchBroadcasts();
+        }
+        return;
+      }
+
       // Only initialize conversations if properly configured
       if (_isFeatureConfigured('conversations')) {
         context.read<ConversationsProvider>().initialize();
         context.read<NotificationProvider>().initialize();
         context.read<AiSettingsProvider>().fetchAllSettings();
       }
-      
+
       // Only initialize broadcasts if properly configured
       if (_isFeatureConfigured('broadcasts')) {
         context.read<BroadcastsProvider>().fetchBroadcasts();
       }
-      
-      // Only initialize booking reminders if properly configured
-      if (_isFeatureConfigured('booking_reminders')) {
-        final tableName = ClientConfig.bookingsTable;
-        if (tableName != null && tableName.isNotEmpty) {
-          context.read<BookingRemindersProvider>().initialize(tableName);
-        }
-      }
-      
+
       // Initialize activity logs for client admins
       if (ClientConfig.isClientAdmin) {
         context.read<ActivityLogsProvider>().fetchLogs(clientId: ClientConfig.currentClient?.id);
@@ -186,10 +188,15 @@ class _MainScaffoldState extends State<MainScaffold> {
         final hasPhone = client.broadcastsPhone != null && client.broadcastsPhone!.isNotEmpty;
         return hasWebhook || hasPhone;
         
-      case 'booking_reminders':
-        final hasTable = client.bookingsTable != null && client.bookingsTable!.isNotEmpty;
-        return hasTable;
-        
+      case 'whatsapp_templates':
+        return client.templatesTable != null && client.templatesTable!.isNotEmpty;
+
+      case 'media':
+        return true; // Flag only, no config needed
+
+      case 'labels':
+        return true; // Flag only, no config needed
+
       case 'manager_chat':
         // Must have dedicated manager chat webhook
         final hasWebhook = client.managerChatWebhookUrl != null && client.managerChatWebhookUrl!.isNotEmpty;
@@ -210,8 +217,6 @@ class _MainScaffoldState extends State<MainScaffold> {
       _currentDestination = NavDestination.conversations;
     } else if (ClientConfig.hasFeature('broadcasts') && _isFeatureConfigured('broadcasts')) {
       _currentDestination = NavDestination.broadcasts;
-    } else if (ClientConfig.hasFeature('booking_reminders') && _isFeatureConfigured('booking_reminders')) {
-      _currentDestination = NavDestination.bookingReminders;
     } else if (ClientConfig.hasFeature('manager_chat') && _isFeatureConfigured('manager_chat')) {
       _currentDestination = NavDestination.managerChat;
     } else if (ClientConfig.hasFeature('analytics')) {
@@ -234,7 +239,7 @@ class _MainScaffoldState extends State<MainScaffold> {
     final destinations = <NavDestination>[];
     if (ClientConfig.hasFeature('conversations')) destinations.add(NavDestination.conversations);
     if (ClientConfig.hasFeature('broadcasts')) destinations.add(NavDestination.broadcasts);
-    if (ClientConfig.hasFeature('broadcasts')) destinations.add(NavDestination.templates);
+    if (ClientConfig.hasFeature('whatsapp_templates') || ClientConfig.hasFeature('broadcasts')) destinations.add(NavDestination.templates);
     if (ClientConfig.hasFeature('booking_reminders')) destinations.add(NavDestination.bookingReminders);
     if (ClientConfig.hasFeature('analytics')) destinations.add(NavDestination.analytics);
     if (ClientConfig.hasFeature('manager_chat')) destinations.add(NavDestination.managerChat);
@@ -356,8 +361,6 @@ class _MainScaffoldState extends State<MainScaffold> {
         return _buildBroadcastsContent();
       case NavDestination.templates:
         return _buildTemplatesContent();
-      case NavDestination.bookingReminders:
-        return _buildBookingRemindersContent();
       case NavDestination.managerChat:
         return _buildManagerChatContent();
       case NavDestination.analytics:
@@ -374,6 +377,11 @@ class _MainScaffoldState extends State<MainScaffold> {
             }
             setState(() => _currentDestination = NavDestination.conversations);
           },
+        );
+      case NavDestination.bookingReminders:
+        return Center(
+          child: Text('Booking Reminders — Coming Soon',
+              style: TextStyle(color: context.vividColors.textMuted, fontSize: 16)),
         );
       case NavDestination.activityLogs:
         return _buildActivityLogsContent();
@@ -400,6 +408,13 @@ class _MainScaffoldState extends State<MainScaffold> {
   }
 
   Widget _buildTemplatesContent() {
+    if (!_isFeatureConfigured('whatsapp_templates')) {
+      return _buildNotConfiguredPage(
+        icon: Icons.article_outlined,
+        title: 'Templates Not Configured',
+        description: 'Templates table not set up for this client.',
+      );
+    }
     return const TemplatesScreen();
   }
 
@@ -419,19 +434,6 @@ class _MainScaffoldState extends State<MainScaffold> {
       );
     }
     return const BroadcastsPanel();
-  }
-
-  /// Build booking reminders content with configuration check
-  Widget _buildBookingRemindersContent() {
-    final tableName = ClientConfig.bookingsTable;
-    if (tableName == null || tableName.isEmpty) {
-      return _buildNotConfiguredPage(
-        icon: Icons.calendar_month,
-        title: 'Booking Reminders Not Configured',
-        description: 'Please contact your administrator to set up the bookings table.',
-      );
-    }
-    return BookingRemindersPanel(tableName: tableName);
   }
 
   /// Build manager chat content with permission handling and configuration check

@@ -453,11 +453,9 @@ class SideProfilePanel extends StatefulWidget {
 class _SideProfilePanelState extends State<SideProfilePanel>
     with SingleTickerProviderStateMixin {
   SideProfileData? _data;
+  CustomerPrediction? _prediction;
   bool _loading = true;
   late AnimationController _shimmerCtrl;
-
-  // Prediction state
-  CustomerPrediction? _prediction;
 
   // Notes state
   List<CustomerNote> _notes = [];
@@ -485,6 +483,7 @@ class _SideProfilePanelState extends State<SideProfilePanel>
       setState(() {
         _loading = true;
         _data = null;
+        _prediction = null;
         _notes = [];
         _notesLoading = true;
         _addingNote = false;
@@ -925,6 +924,105 @@ class _SideProfilePanelState extends State<SideProfilePanel>
     );
   }
 
+  // ── Section 5b: Predictive Intelligence ──────────────────────────────────
+  Widget _buildPrediction() {
+    final p = _prediction;
+    if (p == null) return const SizedBox.shrink();
+
+    // Category badge colors
+    final (catBg, catFg) = switch (p.category) {
+      'New'       => (const Color(0x1A3B82F6), const Color(0xFF60A5FA)),
+      'Returning' => (const Color(0x1A06B6D4), const Color(0xFF22D3EE)),
+      'Regular'   => (const Color(0x1A34D399), const Color(0xFF34D399)),
+      'At Risk'   => (const Color(0x1AF97316), const Color(0xFFFB923C)),
+      'Lapsed'    => (const Color(0x1AEF4444), const Color(0xFFF87171)),
+      _           => (const Color(0x1F64748B), const Color(0xFF94A3B8)),
+    };
+
+    // Predicted return text + color
+    String returnText;
+    Color returnColor;
+    if (p.predictedNextVisit == null) {
+      returnText = 'No prediction';
+      returnColor = const Color(0xFF4B6584);
+    } else if (p.daysUntilPredicted < 0) {
+      returnText = '${p.daysUntilPredicted.abs()} days overdue';
+      returnColor = const Color(0xFFF87171);
+    } else if (p.daysUntilPredicted <= 3) {
+      returnText = 'Expected soon';
+      returnColor = const Color(0xFF34D399);
+    } else {
+      returnText = 'In ${p.daysUntilPredicted} days';
+      returnColor = const Color(0xFFE2E8F0);
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // Header row
+        Row(children: [
+          _sectionLabel('PREDICTIVE INTELLIGENCE'),
+          const Spacer(),
+          const Icon(Icons.auto_graph, size: 14, color: Color(0xFF3D5A80)),
+        ]),
+
+        // Category badge
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+          decoration: BoxDecoration(
+            color: catBg,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Text(p.category,
+            style: TextStyle(color: catFg, fontSize: 11, fontWeight: FontWeight.w600)),
+        ),
+        const SizedBox(height: 14),
+
+        // Info rows
+        _predRow('Predicted Return',
+          p.predictedNextVisit != null ? _formatDate(p.predictedNextVisit) : '--',
+          subtitle: returnText, subtitleColor: returnColor),
+        _predRow('Visit Pattern', 'Every ~${p.avgGapDays} days'),
+        _predRow('Total Visits', '${p.totalVisits}'),
+        _predRow('Last Visit',
+          p.lastVisit != null
+            ? '${_formatDate(p.lastVisit)} (${p.daysSinceLastVisit}d ago)'
+            : '--'),
+        if (p.primaryService != null)
+          _predRow('Primary Service', p.primaryService!),
+        if (p.lastService != null && p.lastService != p.primaryService)
+          _predRow('Last Service', p.lastService!),
+      ]),
+    );
+  }
+
+  Widget _predRow(String label, String value, {String? subtitle, Color? subtitleColor}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SizedBox(
+          width: 110,
+          child: Text(label, style: const TextStyle(
+            color: Color(0xFF4B6584), fontSize: 11, fontWeight: FontWeight.w500)),
+        ),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(value, style: const TextStyle(
+              color: Color(0xFFE2E8F0), fontSize: 12, fontWeight: FontWeight.w600),
+              overflow: TextOverflow.ellipsis, maxLines: 1),
+            if (subtitle != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(subtitle, style: TextStyle(
+                  color: subtitleColor ?? const Color(0xFF4B6584),
+                  fontSize: 10, fontWeight: FontWeight.w500)),
+              ),
+          ]),
+        ),
+      ]),
+    );
+  }
+
   // ── Section 6: Team Notes ─────────────────────────────────────────────────
   Widget _buildTeamNotes() {
     final displayNotes = _showAllNotes ? _notes : _notes.take(3).toList();
@@ -1159,124 +1257,6 @@ class _SideProfilePanelState extends State<SideProfilePanel>
     );
   }
 
-  // ── Section 7: Predictive Intelligence ───────────────────────────────────
-  Widget _buildPredictiveIntelligence() {
-    final p = _prediction!;
-
-    final (catBg, catFg) = switch (p.category) {
-      'Returning' || 'Regular' => (const Color(0x1A34D399), const Color(0xFF34D399)),
-      'Lapsed' || 'At Risk'    => (const Color(0x14FBBF24), const Color(0xFFFBBF24)),
-      _                        => (const Color(0x1A06B6D4), const Color(0xFF22D3EE)),
-    };
-
-    // "New" with only 1 visit and a stale prediction → not enough data to show return estimate
-    final bool isFirstTimeNew =
-        p.category == 'New' && p.totalVisits == 1 && p.daysUntilPredicted < -60;
-
-    final String nextVisitStr;
-    final Color nextVisitColor;
-    if (!isFirstTimeNew) {
-      if (p.daysUntilPredicted < 0) {
-        nextVisitStr = 'Overdue by ${-p.daysUntilPredicted} days';
-        nextVisitColor = const Color(0xFFFBBF24);
-      } else if (p.daysUntilPredicted == 0) {
-        nextVisitStr = 'Expected today';
-        nextVisitColor = const Color(0xFF34D399);
-      } else if (p.daysUntilPredicted == 1) {
-        nextVisitStr = 'Expected tomorrow';
-        nextVisitColor = const Color(0xFF34D399);
-      } else {
-        nextVisitStr = 'In ${p.daysUntilPredicted} days';
-        nextVisitColor = const Color(0xFFE2E8F0);
-      }
-    } else {
-      nextVisitStr = '';
-      nextVisitColor = const Color(0xFFE2E8F0);
-    }
-
-    final updatedStr = _shortRelTime(p.updatedAt);
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _sectionLabel('PREDICTIVE INTELLIGENCE'),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-          decoration: BoxDecoration(
-            color: catBg,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Text(p.category,
-            style: TextStyle(
-              color: catFg, fontSize: 11, fontWeight: FontWeight.w600)),
-        ),
-        const SizedBox(height: 12),
-        Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter, end: Alignment.bottomCenter,
-              colors: [
-                Colors.white.withValues(alpha: 0.02),
-                Colors.white.withValues(alpha: 0.006),
-              ],
-            ),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Column(children: [
-            if (isFirstTimeNew) ...[
-              _predRow('Return Pattern', 'Not enough visits to predict',
-                valueColor: const Color(0xFF4B6584)),
-            ] else ...[
-              _predRow('Next Visit', nextVisitStr, valueColor: nextVisitColor),
-              _predDivider(),
-              _predRow('Predicted Date', _formatDate(p.predictedNextVisit)),
-            ],
-            _predDivider(),
-            _predRow('Last Visit', _formatDate(p.lastVisit)),
-            _predDivider(),
-            _predRow('Total Visits',
-              '${p.totalVisits} visit${p.totalVisits == 1 ? '' : 's'}'),
-            _predDivider(),
-            _predRow('Primary Service', p.primaryService),
-            if (p.avgGapDays > 0 && !isFirstTimeNew) ...[
-              _predDivider(),
-              _predRow('Avg Frequency', 'Every ${p.avgGapDays} days'),
-            ],
-          ]),
-        ),
-        const SizedBox(height: 8),
-        Text('Updated $updatedStr',
-          style: const TextStyle(
-            color: Color(0xFF3D5A80), fontSize: 10,
-            fontWeight: FontWeight.w500)),
-      ]),
-    );
-  }
-
-  Widget _predRow(String label, String value, {Color? valueColor}) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-    child: Row(children: [
-      Text(label, style: const TextStyle(
-        color: Color(0xFF4B6584), fontSize: 11, fontWeight: FontWeight.w500)),
-      const Spacer(),
-      Flexible(
-        child: Text(value,
-          textAlign: TextAlign.right,
-          overflow: TextOverflow.ellipsis, maxLines: 1,
-          style: TextStyle(
-            color: valueColor ?? const Color(0xFFE2E8F0),
-            fontSize: 12, fontWeight: FontWeight.w600)),
-      ),
-    ]),
-  );
-
-  Widget _predDivider() => Container(
-    height: 1,
-    margin: const EdgeInsets.symmetric(horizontal: 12),
-    color: Colors.white.withValues(alpha: 0.04),
-  );
-
   // ── build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
@@ -1311,6 +1291,10 @@ class _SideProfilePanelState extends State<SideProfilePanel>
     return SingleChildScrollView(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         _buildCustomerHeader(),
+        if (_prediction != null) ...[
+          _divider(),
+          _buildPrediction(),
+        ],
         _divider(),
         _buildStatsRow(),
         _buildInfoGrid(),
@@ -1323,11 +1307,6 @@ class _SideProfilePanelState extends State<SideProfilePanel>
         ],
         _divider(),
         _buildTeamNotes(),
-        if (ClientConfig.hasFeature('predictive_intelligence') &&
-            _prediction != null) ...[
-          _divider(),
-          _buildPredictiveIntelligence(),
-        ],
         if (d.broadcastTotal > 0 && d.lastBroadcast != null) ...[
           _divider(),
           _buildLastCampaign(),

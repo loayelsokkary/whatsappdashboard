@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../models/models.dart';
 import '../providers/templates_provider.dart';
 import '../theme/vivid_theme.dart';
+import '../utils/toast_service.dart';
 
 class TemplateSetupDialog extends StatefulWidget {
   final WhatsAppTemplate template;
@@ -131,11 +132,10 @@ class _TemplateSetupDialogState extends State<TemplateSetupDialog> {
       if (offerImageUrl == null) {
         if (!mounted) return;
         setState(() => _saving = false);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Image upload to storage failed. Try again.'),
-          backgroundColor: VividColors.statusUrgent,
-          behavior: SnackBarBehavior.floating,
-        ));
+        VividToast.show(context,
+          message: 'Image upload to storage failed. Try again.',
+          type: ToastType.error,
+        );
         return;
       }
     }
@@ -157,11 +157,10 @@ class _TemplateSetupDialogState extends State<TemplateSetupDialog> {
     setState(() => _saving = false);
 
     if (error != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Save failed: $error'),
-        backgroundColor: VividColors.statusUrgent,
-        behavior: SnackBarBehavior.floating,
-      ));
+      VividToast.show(context,
+        message: 'Save failed: $error',
+        type: ToastType.error,
+      );
     } else {
       Navigator.pop(context, true);
     }

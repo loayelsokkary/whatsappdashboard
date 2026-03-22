@@ -378,27 +378,41 @@ class SupabaseService {
   }
 
   /// Fetch activity logs
-  /// If clientId is null, fetches all logs (for Vivid admins)
-  /// If clientId is provided, fetches only that client's logs
-  Future<List<ActivityLog>> fetchActivityLogs({String? clientId, int limit = 500}) async {
+  /// Fetch activity logs with optional server-side filters and pagination.
+  ///
+  /// [clientId] — filter by client; null = all clients.
+  /// [actionTypes] — filter by action type strings (e.g. ['login','logout']).
+  /// [startDate] / [endDate] — date range filter.
+  /// [offset] — pagination offset (0-based).
+  /// [limit] — page size.
+  Future<List<ActivityLog>> fetchActivityLogs({
+    String? clientId,
+    List<String>? actionTypes,
+    DateTime? startDate,
+    DateTime? endDate,
+    int offset = 0,
+    int limit = 100,
+  }) async {
     try {
-      dynamic response;
-      
+      var query = client.from('activity_logs').select();
+
       if (clientId != null) {
-        response = await client
-            .from('activity_logs')
-            .select()
-            .eq('client_id', clientId)
-            .order('created_at', ascending: false)
-            .limit(limit);
-      } else {
-        response = await client
-            .from('activity_logs')
-            .select()
-            .order('created_at', ascending: false)
-            .limit(limit);
+        query = query.eq('client_id', clientId);
       }
-      
+      if (actionTypes != null && actionTypes.isNotEmpty) {
+        query = query.inFilter('action_type', actionTypes);
+      }
+      if (startDate != null) {
+        query = query.gte('created_at', startDate.toIso8601String());
+      }
+      if (endDate != null) {
+        query = query.lte('created_at', endDate.toIso8601String());
+      }
+
+      final response = await query
+          .order('created_at', ascending: false)
+          .range(offset, offset + limit - 1);
+
       return (response as List)
           .map((json) => ActivityLog.fromJson(json as Map<String, dynamic>))
           .toList();
@@ -447,7 +461,12 @@ class SupabaseService {
     required String name,
     required String slug,
     List<String> enabledFeatures = const [],
-    String? bookingsTable,
+    String? messagesTable,
+    String? broadcastsTable,
+    String? templatesTable,
+    String? managerChatsTable,
+    String? broadcastRecipientsTable,
+    String? aiSettingsTable,
     String? conversationsPhone,
     String? conversationsWebhookUrl,
     String? broadcastsPhone,
@@ -455,14 +474,23 @@ class SupabaseService {
     String? remindersPhone,
     String? remindersWebhookUrl,
     String? managerChatWebhookUrl,
+    String? customerPredictionsTable,
     bool hasAiConversations = true,
+    String? wabaId,
+    int? broadcastLimit,
   }) async {
     try {
       final response = await client.from('clients').insert({
         'name': name,
         'slug': slug,
         'enabled_features': enabledFeatures,
-        'bookings_table': bookingsTable,
+        'messages_table': messagesTable,
+        'broadcasts_table': broadcastsTable,
+        'templates_table': templatesTable,
+        'manager_chats_table': managerChatsTable,
+        'broadcast_recipients_table': broadcastRecipientsTable,
+        'ai_settings_table': aiSettingsTable,
+        'customer_predictions_table': customerPredictionsTable,
         'conversations_phone': conversationsPhone,
         'conversations_webhook_url': conversationsWebhookUrl,
         'broadcasts_phone': broadcastsPhone,
@@ -471,6 +499,8 @@ class SupabaseService {
         'reminders_webhook_url': remindersWebhookUrl,
         'manager_chat_webhook_url': managerChatWebhookUrl,
         'has_ai_conversations': hasAiConversations,
+        if (wabaId != null && wabaId.isNotEmpty) 'waba_id': wabaId,
+        if (broadcastLimit != null) 'broadcast_limit': broadcastLimit,
       }).select().single();
 
       final newClient = Client.fromJson(response);
@@ -499,7 +529,12 @@ class SupabaseService {
     String? name,
     String? slug,
     List<String>? enabledFeatures,
-    String? bookingsTable,
+    String? messagesTable,
+    String? broadcastsTable,
+    String? templatesTable,
+    String? managerChatsTable,
+    String? broadcastRecipientsTable,
+    String? aiSettingsTable,
     String? conversationsPhone,
     String? conversationsWebhookUrl,
     String? broadcastsPhone,
@@ -507,6 +542,7 @@ class SupabaseService {
     String? remindersPhone,
     String? remindersWebhookUrl,
     String? managerChatWebhookUrl,
+    String? customerPredictionsTable,
     bool? hasAiConversations,
   }) async {
     try {
@@ -514,7 +550,13 @@ class SupabaseService {
       if (name != null) updates['name'] = name;
       if (slug != null) updates['slug'] = slug;
       if (enabledFeatures != null) updates['enabled_features'] = enabledFeatures;
-      if (bookingsTable != null) updates['bookings_table'] = bookingsTable;
+      if (messagesTable != null) updates['messages_table'] = messagesTable;
+      if (broadcastsTable != null) updates['broadcasts_table'] = broadcastsTable;
+      if (templatesTable != null) updates['templates_table'] = templatesTable;
+      if (managerChatsTable != null) updates['manager_chats_table'] = managerChatsTable;
+      if (broadcastRecipientsTable != null) updates['broadcast_recipients_table'] = broadcastRecipientsTable;
+      if (aiSettingsTable != null) updates['ai_settings_table'] = aiSettingsTable;
+      if (customerPredictionsTable != null) updates['customer_predictions_table'] = customerPredictionsTable;
       if (conversationsPhone != null) updates['conversations_phone'] = conversationsPhone;
       if (conversationsWebhookUrl != null) updates['conversations_webhook_url'] = conversationsWebhookUrl;
       if (broadcastsPhone != null) updates['broadcasts_phone'] = broadcastsPhone;
@@ -543,9 +585,29 @@ class SupabaseService {
     }
   }
 
+  /// Fetch a customer prediction by phone number from the client's predictions table.
+  Future<CustomerPrediction?> fetchCustomerPrediction(String customerPhone) async {
+    final table = ClientConfig.customerPredictionsTable;
+    if (table == null || table.isEmpty) return null;
+    try {
+      final response = await client
+          .from(table)
+          .select()
+          .eq('phone', customerPhone)
+          .maybeSingle();
+      if (response == null) return null;
+      return CustomerPrediction.fromJson(response);
+    } catch (e) {
+      print('Error fetching prediction: $e');
+      return null;
+    }
+  }
+
   /// Delete a client
   Future<bool> deleteClient(String clientId) async {
     try {
+      // Delete client's users first as a safety measure
+      await client.from('users').delete().eq('client_id', clientId);
       await client.from('clients').delete().eq('id', clientId);
       return true;
     } catch (e) {
@@ -911,7 +973,7 @@ class SupabaseService {
           .eq('ai_phone', businessPhone)
           .or('customer_message.ilike.$pattern,manager_response.ilike.$pattern,customer_name.ilike.$pattern,customer_phone.ilike.$pattern')
           .order('created_at', ascending: false)
-          .limit(100);
+          .limit(500);
 
       return List<Map<String, dynamic>>.from(response as List);
     } catch (e) {
@@ -1234,9 +1296,11 @@ class SupabaseService {
 
   /// Get AI enabled status for a customer
   Future<bool> getAiEnabled(String customerPhone) async {
+    final table = ClientConfig.aiSettingsTable;
+    if (table == null || table.isEmpty) return true; // Default: AI enabled
     try {
       final response = await client
-          .from(ClientConfig.aiSettingsTableName ?? 'ai_chat_settings')
+          .from(table)
           .select('ai_enabled')
           .eq('ai_phone', ClientConfig.conversationsPhone ?? '')
           .eq('customer_phone', customerPhone)
@@ -1258,11 +1322,13 @@ class SupabaseService {
     try {
       final aiPhone = ClientConfig.conversationsPhone;
       if (aiPhone == null) return false;
-      
+
+      final table = ClientConfig.aiSettingsTable;
+      if (table == null || table.isEmpty) return false;
+
       // Check if setting exists
-      final aiTable = ClientConfig.aiSettingsTableName ?? 'ai_chat_settings';
       final existing = await client
-          .from(aiTable)
+          .from(table)
           .select('id')
           .eq('ai_phone', aiPhone)
           .eq('customer_phone', customerPhone)
@@ -1271,7 +1337,7 @@ class SupabaseService {
       if (existing != null) {
         // Update existing
         await client
-            .from(aiTable)
+            .from(table)
             .update({
               'ai_enabled': enabled,
               'last_changed_by': 'manager',
@@ -1281,7 +1347,7 @@ class SupabaseService {
             .eq('customer_phone', customerPhone);
       } else {
         // Insert new
-        await client.from(aiTable).insert({
+        await client.from(table).insert({
           'ai_phone': aiPhone,
           'customer_phone': customerPhone,
           'ai_enabled': enabled,
@@ -1305,128 +1371,6 @@ class SupabaseService {
     } catch (e) {
       print('Set AI enabled error: $e');
       return false;
-    }
-  }
-
-  // ============================================
-  // BOOKING REMINDERS
-  // ============================================
-
-  /// Fetch all bookings from client's bookings table
-  Future<List<Booking>> fetchBookings(String tableName) async {
-    try {
-      final response = await client
-          .from(tableName)
-          .select()
-          .order('appointment_date', ascending: true)
-          .order('appointment_time', ascending: true);
-
-      return (response as List)
-          .map((json) => Booking.fromJson(json))
-          .toList();
-    } catch (e) {
-      print('Fetch bookings error: $e');
-      return [];
-    }
-  }
-
-  /// Fetch only upcoming bookings (today and future)
-  Future<List<Booking>> fetchUpcomingBookings(String tableName) async {
-    try {
-      final today = DateTime.now();
-      final todayStr = '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
-      
-      final response = await client
-          .from(tableName)
-          .select()
-          .gte('appointment_date', todayStr)
-          .order('appointment_date', ascending: true)
-          .order('appointment_time', ascending: true);
-
-      return (response as List)
-          .map((json) => Booking.fromJson(json))
-          .toList();
-    } catch (e) {
-      print('Fetch upcoming bookings error: $e');
-      return [];
-    }
-  }
-
-  /// Subscribe to real-time booking updates
-  Stream<List<Booking>> subscribeToBookings(String tableName) {
-    final controller = StreamController<List<Booking>>.broadcast();
-    
-    // Create channel for this table
-    final channel = client
-        .channel('bookings_realtime_$tableName')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.all,
-          schema: 'public',
-          table: tableName,
-          callback: (payload) {
-            print('Booking change detected: ${payload.eventType}');
-            // Refetch all bookings on any change
-            fetchBookings(tableName).then((bookings) {
-              if (!controller.isClosed) {
-                controller.add(bookings);
-              }
-            });
-          },
-        )
-        .subscribe();
-
-    // Initial fetch
-    fetchBookings(tableName).then((bookings) {
-      if (!controller.isClosed) {
-        controller.add(bookings);
-      }
-    });
-
-    // Clean up on stream close
-    controller.onCancel = () {
-      channel.unsubscribe();
-    };
-
-    return controller.stream;
-  }
-
-  /// Update booking reminder status
-  Future<bool> updateBookingReminderStatus({
-    required String tableName,
-    required String bookingId,
-    bool? reminder3Day,
-    bool? reminder1Day,
-    String? status,
-  }) async {
-    try {
-      final updates = <String, dynamic>{};
-      if (reminder3Day != null) updates['reminder_3day'] = reminder3Day;
-      if (reminder1Day != null) updates['reminder_1day'] = reminder1Day;
-      if (status != null) updates['status'] = status;
-
-      if (updates.isEmpty) return true;
-
-      await client
-          .from(tableName)
-          .update(updates)
-          .eq('id', bookingId);
-
-      print('Updated booking $bookingId: $updates');
-      return true;
-    } catch (e) {
-      print('Update booking error: $e');
-      return false;
-    }
-  }
-
-  /// Get booking statistics
-  Future<BookingReminderStats> getBookingStats(String tableName) async {
-    try {
-      final bookings = await fetchBookings(tableName);
-      return BookingReminderStats.fromBookings(bookings);
-    } catch (e) {
-      print('Get booking stats error: $e');
-      return BookingReminderStats.empty();
     }
   }
 
@@ -1473,6 +1417,174 @@ class SupabaseService {
         agentMessageCount: 0, broadcastCount: 0, broadcastResponseRate: 0,
       );
     }
+  }
+
+  // ============================================
+  // SYSTEM SETTINGS
+  // ============================================
+
+  /// Fetch all system settings as a key-value map.
+  /// The table 'system_settings' has columns: key, value.
+  Future<Map<String, String>> fetchSystemSettings() async {
+    try {
+      final response = await client.from('system_settings').select('key, value');
+      final rows = response as List;
+      final map = <String, String>{};
+      for (final row in rows) {
+        final k = row['key'] as String?;
+        final v = row['value'] as String?;
+        if (k != null) map[k] = v ?? '';
+      }
+      return map;
+    } catch (e) {
+      print('fetchSystemSettings error: $e');
+      return {};
+    }
+  }
+
+  /// Insert or update a single system setting.
+  Future<bool> updateSystemSetting(String key, String value, {String? updatedBy}) async {
+    try {
+      await client.from('system_settings').upsert({
+        'key': key,
+        'value': value,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+        if (updatedBy != null) 'updated_by': updatedBy,
+      }, onConflict: 'key');
+      return true;
+    } catch (e) {
+      print('updateSystemSetting error: $e');
+      return false;
+    }
+  }
+
+  /// Load system settings and apply Meta API values to static fields.
+  Future<void> loadAndApplySystemSettings() async {
+    final settings = await fetchSystemSettings();
+    if (settings.containsKey('meta_api_version') && settings['meta_api_version']!.isNotEmpty) {
+      metaApiVersion = settings['meta_api_version']!;
+    }
+    if (settings.containsKey('meta_access_token') && settings['meta_access_token']!.isNotEmpty) {
+      metaAccessToken = settings['meta_access_token']!;
+    }
+    if (settings.containsKey('meta_waba_id') && settings['meta_waba_id']!.isNotEmpty) {
+      metaWabaId = settings['meta_waba_id']!;
+    }
+    if (settings.containsKey('meta_app_id') && settings['meta_app_id']!.isNotEmpty) {
+      metaAppId = settings['meta_app_id']!;
+    }
+  }
+
+  /// Check if a Supabase table exists by running a limited SELECT.
+  /// Returns true if the table responds, false on error.
+  Future<bool> doesTableExist(String tableName) async {
+    try {
+      await client.from(tableName).select('*').limit(1);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Get approximate row count for a table.
+  Future<int> getTableRowCount(String tableName) async {
+    try {
+      final response = await client.from(tableName).select('*');
+      return (response as List).length;
+    } catch (e) {
+      return -1; // -1 signals error
+    }
+  }
+
+  /// Batch-check multiple tables: returns map of tableName → row count.
+  /// A null value means the table does not exist (or access denied).
+  Future<Map<String, int?>> checkTablesStatus(List<String> tableNames) async {
+    final results = <String, int?>{};
+    for (final table in tableNames) {
+      try {
+        final response = await client.from(table).select('id');
+        results[table] = (response as List).length;
+      } catch (e) {
+        results[table] = null;
+      }
+    }
+    return results;
+  }
+
+  // ============================================
+  // FINANCIALS
+  // ============================================
+
+  Future<List<Map<String, dynamic>>> fetchFinancials({
+    String? type,
+    String? status,
+    String? clientId,
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
+    var query = adminClient.from('vivid_financials').select('*, clients(name)');
+    if (type != null) query = query.eq('type', type);
+    if (status != null) query = query.eq('payment_status', status);
+    if (clientId != null) query = query.eq('client_id', clientId);
+    if (startDate != null) {
+      query = query.gte('created_at', startDate.toIso8601String());
+    }
+    if (endDate != null) {
+      query = query.lte('created_at', endDate.toIso8601String());
+    }
+    final response = await query.order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(response);
+  }
+
+  Future<void> createFinancial(Map<String, dynamic> data) async {
+    await adminClient.from('vivid_financials').insert(data);
+  }
+
+  Future<void> updateFinancial(String id, Map<String, dynamic> updates) async {
+    updates['updated_at'] = DateTime.now().toIso8601String();
+    await adminClient.from('vivid_financials').update(updates).eq('id', id);
+  }
+
+  Future<void> deleteFinancial(String id) async {
+    await adminClient.from('vivid_financials').delete().eq('id', id);
+  }
+
+  // ============================================
+  // LABEL TRIGGERS
+  // ============================================
+
+  Future<List<Map<String, dynamic>>> fetchLabelTriggers(String clientId) async {
+    final response = await adminClient
+        .from('label_trigger_words')
+        .select()
+        .eq('client_id', clientId)
+        .order('created_at');
+    return List<Map<String, dynamic>>.from(response);
+  }
+
+  Future<void> createLabelTrigger({
+    required String clientId,
+    required String label,
+    required List<String> triggerWords,
+    String? color,
+    bool autoApply = true,
+  }) async {
+    await adminClient.from('label_trigger_words').insert({
+      'client_id': clientId,
+      'label': label,
+      'trigger_words': triggerWords,
+      'color': color ?? '#38BEC9',
+      'auto_apply': autoApply,
+    });
+  }
+
+  Future<void> updateLabelTrigger(String id, Map<String, dynamic> updates) async {
+    updates['updated_at'] = DateTime.now().toIso8601String();
+    await adminClient.from('label_trigger_words').update(updates).eq('id', id);
+  }
+
+  Future<void> deleteLabelTrigger(String id) async {
+    await adminClient.from('label_trigger_words').delete().eq('id', id);
   }
 
   // ============================================
