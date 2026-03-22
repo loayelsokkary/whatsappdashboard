@@ -12,7 +12,8 @@ import '../providers/agent_provider.dart';
 import '../models/models.dart';
 import '../theme/vivid_theme.dart';
 import '../widgets/vivid_company_analytics_view.dart';
-import '../providers/roi_analytics_provider.dart';
+import '../providers/roi_analytics_provider.dart' hide CampaignPerformance;
+import '../providers/roi_analytics_provider.dart' as roiLib show CampaignPerformance;
 import '../providers/broadcast_analytics_provider.dart';
 import 'analytics_screen.dart' as client_analytics;
 import '../utils/initials_helper.dart';
@@ -329,30 +330,28 @@ class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateM
       child: Column(
         children: [
           // Logo + title
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
-            child: Row(
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+            decoration: BoxDecoration(
+              border: const Border(
+                bottom: BorderSide(color: Color(0x14FFFFFF)),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    gradient: VividColors.primaryGradient,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Image.asset('assets/images/vivid_icon.png', width: 28, height: 28),
+                Image.asset(
+                  'assets/images/vivid_logo_full.png',
+                  width: 160,
+                  fit: BoxFit.fitWidth,
+                  alignment: Alignment.centerLeft,
                 ),
-                const SizedBox(width: 10),
-                const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Vivid Admin', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
-                    Text('Management', style: TextStyle(color: Colors.white38, fontSize: 11)),
-                  ],
-                ),
+                const SizedBox(height: 4),
+                const Text('Admin Dashboard',
+                    style: TextStyle(color: Color(0x66FFFFFF), fontSize: 10, letterSpacing: 0.8)),
               ],
             ),
           ),
-          Divider(color: Colors.white.withOpacity(0.08), height: 1),
           const SizedBox(height: 8),
           // Nav items
           Expanded(
@@ -397,7 +396,7 @@ class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateM
                       Expanded(
                         child: Text(
                           agent.name,
-                          style: const TextStyle(color: Colors.white70, fontSize: 12),
+                          style: const TextStyle(color: Color(0x99FFFFFF), fontSize: 12),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
@@ -430,26 +429,20 @@ class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateM
           DrawerHeader(
             decoration: const BoxDecoration(color: Color(0xFF0A1628)),
             margin: EdgeInsets.zero,
-            padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
-            child: Row(
+            padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    gradient: VividColors.primaryGradient,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Image.asset('assets/images/vivid_icon.png', width: 28, height: 28),
+                Image.asset(
+                  'assets/images/vivid_logo_full.png',
+                  width: 160,
+                  fit: BoxFit.fitWidth,
+                  alignment: Alignment.centerLeft,
                 ),
-                const SizedBox(width: 10),
-                const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('Vivid Admin', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                    Text('Management', style: TextStyle(color: Colors.white38, fontSize: 12)),
-                  ],
-                ),
+                const SizedBox(height: 4),
+                const Text('Admin Dashboard',
+                    style: TextStyle(color: Color(0x66FFFFFF), fontSize: 10, letterSpacing: 0.8)),
               ],
             ),
           ),
@@ -480,7 +473,7 @@ class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateM
                 backgroundColor: VividColors.brightBlue.withOpacity(0.2),
                 child: Text(agent.initials, style: const TextStyle(color: VividColors.cyan, fontSize: 11, fontWeight: FontWeight.w600)),
               ),
-              title: Text(agent.name, style: const TextStyle(color: Colors.white70, fontSize: 13)),
+              title: Text(agent.name, style: const TextStyle(color: Color(0x99FFFFFF), fontSize: 13)),
               trailing: IconButton(
                 onPressed: () => context.read<AgentProvider>().logout(),
                 icon: const Icon(Icons.logout, color: Colors.white38, size: 18),
@@ -496,8 +489,9 @@ class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateM
 
   Widget _sidebarItem(int index, IconData icon, String label) {
     final isSelected = _tabController.index == index;
+    const teal = Color(0xFF22D3EE);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: 1),
       child: Material(
         color: Colors.transparent,
         borderRadius: BorderRadius.circular(8),
@@ -509,18 +503,22 @@ class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateM
             setState(() {});
           },
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(8),
-              color: isSelected ? const Color(0xFF22D3EE).withOpacity(0.1) : Colors.transparent,
+              color: isSelected ? teal.withValues(alpha: 0.08) : Colors.transparent,
+              border: isSelected
+                  ? const Border(left: BorderSide(color: teal, width: 2))
+                  : null,
             ),
             child: Row(
               children: [
-                Icon(icon, size: 20, color: isSelected ? const Color(0xFF22D3EE) : Colors.white54),
+                Icon(icon, size: 18,
+                    color: isSelected ? teal : Colors.white.withValues(alpha: 0.45)),
                 const SizedBox(width: 12),
                 Text(label, style: TextStyle(
                   fontSize: 13,
-                  color: isSelected ? const Color(0xFF22D3EE) : Colors.white70,
+                  color: isSelected ? Colors.white : Colors.white.withValues(alpha: 0.45),
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
                 )),
               ],
@@ -818,19 +816,6 @@ class _ClientProfileCardState extends State<_ClientProfileCard> {
     }
   }
 
-  static Color _featureChipColor(String feature) {
-    switch (feature) {
-      case 'whatsapp_templates': return Colors.green;
-      case 'media': return Colors.blue;
-      case 'labels': return Colors.amber;
-      case 'broadcasts': return Colors.orange;
-      case 'analytics': return VividColors.brightBlue;
-      case 'manager_chat': return Colors.purple;
-      case 'predictive_intelligence': return Colors.teal;
-      default: return VividColors.cyan;
-    }
-  }
-
   static String _featureLabel(String feature) {
     switch (feature) {
       case 'whatsapp_templates': return 'Templates';
@@ -885,8 +870,8 @@ class _ClientProfileCardState extends State<_ClientProfileCard> {
         onTap: widget.onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
-          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-          padding: const EdgeInsets.all(16),
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
             color: widget.isSelected
                 ? VividColors.brightBlue.withValues(alpha: 0.08)
@@ -947,18 +932,12 @@ class _ClientProfileCardState extends State<_ClientProfileCard> {
                             right: 0,
                             bottom: 0,
                             child: Container(
-                              width: 14,
-                              height: 14,
+                              width: 10,
+                              height: 10,
                               decoration: BoxDecoration(
-                                color: _healthColor(healthStatus),
+                                color: _healthColor(healthStatus).withValues(alpha: 0.85),
                                 shape: BoxShape.circle,
-                                border: Border.all(color: vc.surface, width: 2),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: _healthColor(healthStatus).withValues(alpha: 0.5),
-                                    blurRadius: 4,
-                                  ),
-                                ],
+                                border: Border.all(color: vc.surface, width: 1.5),
                               ),
                             ),
                           ),
@@ -1044,40 +1023,20 @@ class _ClientProfileCardState extends State<_ClientProfileCard> {
                 ],
               ),
 
-              const SizedBox(height: 14),
+              const SizedBox(height: 12),
 
               // ── Stats Row ──
               Row(
                 children: [
-                  _buildStatBox(vc, Icons.people_outline, '$userCount', 'Users'),
-                  const SizedBox(width: 8),
-                  _buildStatBox(vc, Icons.extension_outlined, '${client.enabledFeatures.where((f) => const ['conversations', 'broadcasts', 'manager_chat'].contains(f)).length}/3', 'Features'),
-                  const SizedBox(width: 8),
-                  if (client.businessPhone != null)
-                    Expanded(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: vc.surfaceAlt,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.phone, size: 12, color: vc.textMuted),
-                            const SizedBox(width: 4),
-                            Flexible(
-                              child: Text(
-                                client.businessPhone!,
-                                style: TextStyle(color: vc.textSecondary, fontSize: 11),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    )
-                  else
-                    _buildStatBox(vc, Icons.phone_disabled, '—', 'Phone'),
+                  _buildStatBox(vc, Icons.people_outline, '$userCount'),
+                  const SizedBox(width: 6),
+                  _buildStatBox(vc, Icons.extension_outlined, '${client.enabledFeatures.where((f) => const ['conversations', 'broadcasts', 'manager_chat'].contains(f)).length}/3'),
+                  const SizedBox(width: 6),
+                  _buildStatBox(
+                    vc,
+                    client.businessPhone != null ? Icons.phone : Icons.phone_disabled,
+                    client.businessPhone ?? '—',
+                  ),
                 ],
               ),
 
@@ -1089,60 +1048,49 @@ class _ClientProfileCardState extends State<_ClientProfileCard> {
                 runSpacing: 6,
                 children: [
                   // Core features (filled chips)
-                  ...client.enabledFeatures
-                      .where((f) => const ['conversations', 'broadcasts', 'manager_chat'].contains(f))
-                      .map((f) {
-                    final color = _featureChipColor(f);
-                    final configured = _isFeatureConfigured(client, f);
+                  // All enabled features — subtle pill, colored dot = configured
+                  ...client.enabledFeatures.map((f) {
+                    final isCore = const ['conversations', 'broadcasts', 'manager_chat'].contains(f);
+                    final configured = isCore ? _isFeatureConfigured(client, f) : true;
                     return Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                       decoration: BoxDecoration(
-                        color: color.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: color.withValues(alpha: 0.2)),
+                        border: Border.all(
+                          color: vc.border.withValues(alpha: 0.35),
+                        ),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: configured
-                                  ? VividColors.statusSuccess
-                                  : VividColors.statusWarning,
+                          if (isCore)
+                            Container(
+                              width: 5,
+                              height: 5,
+                              margin: const EdgeInsets.only(right: 4),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: configured
+                                    ? VividColors.statusSuccess
+                                    : VividColors.statusWarning,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 5),
                           Text(
                             _featureLabel(f),
-                            style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w500),
+                            style: TextStyle(
+                              color: vc.textMuted.withValues(alpha: 0.6),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w400,
+                            ),
                           ),
                         ],
-                      ),
-                    );
-                  }),
-                  // Add-on features (outlined, muted chips)
-                  ...client.enabledFeatures
-                      .where((f) => !const ['conversations', 'broadcasts', 'manager_chat'].contains(f))
-                      .map((f) {
-                    return Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: vc.border),
-                      ),
-                      child: Text(
-                        _featureLabel(f),
-                        style: TextStyle(color: vc.textMuted, fontSize: 10, fontWeight: FontWeight.w400),
                       ),
                     );
                   }),
                 ],
               ),
 
-              const SizedBox(height: 14),
+              const SizedBox(height: 12),
 
               // ── Quick Actions Row ──
               Row(
@@ -1184,26 +1132,25 @@ class _ClientProfileCardState extends State<_ClientProfileCard> {
     );
   }
 
-  Widget _buildStatBox(VividColorScheme vc, IconData icon, String value, String label) {
+  Widget _buildStatBox(VividColorScheme vc, IconData icon, String value) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        height: 36,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
         decoration: BoxDecoration(
-          color: vc.surfaceAlt,
           borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 13, color: vc.textMuted),
+            Icon(icon, size: 12, color: vc.textMuted),
             const SizedBox(width: 5),
             Flexible(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(value, style: TextStyle(color: vc.textPrimary, fontSize: 13, fontWeight: FontWeight.w700)),
-                  Text(label, style: TextStyle(color: vc.textMuted, fontSize: 9)),
-                ],
+              child: Text(
+                value,
+                style: TextStyle(color: vc.textPrimary, fontSize: 12, fontWeight: FontWeight.w600),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
@@ -1221,17 +1168,23 @@ class _ClientProfileCardState extends State<_ClientProfileCard> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        height: 32,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: color.withValues(alpha: 0.4)),
+          borderRadius: BorderRadius.circular(7),
+          border: Border.all(color: vc.border.withValues(alpha: 0.5)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Icon(icon, size: 13, color: color),
-            const SizedBox(width: 5),
-            Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600)),
+            Icon(icon, size: 12, color: vc.textMuted),
+            const SizedBox(width: 4),
+            Text(label, style: TextStyle(
+              color: vc.textMuted,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            )),
           ],
         ),
       ),
@@ -1789,7 +1742,7 @@ class _ClientDetailState extends State<_ClientDetail> {
 // USER TILE (with role badge)
 // ============================================
 
-class _UserTile extends StatelessWidget {
+class _UserTile extends StatefulWidget {
   final AppUser user;
   final VoidCallback onEdit;
   final VoidCallback onToggleBlock;
@@ -1801,89 +1754,131 @@ class _UserTile extends StatelessWidget {
   });
 
   @override
+  State<_UserTile> createState() => _UserTileState();
+}
+
+class _UserTileState extends State<_UserTile> {
+  bool _isHovered = false;
+
+  @override
   Widget build(BuildContext context) {
     final vc = context.vividColors;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: vc.surfaceAlt,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 20,
-            backgroundColor: VividColors.brightBlue.withOpacity(0.2),
-            child: Text(
-              _getInitials(user.name),
-              style: const TextStyle(
-                color: VividColors.cyan,
-                fontWeight: FontWeight.w600,
-                fontSize: 12,
+    final user = widget.user;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        margin: const EdgeInsets.only(bottom: 4),
+        constraints: const BoxConstraints(minHeight: 48),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: _isHovered ? Colors.white.withValues(alpha: 0.04) : vc.surface,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: vc.border.withValues(alpha: 0.15)),
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 20,
+              backgroundColor: VividColors.brightBlue.withValues(alpha: 0.15),
+              child: Text(
+                getInitials(user.name),
+                style: const TextStyle(
+                  color: VividColors.cyan,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                ),
               ),
             ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        user.name,
-                        style: TextStyle(
-                          color: vc.textPrimary,
-                          fontWeight: FontWeight.w500,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          user.name,
+                          style: TextStyle(
+                            color: vc.textPrimary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    _RoleBadge(role: user.role.value),
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  user.email,
-                  style: TextStyle(color: vc.textMuted, fontSize: 12),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-          if (user.isBlocked)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              margin: const EdgeInsets.only(right: 8),
-              decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(4),
+                      const SizedBox(width: 8),
+                      _RoleBadge(role: user.role.value),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          user.email,
+                          style: TextStyle(color: vc.textMuted, fontSize: 12),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (!user.isBlocked) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF4CAF50),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Active',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.6),
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
               ),
-              child: const Text(
-                'Blocked',
-                style: TextStyle(color: Colors.red, fontSize: 10, fontWeight: FontWeight.w600),
-              ),
             ),
-          IconButton(
-            onPressed: onEdit,
-            icon: const Icon(Icons.edit, size: 18),
-            color: vc.textMuted,
-          ),
-          IconButton(
-            onPressed: onToggleBlock,
-            icon: Icon(user.isBlocked ? Icons.lock_open : Icons.block, size: 18),
-            color: user.isBlocked ? VividColors.statusSuccess : Colors.red.withOpacity(0.7),
-            tooltip: user.isBlocked ? 'Unblock' : 'Block',
-          ),
-        ],
+            if (user.isBlocked)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                margin: const EdgeInsets.only(right: 8),
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text(
+                  'Blocked',
+                  style: TextStyle(color: Colors.red, fontSize: 10, fontWeight: FontWeight.w600),
+                ),
+              ),
+            IconButton(
+              onPressed: widget.onEdit,
+              icon: Icon(Icons.edit, size: 18,
+                  color: vc.textMuted.withValues(alpha: _isHovered ? 1.0 : 0.4)),
+            ),
+            IconButton(
+              onPressed: widget.onToggleBlock,
+              icon: Icon(
+                user.isBlocked ? Icons.lock_open : Icons.block,
+                size: 18,
+                color: (user.isBlocked ? VividColors.statusSuccess : Colors.red)
+                    .withValues(alpha: _isHovered ? 0.9 : 0.4),
+              ),
+              tooltip: user.isBlocked ? 'Unblock' : 'Block',
+            ),
+          ],
+        ),
       ),
     );
   }
-
-  String _getInitials(String name) => getInitials(name);
 }
 
 // ============================================
@@ -1897,30 +1892,21 @@ class _RoleBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final vc = context.vividColors;
     final config = _getRoleConfig(context, role);
     
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: config.color.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: config.color.withOpacity(0.5), width: 1),
+        color: Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(4),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(config.icon, size: 10, color: config.color),
-          const SizedBox(width: 4),
-          Text(
-            config.label,
-            style: TextStyle(
-              color: config.color,
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
+      child: Text(
+        config.label,
+        style: TextStyle(
+          color: config.color,
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
+        ),
       ),
     );
   }
@@ -6017,7 +6003,10 @@ class _ClientAnalyticsWrapperState extends State<_ClientAnalyticsWrapper> {
   @override
   Widget build(BuildContext context) {
     final vc = context.vividColors;
-    final isVividAdmin = ClientConfig.isVividAdmin;
+    // isVividAdmin is false here because _enterPreview() sets tempUser.clientId = client.id,
+    // which makes isVividAdmin (requires clientId == null) return false.
+    // Use isPreviewMode instead — it's only true when an admin has entered preview.
+    final isAdmin = ClientConfig.isPreviewMode;
 
     return Column(
       children: [
@@ -6060,7 +6049,7 @@ class _ClientAnalyticsWrapperState extends State<_ClientAnalyticsWrapper> {
         ),
 
         // ── Outer tab bar (Vivid Admin only) ────────────────────────────
-        if (isVividAdmin)
+        if (isAdmin)
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: BoxDecoration(
@@ -6116,39 +6105,35 @@ class _ClientAnalyticsWrapperState extends State<_ClientAnalyticsWrapper> {
     required bool isSelected,
     required VoidCallback onTap,
   }) {
-    final vc = context.vividColors;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final labelColor = isSelected
-        ? Colors.white
-        : (isDark ? vc.textMuted : const Color(0xFF64748B));
+    final inactiveColor = Colors.white.withValues(alpha: 0.35);
 
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(
-          color: isSelected ? VividColors.cyan : Colors.transparent,
+          color: isSelected ? VividColors.cyan.withValues(alpha: 0.15) : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
           border: isSelected
-              ? null
-              : Border.all(color: vc.border.withValues(alpha: 0.5)),
+              ? Border.all(color: VividColors.cyan.withValues(alpha: 0.6))
+              : null,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (imageAsset != null)
-              Image.asset(imageAsset, width: 14, height: 14,
-                  color: labelColor)
+              Image.asset(imageAsset, width: 13, height: 13,
+                  color: isSelected ? VividColors.cyan : inactiveColor)
             else if (icon != null)
-              Icon(icon, size: 14, color: labelColor),
+              Icon(icon, size: 13,
+                  color: isSelected ? VividColors.cyan : inactiveColor),
             const SizedBox(width: 6),
             Text(
               label,
               style: TextStyle(
-                color: labelColor,
-                fontSize: 13,
-                fontWeight:
-                    isSelected ? FontWeight.w600 : FontWeight.w400,
+                color: isSelected ? VividColors.cyan : inactiveColor,
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
               ),
             ),
           ],
@@ -6335,11 +6320,6 @@ class _VividInsightsPanelState extends State<_VividInsightsPanel> {
     final sortedByRead = [...campaigns]
       ..sort((a, b) => b.readRate.compareTo(a.readRate));
     final bestCampaign = sortedByRead.isEmpty ? null : sortedByRead.first;
-    final last3 = campaigns.take(3).toList();
-    final avgReadRate = last3.isEmpty
-        ? 0.0
-        : last3.map((c) => c.readRate).fold(0.0, (a, b) => a + b) /
-            last3.length;
 
     // ── Card 3: Response Time Signal ─────────────────────────────────
     final avgResponseSecs = data?.current.avgResponseTimeSeconds ?? 0.0;
@@ -6352,6 +6332,81 @@ class _VividInsightsPanelState extends State<_VividInsightsPanel> {
         inboundCustomers.where((c) => c.messageCount > 1).length;
     final returnRate =
         totalUnique > 0 ? returningCount / totalUnique * 100 : 0.0;
+
+    // ── Card 5: Optimal Broadcast Time ───────────────────────────────
+    final replyHourCounts = <int, int>{};
+    for (final ec in data?.engagedCustomers ?? []) {
+      final h = ec.date.hour;
+      replyHourCounts[h] = (replyHourCounts[h] ?? 0) + 1;
+    }
+    int? peakReplyHour;
+    int peakReplyCount = 0;
+    for (final e in replyHourCounts.entries) {
+      if (e.value > peakReplyCount) {
+        peakReplyCount = e.value;
+        peakReplyHour = e.key;
+      }
+    }
+    final totalReplyCustomers =
+        replyHourCounts.values.fold(0, (a, b) => a + b);
+    // Top 3 most active reply hours
+    final sortedReplyHours = replyHourCounts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final top3Hours = sortedReplyHours.take(3).toList();
+
+    // ── Card 6: Conversation Engagement Rate ─────────────────────────
+    final engagementRate = data?.current.engagementRate ?? 0.0;
+    final messagesReceived = data?.current.messagesReceived ?? 0;
+    final messagesSent = data?.current.messagesSent ?? 0;
+    final engagedCount = data?.engagedCustomers.length ?? 0;
+
+    // ── Card 7: Broadcast Intelligence ───────────────────────────────
+    final roiCampaigns = data?.campaigns ?? [];
+    final sortedByEngagement = [...roiCampaigns]
+      ..sort((a, b) => b.engagementRate.compareTo(a.engagementRate));
+    final bestRoiCampaign =
+        sortedByEngagement.isEmpty ? null : sortedByEngagement.first;
+    final worstCampaign = roiCampaigns
+        .where((c) => c.responded == 0 && c.sent > 0)
+        .toList()
+      ..sort((a, b) => (a.sentAt ?? DateTime(0))
+          .compareTo(b.sentAt ?? DateTime(0)));
+    final zeroReplyCampaign = worstCampaign.isEmpty ? null : worstCampaign.last;
+
+    // Build intelligence recommendations dynamically
+    final recommendations = <String>[];
+    if (roiCampaigns.isEmpty) {
+      recommendations.add(
+          'No engagement data yet. Send your first broadcast and return here for timing insights.');
+    } else {
+      if (bestRoiCampaign != null &&
+          bestRoiCampaign.engagementRate > 0 &&
+          bestRoiCampaign.sentAt != null) {
+        final t = bestRoiCampaign.sentAt!;
+        final timeStr =
+            '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+        recommendations.add(
+            'Best broadcast: "${bestRoiCampaign.name}" sent at $timeStr achieved ${bestRoiCampaign.engagementRate.toStringAsFixed(1)}% engagement. Replicate this timing.');
+      }
+      if (zeroReplyCampaign != null && zeroReplyCampaign.sentAt != null) {
+        final t = zeroReplyCampaign.sentAt!;
+        final timeStr =
+            '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+        recommendations.add(
+            '"${zeroReplyCampaign.name}" sent at $timeStr received no replies. Avoid this time slot.');
+      }
+      if (peakReplyHour != null && totalReplyCustomers >= 3) {
+        final windowStart = peakReplyHour < 1 ? 23 : peakReplyHour - 1;
+        final optimalStr =
+            '${windowStart.toString().padLeft(2, '0')}:00';
+        final peakStr = '${peakReplyHour.toString().padLeft(2, '0')}:00';
+        recommendations.add(
+            'Customers reply most around $peakStr. Schedule broadcasts at $optimalStr to maximise visibility.');
+      } else if (recommendations.isEmpty) {
+        recommendations.add(
+            'Not enough engagement data yet. Send more broadcasts to unlock timing insights.');
+      }
+    }
 
     final isLoading = roi.isLoading || broadcast.isLoading;
 
@@ -6407,19 +6462,18 @@ class _VividInsightsPanelState extends State<_VividInsightsPanel> {
               ),
             )
           else
-            Wrap(
-              spacing: 16,
-              runSpacing: 16,
-              children: [
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final wide = constraints.maxWidth > 500;
+
                 // ── Card 1: Feature Adoption ─────────────────────────
-                _insightCard(
+                final card1 = _insightCard(
                   context: context,
-                  vc: vc,
-                  isDark: isDark,
                   accentColor: VividColors.cyan,
                   icon: Icons.extension_outlined,
                   title: 'Feature Adoption',
                   headline: '$activeCount / ${_platformFeatures.length} features active',
+                  headlineColor: VividColors.cyan,
                   body: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -6429,8 +6483,7 @@ class _VividInsightsPanelState extends State<_VividInsightsPanel> {
                           runSpacing: 4,
                           children: _platformFeatures
                               .where((f) => activeFeatures.contains(f))
-                              .map((f) => _featureChip(f, VividColors.cyan,
-                                  isDark: isDark))
+                              .map((f) => _featureChip(f, VividColors.cyan, isDark: isDark))
                               .toList(),
                         ),
                         const SizedBox(height: 8),
@@ -6438,8 +6491,8 @@ class _VividInsightsPanelState extends State<_VividInsightsPanel> {
                       if (inactiveFeatures.isNotEmpty) ...[
                         Text('Growth opportunities:',
                             style: TextStyle(
-                                color: vc.textMuted,
-                                fontSize: 11,
+                                color: vc.textMuted.withValues(alpha: 0.5),
+                                fontSize: 10,
                                 fontWeight: FontWeight.w600)),
                         const SizedBox(height: 4),
                         Wrap(
@@ -6447,20 +6500,19 @@ class _VividInsightsPanelState extends State<_VividInsightsPanel> {
                           runSpacing: 4,
                           children: inactiveFeatures
                               .map((f) => _featureChip(f,
-                                  vc.textMuted.withValues(alpha: 0.5),
+                                  const Color(0xFFF59E0B),
                                   isDark: isDark, outlined: true))
                               .toList(),
                         ),
                       ],
                     ],
                   ),
-                ),
+                  onTap: () => _showFeatureAdoptionSheet(context, activeFeatures, inactiveFeatures, activeCount),
+                );
 
                 // ── Card 2: Broadcast ROI ────────────────────────────
-                _insightCard(
+                final card2 = _insightCard(
                   context: context,
-                  vc: vc,
-                  isDark: isDark,
                   accentColor: const Color(0xFF8B5CF6),
                   icon: Icons.campaign_outlined,
                   title: 'Broadcast ROI',
@@ -6469,45 +6521,51 @@ class _VividInsightsPanelState extends State<_VividInsightsPanel> {
                       : bestCampaign == null
                           ? 'No campaigns yet'
                           : '${bestCampaign.readRate.toStringAsFixed(1)}% read rate',
+                  headlineColor: broadcastData != null && bestCampaign != null
+                      ? const Color(0xFF8B5CF6)
+                      : vc.textMuted,
                   body: broadcastData == null
                       ? Text('Run a broadcast to see ROI metrics.',
-                          style: TextStyle(
-                              color: vc.textMuted, fontSize: 12))
+                          style: TextStyle(color: vc.textMuted.withValues(alpha: 0.5), fontSize: 11))
                       : Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            if (bestCampaign != null) ...[
-                              Text(
-                                'Top campaign: ${bestCampaign.name}',
-                                style: TextStyle(
-                                    color: vc.textPrimary, fontSize: 12),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 4),
-                            ],
-                            if (last3.length > 1)
-                              Text(
-                                'Avg read rate (last ${last3.length}): ${avgReadRate.toStringAsFixed(1)}%',
-                                style: TextStyle(
-                                    color: vc.textMuted, fontSize: 12),
-                              ),
-                            const SizedBox(height: 4),
                             Text(
-                              '${broadcastData.totalCampaigns} total campaigns · '
-                              '${broadcastData.deliveryRate.toStringAsFixed(1)}% delivery',
-                              style: TextStyle(
-                                  color: vc.textMuted, fontSize: 11),
+                              '${broadcastData.totalCampaigns} campaigns · ${broadcastData.deliveryRate.toStringAsFixed(1)}% delivery',
+                              style: TextStyle(color: vc.textMuted.withValues(alpha: 0.5), fontSize: 11),
                             ),
+                            if (sortedByRead.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              ...sortedByRead.map((c) => Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 3),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(c.name,
+                                              style: TextStyle(
+                                                  color: vc.textPrimary.withValues(alpha: 0.7),
+                                                  fontSize: 11),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text('${c.readRate.toStringAsFixed(1)}%',
+                                            style: const TextStyle(
+                                                color: Color(0xFF8B5CF6),
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600)),
+                                      ],
+                                    ),
+                                  )),
+                            ],
                           ],
                         ),
-                ),
+                  onTap: () => _showBroadcastROISheet(context, sortedByRead, bestCampaign),
+                );
 
                 // ── Card 3: Response Time Signal ─────────────────────
-                _insightCard(
+                final card3 = _insightCard(
                   context: context,
-                  vc: vc,
-                  isDark: isDark,
                   accentColor: const Color(0xFFF59E0B),
                   icon: Icons.timer_outlined,
                   title: 'Response Time Signal',
@@ -6518,47 +6576,111 @@ class _VividInsightsPanelState extends State<_VividInsightsPanel> {
                           : avgResponseMins > 60
                               ? 'Avg ${avgResponseMins.toStringAsFixed(0)} min'
                               : 'Strong — ${avgResponseMins < 1 ? '<1 min' : '${avgResponseMins.toStringAsFixed(0)} min'} avg',
+                  headlineColor: data != null && avgResponseSecs > 0
+                      ? (avgResponseMins > 60
+                          ? const Color(0xFFF59E0B)
+                          : const Color(0xFF10B981))
+                      : vc.textMuted,
                   body: data == null
                       ? Text('Load analytics to see response times.',
-                          style: TextStyle(
-                              color: vc.textMuted, fontSize: 12))
-                      : Text(
-                          avgResponseSecs == 0
-                              ? 'No response time data recorded yet.'
-                              : avgResponseMins > 60
-                                  ? 'AI conversations could accelerate response time for this client.'
-                                  : 'Response time is strong at ${avgResponseMins.toStringAsFixed(0)} min. Keep it up.',
-                          style:
-                              TextStyle(color: vc.textMuted, fontSize: 12),
+                          style: TextStyle(color: vc.textMuted.withValues(alpha: 0.5), fontSize: 11))
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              avgResponseSecs == 0
+                                  ? 'No response time data recorded yet.'
+                                  : avgResponseMins > 60
+                                      ? 'AI conversations could accelerate response time.'
+                                      : 'Strong — keep it up.',
+                              style: TextStyle(color: vc.textMuted.withValues(alpha: 0.5), fontSize: 11),
+                            ),
+                            if (data.current.employeeAvgResponseTime.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              ...data.current.employeeAvgResponseTime.entries
+                                  .where((e) =>
+                                      e.key.isNotEmpty &&
+                                      e.key.toLowerCase() != 'broadcast')
+                                  .take(4)
+                                  .map((e) {
+                                final mins = e.value / 60;
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 2),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(e.key,
+                                            style: TextStyle(
+                                                color: vc.textMuted
+                                                    .withValues(alpha: 0.6),
+                                                fontSize: 10),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis),
+                                      ),
+                                      Text(
+                                        mins < 1
+                                            ? '<1 min'
+                                            : '${mins.toStringAsFixed(0)} min',
+                                        style: const TextStyle(
+                                            color: Color(0xFFF59E0B),
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w500),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }),
+                            ],
+                          ],
                         ),
-                ),
+                  onTap: () => _showResponseTimeSheet(context, avgResponseSecs, avgResponseMins),
+                );
 
                 // ── Card 4: Customer Return Rate ─────────────────────
-                _insightCard(
+                final card4 = _insightCard(
                   context: context,
-                  vc: vc,
-                  isDark: isDark,
                   accentColor: const Color(0xFF10B981),
                   icon: Icons.people_outline,
                   title: 'Customer Return Rate',
                   headline: totalUnique == 0
                       ? 'No data'
                       : '${returnRate.toStringAsFixed(1)}% returning',
+                  headlineColor: totalUnique > 0 ? const Color(0xFF10B981) : vc.textMuted,
                   body: totalUnique == 0
-                      ? Text(
-                          'No conversation data available.',
-                          style: TextStyle(
-                              color: vc.textMuted, fontSize: 12),
-                        )
+                      ? Text('No conversation data available.',
+                          style: TextStyle(color: vc.textMuted.withValues(alpha: 0.5), fontSize: 11))
                       : Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              '$returningCount of $totalUnique customers messaged more than once.',
-                              style: TextStyle(
-                                  color: vc.textMuted, fontSize: 12),
-                            ),
-                            const SizedBox(height: 4),
+                            Row(children: [
+                              Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: const BoxDecoration(
+                                      color: Color(0xFF10B981),
+                                      shape: BoxShape.circle)),
+                              const SizedBox(width: 8),
+                              Text('$returningCount returning',
+                                  style: const TextStyle(
+                                      color: Colors.white, fontSize: 12)),
+                            ]),
+                            const SizedBox(height: 6),
+                            Row(children: [
+                              Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(
+                                      color: Colors.white
+                                          .withValues(alpha: 0.3),
+                                      shape: BoxShape.circle)),
+                              const SizedBox(width: 8),
+                              Text(
+                                  '${totalUnique - returningCount} first-time',
+                                  style: const TextStyle(
+                                      color: Color(0x80FFFFFF),
+                                      fontSize: 12)),
+                            ]),
+                            const SizedBox(height: 6),
                             Text(
                               returnRate >= 50
                                   ? 'Strong retention — customers keep coming back.'
@@ -6566,14 +6688,258 @@ class _VividInsightsPanelState extends State<_VividInsightsPanel> {
                                       ? 'Good start — growing a loyal base.'
                                       : 'Opportunity to boost repeat engagement.',
                               style: TextStyle(
-                                  color: vc.textMuted.withValues(alpha: 0.7),
+                                  color: vc.textMuted.withValues(alpha: 0.4),
                                   fontSize: 11),
                             ),
                           ],
                         ),
-                ),
-              ],
+                  onTap: () => _showReturnRateSheet(context, totalUnique, returningCount, returnRate),
+                );
+
+                // ── Card 5: Optimal Broadcast Time ───────────────────
+                final card5 = _insightCard(
+                  context: context,
+                  accentColor: const Color(0xFF06B6D4),
+                  icon: Icons.schedule_outlined,
+                  title: 'Optimal Broadcast Time',
+                  headline: peakReplyHour == null
+                      ? 'No data yet'
+                      : 'Best: ${peakReplyHour.toString().padLeft(2, '0')}:00',
+                  headlineColor: peakReplyHour != null
+                      ? const Color(0xFF06B6D4)
+                      : const Color(0x80FFFFFF),
+                  body: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (top3Hours.isNotEmpty) ...[
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: top3Hours.asMap().entries.map((e) {
+                            final rank = e.key;
+                            final hour = e.value.key;
+                            final count = e.value.value;
+                            final rankColor = rank == 0
+                                ? const Color(0xFF06B6D4)
+                                : rank == 1
+                                    ? Colors.white.withValues(alpha: 0.6)
+                                    : Colors.white.withValues(alpha: 0.35);
+                            final rankLabel =
+                                rank == 0 ? '1st' : rank == 1 ? '2nd' : '3rd';
+                            return Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 5),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                    color: rankColor.withValues(alpha: 0.4)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(rankLabel,
+                                      style: TextStyle(
+                                          color: rankColor.withValues(alpha: 0.6),
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.w600)),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                      '${hour.toString().padLeft(2, '0')}:00',
+                                      style: TextStyle(
+                                          color: rankColor,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600)),
+                                  const SizedBox(width: 5),
+                                  Text('($count)',
+                                      style: TextStyle(
+                                          color: rankColor.withValues(alpha: 0.5),
+                                          fontSize: 9)),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ] else
+                        const Text('Not enough reply data yet.',
+                            style: TextStyle(
+                                color: Color(0x80FFFFFF), fontSize: 11)),
+                      if (peakReplyHour != null) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          'Based on $totalReplyCustomers customer ${totalReplyCustomers == 1 ? 'reply' : 'replies'}.',
+                          style: const TextStyle(
+                              color: Color(0x66FFFFFF), fontSize: 11),
+                        ),
+                      ],
+                    ],
+                  ),
+                  onTap: () => _showBroadcastTimingSheet(
+                      context, data?.campaigns ?? [], top3Hours, peakReplyHour,
+                      bestRoiCampaign),
+                );
+
+                // ── Card 6: Conversation Engagement Rate ──────────────
+                final engColor = engagementRate >= 5
+                    ? VividColors.cyan
+                    : engagementRate >= 2
+                        ? const Color(0xFFF59E0B)
+                        : const Color(0x80FFFFFF);
+                final card6 = _insightCard(
+                  context: context,
+                  accentColor: engColor,
+                  icon: Icons.forum_outlined,
+                  title: 'Conversation Engagement',
+                  headline: data == null
+                      ? 'No data'
+                      : '${engagementRate.toStringAsFixed(1)}% engaged',
+                  headlineColor: data != null ? engColor : const Color(0x80FFFFFF),
+                  body: data == null
+                      ? const Text('Load analytics to see engagement data.',
+                          style: TextStyle(color: Color(0x80FFFFFF), fontSize: 11))
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(children: [
+                              Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: const BoxDecoration(
+                                      color: VividColors.cyan,
+                                      shape: BoxShape.circle)),
+                              const SizedBox(width: 8),
+                              Text('$messagesReceived inbound replies',
+                                  style: const TextStyle(
+                                      color: Colors.white, fontSize: 12)),
+                            ]),
+                            const SizedBox(height: 6),
+                            Row(children: [
+                              Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(
+                                      color: Colors.white
+                                          .withValues(alpha: 0.3),
+                                      shape: BoxShape.circle)),
+                              const SizedBox(width: 8),
+                              Text('$messagesSent outbound sent',
+                                  style: const TextStyle(
+                                      color: Color(0x80FFFFFF),
+                                      fontSize: 12)),
+                            ]),
+                          ],
+                        ),
+                  onTap: () => _showEngagementSheet(
+                      context, engagementRate, messagesReceived, messagesSent,
+                      engagedCount, data?.campaigns ?? []),
+                );
+
+                if (wide) {
+                  return Column(
+                    children: [
+                      IntrinsicHeight(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(child: card1),
+                            const SizedBox(width: 16),
+                            Expanded(child: card2),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      IntrinsicHeight(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(child: card3),
+                            const SizedBox(width: 16),
+                            Expanded(child: card4),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      IntrinsicHeight(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(child: card5),
+                            const SizedBox(width: 16),
+                            Expanded(child: card6),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                }
+
+                return Column(
+                  children: [
+                    card1,
+                    const SizedBox(height: 16),
+                    card2,
+                    const SizedBox(height: 16),
+                    card3,
+                    const SizedBox(height: 16),
+                    card4,
+                    const SizedBox(height: 16),
+                    card5,
+                    const SizedBox(height: 16),
+                    card6,
+                  ],
+                );
+              },
             ),
+
+          // ── Card 7: Broadcast Intelligence (full width) ───────────────
+          const SizedBox(height: 16),
+          _insightCard(
+            context: context,
+            accentColor: VividColors.cyan,
+            icon: Icons.auto_awesome,
+            title: 'Broadcast Intelligence',
+            headline: roiCampaigns.isEmpty
+                ? 'No broadcasts yet'
+                : '${roiCampaigns.length} broadcast${roiCampaigns.length == 1 ? '' : 's'} analysed',
+            headlineColor: roiCampaigns.isEmpty
+                ? const Color(0x80FFFFFF)
+                : VividColors.cyan,
+            backgroundColor: Colors.white.withValues(alpha: 0.03),
+            body: recommendations.isEmpty
+                ? const Text('Not enough data yet.',
+                    style: TextStyle(color: Color(0x80FFFFFF), fontSize: 11))
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: recommendations.asMap().entries.map((e) {
+                      return Padding(
+                        padding: EdgeInsets.only(
+                            top: e.key == 0 ? 0 : 10),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              width: 4,
+                              height: 4,
+                              margin: const EdgeInsets.only(top: 6, right: 8),
+                              decoration: const BoxDecoration(
+                                color: VividColors.cyan,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            Expanded(
+                              child: Text(
+                                e.value,
+                                style: const TextStyle(
+                                    color: Color(0x99FFFFFF),
+                                    fontSize: 12,
+                                    height: 1.5),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  ),
+          ),
         ],
       ),
     );
@@ -6581,57 +6947,738 @@ class _VividInsightsPanelState extends State<_VividInsightsPanel> {
 
   Widget _insightCard({
     required BuildContext context,
-    required dynamic vc,
-    required bool isDark,
     required Color accentColor,
     required IconData icon,
     required String title,
     required String headline,
+    required Color headlineColor,
     required Widget body,
+    VoidCallback? onTap,
+    Color backgroundColor = Colors.transparent,
   }) {
-    return Container(
-      width: 340,
-      padding: const EdgeInsets.all(16),
+    final card = Container(
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF0F1923) : Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-            color: accentColor.withValues(alpha: 0.3), width: 1),
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: accentColor.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Icon(icon, size: 14, color: accentColor),
-              ),
+              Icon(icon, size: 20, color: accentColor.withValues(alpha: 0.5)),
               const SizedBox(width: 8),
-              Text(title,
-                  style: TextStyle(
-                      color: vc.textMuted,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.5)),
+              Expanded(
+                child: Text(title,
+                    style: const TextStyle(
+                        color: Color(0x80FFFFFF),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500)),
+              ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 14),
           Text(
             headline,
             style: TextStyle(
-              color: accentColor,
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
+              color: headlineColor,
+              fontSize: 32,
+              fontWeight: FontWeight.w600,
+              height: 1.1,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           body,
         ],
+      ),
+    );
+    if (onTap == null) return card;
+    return GestureDetector(onTap: onTap, child: card);
+  }
+
+  // ── Sheet helpers ────────────────────────────────────────────────
+
+  Widget _sheetDragHandle() {
+    return Container(
+      width: 36,
+      height: 4,
+      margin: const EdgeInsets.symmetric(vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(2),
+      ),
+    );
+  }
+
+  Widget _sheetFeatureRow(String feature, Color color, bool active) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Icon(active ? Icons.check_circle_outline : Icons.radio_button_unchecked,
+              color: color, size: 16),
+          const SizedBox(width: 10),
+          Text(_featureDisplayName(feature),
+              style: TextStyle(
+                  color: active ? Colors.white : const Color(0x99FFFFFF),
+                  fontSize: 13)),
+        ],
+      ),
+    );
+  }
+
+  Widget _sheetStatRow(String label, String value, Color valueColor) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(color: Color(0x99FFFFFF), fontSize: 13)),
+          Text(value,
+              style: TextStyle(
+                  color: valueColor, fontSize: 13, fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+
+  void _showFeatureAdoptionSheet(
+    BuildContext context,
+    List<String> activeFeatures,
+    List<String> inactiveFeatures,
+    int activeCount,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1F2E),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      isScrollControlled: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        maxChildSize: 0.85,
+        expand: false,
+        builder: (_, sc) => Column(
+          children: [
+            Center(child: _sheetDragHandle()),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+              child: Row(
+                children: [
+                  const Icon(Icons.extension_outlined, color: VividColors.cyan, size: 20),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text('Feature Adoption',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600)),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: VividColors.cyan.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text('$activeCount / ${_platformFeatures.length}',
+                        style: const TextStyle(
+                            color: VividColors.cyan,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600)),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                controller: sc,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                children: [
+                  if (activeFeatures.isNotEmpty) ...[
+                    const Text('Active Features',
+                        style: TextStyle(
+                            color: Color(0x80FFFFFF),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 8),
+                    ..._platformFeatures
+                        .where((f) => activeFeatures.contains(f))
+                        .map((f) => _sheetFeatureRow(f, VividColors.cyan, true)),
+                    const SizedBox(height: 16),
+                  ],
+                  if (inactiveFeatures.isNotEmpty) ...[
+                    const Text('Growth Opportunities',
+                        style: TextStyle(
+                            color: Color(0x80FFFFFF),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 8),
+                    ...inactiveFeatures
+                        .map((f) => _sheetFeatureRow(f, const Color(0x66FFFFFF), false)),
+                  ],
+                  const SizedBox(height: 20),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showBroadcastROISheet(
+    BuildContext context,
+    List<CampaignPerformance> campaigns,
+    CampaignPerformance? bestCampaign,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1F2E),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      isScrollControlled: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.55,
+        maxChildSize: 0.85,
+        expand: false,
+        builder: (_, sc) => Column(
+          children: [
+            Center(child: _sheetDragHandle()),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+              child: Row(
+                children: [
+                  const Icon(Icons.campaign_outlined,
+                      color: Color(0xFF8B5CF6), size: 20),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text('Broadcast ROI',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600)),
+                  ),
+                  Text('${campaigns.length} campaigns',
+                      style: const TextStyle(color: Color(0x80FFFFFF), fontSize: 12)),
+                ],
+              ),
+            ),
+            campaigns.isEmpty
+                ? const Expanded(
+                    child: Center(
+                      child: Text('No campaigns yet.',
+                          style: TextStyle(color: Color(0x80FFFFFF), fontSize: 13)),
+                    ),
+                  )
+                : Expanded(
+                    child: ListView.separated(
+                      controller: sc,
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      itemCount: campaigns.length,
+                      separatorBuilder: (_, __) => Divider(
+                        color: Colors.white.withValues(alpha: 0.06),
+                        height: 1,
+                      ),
+                      itemBuilder: (_, i) {
+                        final c = campaigns[i];
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(c.name,
+                                        style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w500),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      '${c.recipients} recipients · ${c.deliveryRate.toStringAsFixed(1)}% delivered',
+                                      style: const TextStyle(
+                                          color: Color(0x80FFFFFF), fontSize: 11),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Text('${c.readRate.toStringAsFixed(1)}%',
+                                  style: const TextStyle(
+                                      color: Color(0xFF8B5CF6),
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600)),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showResponseTimeSheet(
+    BuildContext context,
+    double avgResponseSecs,
+    double avgResponseMins,
+  ) {
+    final hasData = avgResponseSecs > 0;
+    final isStrong = hasData && avgResponseMins <= 60;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1F2E),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      isScrollControlled: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.4,
+        maxChildSize: 0.7,
+        expand: false,
+        builder: (_, sc) => SingleChildScrollView(
+          controller: sc,
+          child: Column(
+            children: [
+              Center(child: _sheetDragHandle()),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.timer_outlined, color: Color(0xFFF59E0B), size: 20),
+                        SizedBox(width: 8),
+                        Text('Response Time Signal',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    Center(
+                      child: Text(
+                        hasData
+                            ? (avgResponseMins < 1
+                                ? '<1 min'
+                                : '${avgResponseMins.toStringAsFixed(0)} min')
+                            : '—',
+                        style: TextStyle(
+                          color: hasData
+                              ? (isStrong
+                                  ? const Color(0xFF10B981)
+                                  : const Color(0xFFF59E0B))
+                              : const Color(0x80FFFFFF),
+                          fontSize: 48,
+                          fontWeight: FontWeight.w700,
+                          height: 1,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Center(
+                      child: Text(
+                        hasData ? 'average response time' : 'no data recorded',
+                        style: const TextStyle(color: Color(0x80FFFFFF), fontSize: 12),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.04),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.08)),
+                      ),
+                      child: Text(
+                        hasData
+                            ? (isStrong
+                                ? 'Response time is excellent. Customers are getting quick replies — keep it up.'
+                                : 'Response time is above 1 hour. Enabling AI conversations could significantly reduce wait times.')
+                            : 'No response time data has been recorded yet. Start responding to conversations to track this metric.',
+                        style: const TextStyle(
+                            color: Color(0x99FFFFFF), fontSize: 13, height: 1.5),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showReturnRateSheet(
+    BuildContext context,
+    int totalUnique,
+    int returningCount,
+    double returnRate,
+  ) {
+    final firstTimeCount = totalUnique - returningCount;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1F2E),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      isScrollControlled: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.45,
+        maxChildSize: 0.75,
+        expand: false,
+        builder: (_, sc) => SingleChildScrollView(
+          controller: sc,
+          child: Column(
+            children: [
+              Center(child: _sheetDragHandle()),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.people_outline, color: Color(0xFF10B981), size: 20),
+                        SizedBox(width: 8),
+                        Text('Customer Return Rate',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    Center(
+                      child: Text(
+                        totalUnique > 0
+                            ? '${returnRate.toStringAsFixed(1)}%'
+                            : '—',
+                        style: TextStyle(
+                          color: totalUnique > 0
+                              ? const Color(0xFF10B981)
+                              : const Color(0x80FFFFFF),
+                          fontSize: 48,
+                          fontWeight: FontWeight.w700,
+                          height: 1,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Center(
+                      child: Text('return rate',
+                          style: TextStyle(color: Color(0x80FFFFFF), fontSize: 12)),
+                    ),
+                    const SizedBox(height: 24),
+                    _sheetStatRow(
+                        'Returning customers', '$returningCount', const Color(0xFF10B981)),
+                    Divider(color: Colors.white.withValues(alpha: 0.06), height: 1),
+                    _sheetStatRow(
+                        'First-time customers', '$firstTimeCount', const Color(0x80FFFFFF)),
+                    Divider(color: Colors.white.withValues(alpha: 0.06), height: 1),
+                    _sheetStatRow('Total unique customers', '$totalUnique', Colors.white),
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.04),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.08)),
+                      ),
+                      child: Text(
+                        totalUnique == 0
+                            ? 'No conversation data available yet.'
+                            : returnRate >= 50
+                                ? 'Strong retention — more than half of customers come back for repeat conversations.'
+                                : returnRate >= 25
+                                    ? 'Good start — a growing base of loyal customers. Keep engaging them.'
+                                    : 'Opportunity to boost repeat engagement through follow-ups and broadcasts.',
+                        style: const TextStyle(
+                            color: Color(0x99FFFFFF), fontSize: 13, height: 1.5),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showBroadcastTimingSheet(
+    BuildContext context,
+    List<roiLib.CampaignPerformance> campaigns,
+    List<MapEntry<int, int>> top3Hours,
+    int? peakReplyHour,
+    roiLib.CampaignPerformance? bestCampaign,
+  ) {
+    String fmt(DateTime? dt) {
+      if (dt == null) return '—';
+      return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    }
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1F2E),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      isScrollControlled: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (_, sc) => ListView(
+          controller: sc,
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          children: [
+            Center(child: _sheetDragHandle()),
+            const Row(
+              children: [
+                Icon(Icons.schedule_outlined, color: Color(0xFF06B6D4), size: 20),
+                SizedBox(width: 8),
+                Text('Optimal Broadcast Time',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600)),
+              ],
+            ),
+            const SizedBox(height: 20),
+            if (campaigns.isNotEmpty) ...[
+              const Text('When you sent broadcasts',
+                  style: TextStyle(
+                      color: Color(0x80FFFFFF),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              ...campaigns.map((c) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(c.name,
+                                  style: const TextStyle(
+                                      color: Colors.white, fontSize: 13),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis),
+                              Text(fmt(c.sentAt),
+                                  style: const TextStyle(
+                                      color: Color(0x80FFFFFF), fontSize: 11)),
+                            ],
+                          ),
+                        ),
+                        Text('${c.engagementRate.toStringAsFixed(1)}%',
+                            style: TextStyle(
+                                color: c.engagementRate > 0
+                                    ? const Color(0xFF06B6D4)
+                                    : const Color(0x80FFFFFF),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  )),
+              Divider(color: Colors.white.withValues(alpha: 0.06), height: 24),
+            ],
+            if (top3Hours.isNotEmpty) ...[
+              const Text('When customers reply',
+                  style: TextStyle(
+                      color: Color(0x80FFFFFF),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              ...top3Hours.map((e) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Row(
+                      children: [
+                        Text('${e.key.toString().padLeft(2, '0')}:00',
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 13)),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: LinearProgressIndicator(
+                            value: top3Hours.first.value > 0
+                                ? e.value / top3Hours.first.value
+                                : 0,
+                            backgroundColor:
+                                Colors.white.withValues(alpha: 0.08),
+                            color: const Color(0xFF06B6D4),
+                            minHeight: 4,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Text('${e.value}',
+                            style: const TextStyle(
+                                color: Color(0x80FFFFFF), fontSize: 11)),
+                      ],
+                    ),
+                  )),
+              Divider(color: Colors.white.withValues(alpha: 0.06), height: 24),
+            ],
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.04),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+              ),
+              child: Text(
+                peakReplyHour == null && campaigns.isEmpty
+                    ? 'No data yet. Send your first broadcast to unlock timing insights.'
+                    : bestCampaign != null && bestCampaign.sentAt != null
+                        ? 'Your most engaged broadcast was sent at ${fmt(bestCampaign.sentAt)}. '
+                            '${peakReplyHour != null ? 'Customers reply most around ${peakReplyHour.toString().padLeft(2, '0')}:00. Recommend scheduling next broadcast at ${(peakReplyHour > 0 ? peakReplyHour - 1 : 23).toString().padLeft(2, '0')}:00.' : 'Keep replicating this timing.'}'
+                        : peakReplyHour != null
+                            ? 'Customers reply most around ${peakReplyHour.toString().padLeft(2, '0')}:00. Schedule broadcasts 30–60 min before this window for best visibility.'
+                            : 'Not enough engagement data yet to make a recommendation.',
+                style: const TextStyle(
+                    color: Color(0x99FFFFFF), fontSize: 13, height: 1.5),
+              ),
+            ),
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showEngagementSheet(
+    BuildContext context,
+    double engagementRate,
+    int messagesReceived,
+    int messagesSent,
+    int engagedCount,
+    List<roiLib.CampaignPerformance> campaigns,
+  ) {
+    final withReplies = campaigns.where((c) => c.responded > 0).length;
+    final withoutReplies = campaigns.where((c) => c.responded == 0 && c.sent > 0).length;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1F2E),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      isScrollControlled: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        maxChildSize: 0.8,
+        expand: false,
+        builder: (_, sc) => SingleChildScrollView(
+          controller: sc,
+          child: Column(
+            children: [
+              Center(child: _sheetDragHandle()),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.forum_outlined,
+                            color: engagementRate >= 5
+                                ? VividColors.cyan
+                                : engagementRate >= 2
+                                    ? const Color(0xFFF59E0B)
+                                    : const Color(0x80FFFFFF),
+                            size: 20),
+                        const SizedBox(width: 8),
+                        const Text('Conversation Engagement',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    Center(
+                      child: Text(
+                        '${engagementRate.toStringAsFixed(1)}%',
+                        style: TextStyle(
+                          color: engagementRate >= 5
+                              ? VividColors.cyan
+                              : engagementRate >= 2
+                                  ? const Color(0xFFF59E0B)
+                                  : const Color(0x80FFFFFF),
+                          fontSize: 48,
+                          fontWeight: FontWeight.w700,
+                          height: 1,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Center(
+                      child: Text('inbound replies per outbound message',
+                          style:
+                              TextStyle(color: Color(0x80FFFFFF), fontSize: 12)),
+                    ),
+                    const SizedBox(height: 24),
+                    _sheetStatRow('Inbound replies', '$messagesReceived',
+                        VividColors.cyan),
+                    Divider(
+                        color: Colors.white.withValues(alpha: 0.06), height: 1),
+                    _sheetStatRow('Outbound messages', '$messagesSent',
+                        const Color(0x80FFFFFF)),
+                    Divider(
+                        color: Colors.white.withValues(alpha: 0.06), height: 1),
+                    _sheetStatRow('Customers who engaged', '$engagedCount',
+                        VividColors.cyan),
+                    if (campaigns.isNotEmpty) ...[
+                      Divider(
+                          color: Colors.white.withValues(alpha: 0.06),
+                          height: 1),
+                      _sheetStatRow('Broadcasts with replies', '$withReplies',
+                          const Color(0xFF10B981)),
+                      Divider(
+                          color: Colors.white.withValues(alpha: 0.06),
+                          height: 1),
+                      _sheetStatRow('Broadcasts with no replies',
+                          '$withoutReplies', const Color(0x80FFFFFF)),
+                    ],
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.04),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.08)),
+                      ),
+                      child: Text(
+                        engagementRate >= 5
+                            ? 'Excellent engagement. Customers are actively responding to outbound messages.'
+                            : engagementRate >= 2
+                                ? 'Moderate engagement. Consider refining message content or timing to drive more replies.'
+                                : engagementRate > 0
+                                    ? 'Low engagement rate. Focus on sending more targeted, personalised messages.'
+                                    : 'No engagement data recorded yet.',
+                        style: const TextStyle(
+                            color: Color(0x99FFFFFF),
+                            fontSize: 13,
+                            height: 1.5),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -6639,19 +7686,17 @@ class _VividInsightsPanelState extends State<_VividInsightsPanel> {
   Widget _featureChip(String feature, Color color,
       {required bool isDark, bool outlined = false}) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: outlined ? Colors.transparent : color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: outlined ? 0.4 : 0.0)),
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
       ),
       child: Text(
         _featureDisplayName(feature),
         style: TextStyle(
-          color: outlined
-              ? color.withValues(alpha: 0.7)
-              : color,
-          fontSize: 11,
+          color: color.withValues(alpha: 0.6),
+          fontSize: 10,
           fontWeight: FontWeight.w500,
         ),
       ),
@@ -7886,50 +8931,63 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
       child: Row(
         children: [
+          // ── Left: title ──────────────────────────────────────────────
           Icon(Icons.description, color: VividColors.cyan, size: 20),
           const SizedBox(width: 8),
-          Text(
-            _selectedTemplateClient != null
-                ? '${_selectedTemplateClient!.name} Templates'
-                : 'WhatsApp Templates',
-            style: TextStyle(
-                color: vc.textPrimary,
-                fontSize: 18,
-                fontWeight: FontWeight.w700)),
+          Flexible(
+            child: Text(
+              _selectedTemplateClient != null
+                  ? '${_selectedTemplateClient!.name} Templates'
+                  : 'WhatsApp Templates',
+              style: TextStyle(
+                  color: vc.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
           const SizedBox(width: 12),
           if (!_isLoadingTemplates && _selectedTemplateClient != null)
             Text('${_clientTemplates.length} total',
                 style: TextStyle(color: vc.textMuted, fontSize: 13)),
-          const Spacer(),
-          SizedBox(
-            width: 240,
-            height: 36,
-            child: TextField(
-              style: TextStyle(color: vc.textPrimary, fontSize: 13),
-              decoration: InputDecoration(
-                hintText: 'Search templates…',
-                hintStyle: TextStyle(color: vc.textMuted, fontSize: 13),
-                prefixIcon: Icon(Icons.search, size: 18, color: vc.textMuted),
-                filled: true,
-                fillColor: vc.surfaceAlt,
-                contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: vc.border),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: vc.border),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: VividColors.cyan),
+
+          const SizedBox(width: 12),
+
+          // ── Right: search + action buttons ───────────────────────────
+          // Search field shrinks when space is tight (no fixed width).
+          Flexible(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 240),
+              child: SizedBox(
+                height: 36,
+                child: TextField(
+                  style: TextStyle(color: vc.textPrimary, fontSize: 13),
+                  decoration: InputDecoration(
+                    hintText: 'Search templates…',
+                    hintStyle: TextStyle(color: vc.textMuted, fontSize: 13),
+                    prefixIcon: Icon(Icons.search, size: 18, color: vc.textMuted),
+                    filled: true,
+                    fillColor: vc.surfaceAlt,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: vc.border),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: vc.border),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: VividColors.cyan),
+                    ),
+                  ),
+                  onChanged: (v) => setState(() => _search = v),
                 ),
               ),
-              onChanged: (v) => setState(() => _search = v),
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 8),
           if (_selected != null)
             _isDeleting
                 ? const SizedBox(
@@ -7947,29 +9005,27 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
               : OutlinedButton.icon(
                   onPressed: _isLoadingTemplates ? null : _syncAllClients,
                   icon: const Icon(Icons.sync, size: 16),
-                  label: const Text('Sync All Clients'),
+                  label: const Text('Sync All'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: VividColors.statusSuccess,
                     side: const BorderSide(color: VividColors.statusSuccess),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                     textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
                   ),
                 ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
           if (_selectedTemplateClient != null)
             OutlinedButton.icon(
               onPressed: _isLoadingTemplates
                   ? null
                   : () => _refreshFromMeta(_selectedTemplateClient!),
               icon: const Icon(Icons.refresh, size: 16),
-              label: const Text('Refresh from Meta'),
+              label: const Text('Refresh'),
               style: OutlinedButton.styleFrom(
                 foregroundColor: VividColors.cyan,
                 side: const BorderSide(color: VividColors.cyan),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                textStyle:
-                    const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
               ),
             ),
         ],
