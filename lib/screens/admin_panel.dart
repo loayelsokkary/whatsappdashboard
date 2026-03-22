@@ -13,6 +13,7 @@ import '../models/models.dart';
 import '../theme/vivid_theme.dart';
 import '../widgets/vivid_company_analytics_view.dart';
 import '../providers/roi_analytics_provider.dart';
+import '../providers/broadcast_analytics_provider.dart';
 import 'analytics_screen.dart' as client_analytics;
 import '../utils/initials_helper.dart';
 import '../widgets/activity_logs_panel.dart';
@@ -166,7 +167,7 @@ class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateM
                   gradient: VividColors.primaryGradient,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Image.asset('assets/images/vivid_icon_white.png', width: 28, height: 28),
+                child: Image.asset('assets/images/vivid_icon.png', width: 28, height: 28),
               ),
               const SizedBox(width: 12),
 
@@ -338,7 +339,7 @@ class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateM
                     gradient: VividColors.primaryGradient,
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Image.asset('assets/images/vivid_icon_white.png', width: 28, height: 28),
+                  child: Image.asset('assets/images/vivid_icon.png', width: 28, height: 28),
                 ),
                 const SizedBox(width: 10),
                 const Column(
@@ -438,7 +439,7 @@ class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateM
                     gradient: VividColors.primaryGradient,
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Image.asset('assets/images/vivid_icon_white.png', width: 28, height: 28),
+                  child: Image.asset('assets/images/vivid_icon.png', width: 28, height: 28),
                 ),
                 const SizedBox(width: 10),
                 const Column(
@@ -5965,6 +5966,8 @@ class _ClientAnalyticsWrapper extends StatefulWidget {
 }
 
 class _ClientAnalyticsWrapperState extends State<_ClientAnalyticsWrapper> {
+  bool _showVividInsights = false;
+
   @override
   void initState() {
     super.initState();
@@ -5975,14 +5978,17 @@ class _ClientAnalyticsWrapperState extends State<_ClientAnalyticsWrapper> {
   void didUpdateWidget(_ClientAnalyticsWrapper oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.client.id != widget.client.id) {
-      ClientConfig.exitPreview();
+      ClientConfig.exitPreview(clientId: oldWidget.client.id);
       _enterPreview(widget.client);
     }
   }
 
   @override
   void dispose() {
-    ClientConfig.exitPreview();
+    // Pass clientId so that if a new wrapper already called enterPreview()
+    // before this dispose() runs (Flutter lifecycle), we don't null out the
+    // newly-set client context.
+    ClientConfig.exitPreview(clientId: widget.client.id);
     super.dispose();
   }
 
@@ -6010,9 +6016,12 @@ class _ClientAnalyticsWrapperState extends State<_ClientAnalyticsWrapper> {
 
   @override
   Widget build(BuildContext context) {
+    final vc = context.vividColors;
+    final isVividAdmin = ClientConfig.isVividAdmin;
+
     return Column(
       children: [
-        // "Viewing as" banner
+        // ── "Viewing as" banner ──────────────────────────────────────────
         Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -6031,31 +6040,120 @@ class _ClientAnalyticsWrapperState extends State<_ClientAnalyticsWrapper> {
               ),
               const SizedBox(width: 8),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   color: VividColors.cyan.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(4),
                   border: Border.all(
                       color: VividColors.cyan.withValues(alpha: 0.4)),
                 ),
-                child: const Text('Client View',
-                    style: TextStyle(
-                        color: VividColors.cyan,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700)),
+                child: Text(
+                  _showVividInsights ? 'Vivid Insights' : 'Client View',
+                  style: const TextStyle(
+                      color: VividColors.cyan,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700),
+                ),
               ),
             ],
           ),
         ),
-        // Client-facing analytics screen with its own fresh provider
+
+        // ── Outer tab bar (Vivid Admin only) ────────────────────────────
+        if (isVividAdmin)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: vc.surface,
+              border: Border(bottom: BorderSide(color: vc.border)),
+            ),
+            child: Row(
+              children: [
+                _outerTab(
+                  context,
+                  label: 'Client View',
+                  icon: Icons.visibility_outlined,
+                  isSelected: !_showVividInsights,
+                  onTap: () => setState(() => _showVividInsights = false),
+                ),
+                const SizedBox(width: 4),
+                _outerTab(
+                  context,
+                  label: 'Vivid Insights',
+                  imageAsset: 'assets/images/vivid_icon.png',
+                  isSelected: _showVividInsights,
+                  onTap: () => setState(() => _showVividInsights = true),
+                ),
+              ],
+            ),
+          ),
+
+        // ── Content — both tabs kept alive with IndexedStack ─────────────
         Expanded(
-          child: ChangeNotifierProvider(
-            create: (_) => RoiAnalyticsProvider(),
-            child: const client_analytics.AnalyticsScreen(),
+          child: MultiProvider(
+            providers: [
+              ChangeNotifierProvider(create: (_) => RoiAnalyticsProvider()),
+              ChangeNotifierProvider(create: (_) => BroadcastAnalyticsProvider()),
+            ],
+            child: IndexedStack(
+              index: _showVividInsights ? 1 : 0,
+              children: [
+                const client_analytics.AnalyticsScreen(),
+                _VividInsightsPanel(client: widget.client),
+              ],
+            ),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _outerTab(
+    BuildContext context, {
+    required String label,
+    IconData? icon,
+    String? imageAsset,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    final vc = context.vividColors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final labelColor = isSelected
+        ? Colors.white
+        : (isDark ? vc.textMuted : const Color(0xFF64748B));
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? VividColors.cyan : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          border: isSelected
+              ? null
+              : Border.all(color: vc.border.withValues(alpha: 0.5)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (imageAsset != null)
+              Image.asset(imageAsset, width: 14, height: 14,
+                  color: labelColor)
+            else if (icon != null)
+              Icon(icon, size: 14, color: labelColor),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: labelColor,
+                fontSize: 13,
+                fontWeight:
+                    isSelected ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -6160,6 +6258,401 @@ class _ClientListItem extends StatelessWidget {
               size: 20,
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================
+// ============================================
+// VIVID INSIGHTS PANEL
+// Internal-only analytics panel shown to Vivid admins when viewing a client.
+// ============================================
+
+class _VividInsightsPanel extends StatefulWidget {
+  final Client client;
+  const _VividInsightsPanel({required this.client});
+
+  @override
+  State<_VividInsightsPanel> createState() => _VividInsightsPanelState();
+}
+
+class _VividInsightsPanelState extends State<_VividInsightsPanel> {
+  // The 7 platform features we track adoption against.
+  static const _platformFeatures = [
+    'conversations',
+    'broadcasts',
+    'analytics',
+    'manager_chat',
+    'whatsapp_templates',
+    'predictive_intelligence',
+    'media',
+  ];
+
+  static String _featureDisplayName(String f) {
+    switch (f) {
+      case 'conversations': return 'Conversations';
+      case 'broadcasts': return 'Broadcasts';
+      case 'analytics': return 'Analytics';
+      case 'manager_chat': return 'AI Chat';
+      case 'whatsapp_templates': return 'Templates';
+      case 'predictive_intelligence': return 'Predictions';
+      case 'media': return 'Media';
+      default: return f;
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Trigger broadcast analytics fetch for this client.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<BroadcastAnalyticsProvider>().fetchAnalytics();
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final vc = context.vividColors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final roi = context.watch<RoiAnalyticsProvider>();
+    final broadcast = context.watch<BroadcastAnalyticsProvider>();
+    final data = roi.data;
+    final broadcastData = broadcast.analytics;
+
+    // ── Card 1: Feature Adoption ──────────────────────────────────────
+    final activeFeatures = widget.client.enabledFeatures;
+    final activeCount =
+        _platformFeatures.where((f) => activeFeatures.contains(f)).length;
+    final inactiveFeatures =
+        _platformFeatures.where((f) => !activeFeatures.contains(f)).toList();
+
+    // ── Card 2: Broadcast ROI ─────────────────────────────────────────
+    final campaigns = broadcastData?.recentCampaigns ?? [];
+    final sortedByRead = [...campaigns]
+      ..sort((a, b) => b.readRate.compareTo(a.readRate));
+    final bestCampaign = sortedByRead.isEmpty ? null : sortedByRead.first;
+    final last3 = campaigns.take(3).toList();
+    final avgReadRate = last3.isEmpty
+        ? 0.0
+        : last3.map((c) => c.readRate).fold(0.0, (a, b) => a + b) /
+            last3.length;
+
+    // ── Card 3: Response Time Signal ─────────────────────────────────
+    final avgResponseSecs = data?.current.avgResponseTimeSeconds ?? 0.0;
+    final avgResponseMins = avgResponseSecs / 60;
+
+    // ── Card 4: Customer Return Rate ─────────────────────────────────
+    final inboundCustomers = data?.inboundCustomers ?? [];
+    final totalUnique = inboundCustomers.length;
+    final returningCount =
+        inboundCustomers.where((c) => c.messageCount > 1).length;
+    final returnRate =
+        totalUnique > 0 ? returningCount / totalUnique * 100 : 0.0;
+
+    final isLoading = roi.isLoading || broadcast.isLoading;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              Image.asset('assets/images/vivid_icon.png',
+                  width: 20, height: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Vivid Insights — ${widget.client.name}',
+                style: TextStyle(
+                  color: vc.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: VividColors.cyan.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                      color: VividColors.cyan.withValues(alpha: 0.4)),
+                ),
+                child: const Text('Admin Only',
+                    style: TextStyle(
+                        color: VividColors.cyan,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Internal metrics and growth opportunities for this client.',
+            style: TextStyle(color: vc.textMuted, fontSize: 12),
+          ),
+          const SizedBox(height: 20),
+
+          if (isLoading)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(40),
+                child: CircularProgressIndicator(
+                    color: VividColors.cyan, strokeWidth: 2),
+              ),
+            )
+          else
+            Wrap(
+              spacing: 16,
+              runSpacing: 16,
+              children: [
+                // ── Card 1: Feature Adoption ─────────────────────────
+                _insightCard(
+                  context: context,
+                  vc: vc,
+                  isDark: isDark,
+                  accentColor: VividColors.cyan,
+                  icon: Icons.extension_outlined,
+                  title: 'Feature Adoption',
+                  headline: '$activeCount / ${_platformFeatures.length} features active',
+                  body: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (activeFeatures.isNotEmpty) ...[
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: _platformFeatures
+                              .where((f) => activeFeatures.contains(f))
+                              .map((f) => _featureChip(f, VividColors.cyan,
+                                  isDark: isDark))
+                              .toList(),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                      if (inactiveFeatures.isNotEmpty) ...[
+                        Text('Growth opportunities:',
+                            style: TextStyle(
+                                color: vc.textMuted,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 4),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: inactiveFeatures
+                              .map((f) => _featureChip(f,
+                                  vc.textMuted.withValues(alpha: 0.5),
+                                  isDark: isDark, outlined: true))
+                              .toList(),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+
+                // ── Card 2: Broadcast ROI ────────────────────────────
+                _insightCard(
+                  context: context,
+                  vc: vc,
+                  isDark: isDark,
+                  accentColor: const Color(0xFF8B5CF6),
+                  icon: Icons.campaign_outlined,
+                  title: 'Broadcast ROI',
+                  headline: broadcastData == null
+                      ? 'No broadcast data'
+                      : bestCampaign == null
+                          ? 'No campaigns yet'
+                          : '${bestCampaign.readRate.toStringAsFixed(1)}% read rate',
+                  body: broadcastData == null
+                      ? Text('Run a broadcast to see ROI metrics.',
+                          style: TextStyle(
+                              color: vc.textMuted, fontSize: 12))
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (bestCampaign != null) ...[
+                              Text(
+                                'Top campaign: ${bestCampaign.name}',
+                                style: TextStyle(
+                                    color: vc.textPrimary, fontSize: 12),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 4),
+                            ],
+                            if (last3.length > 1)
+                              Text(
+                                'Avg read rate (last ${last3.length}): ${avgReadRate.toStringAsFixed(1)}%',
+                                style: TextStyle(
+                                    color: vc.textMuted, fontSize: 12),
+                              ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${broadcastData.totalCampaigns} total campaigns · '
+                              '${broadcastData.deliveryRate.toStringAsFixed(1)}% delivery',
+                              style: TextStyle(
+                                  color: vc.textMuted, fontSize: 11),
+                            ),
+                          ],
+                        ),
+                ),
+
+                // ── Card 3: Response Time Signal ─────────────────────
+                _insightCard(
+                  context: context,
+                  vc: vc,
+                  isDark: isDark,
+                  accentColor: const Color(0xFFF59E0B),
+                  icon: Icons.timer_outlined,
+                  title: 'Response Time Signal',
+                  headline: data == null
+                      ? 'No data'
+                      : avgResponseSecs == 0
+                          ? 'No response data'
+                          : avgResponseMins > 60
+                              ? 'Avg ${avgResponseMins.toStringAsFixed(0)} min'
+                              : 'Strong — ${avgResponseMins < 1 ? '<1 min' : '${avgResponseMins.toStringAsFixed(0)} min'} avg',
+                  body: data == null
+                      ? Text('Load analytics to see response times.',
+                          style: TextStyle(
+                              color: vc.textMuted, fontSize: 12))
+                      : Text(
+                          avgResponseSecs == 0
+                              ? 'No response time data recorded yet.'
+                              : avgResponseMins > 60
+                                  ? 'AI conversations could accelerate response time for this client.'
+                                  : 'Response time is strong at ${avgResponseMins.toStringAsFixed(0)} min. Keep it up.',
+                          style:
+                              TextStyle(color: vc.textMuted, fontSize: 12),
+                        ),
+                ),
+
+                // ── Card 4: Customer Return Rate ─────────────────────
+                _insightCard(
+                  context: context,
+                  vc: vc,
+                  isDark: isDark,
+                  accentColor: const Color(0xFF10B981),
+                  icon: Icons.people_outline,
+                  title: 'Customer Return Rate',
+                  headline: totalUnique == 0
+                      ? 'No data'
+                      : '${returnRate.toStringAsFixed(1)}% returning',
+                  body: totalUnique == 0
+                      ? Text(
+                          'No conversation data available.',
+                          style: TextStyle(
+                              color: vc.textMuted, fontSize: 12),
+                        )
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '$returningCount of $totalUnique customers messaged more than once.',
+                              style: TextStyle(
+                                  color: vc.textMuted, fontSize: 12),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              returnRate >= 50
+                                  ? 'Strong retention — customers keep coming back.'
+                                  : returnRate >= 25
+                                      ? 'Good start — growing a loyal base.'
+                                      : 'Opportunity to boost repeat engagement.',
+                              style: TextStyle(
+                                  color: vc.textMuted.withValues(alpha: 0.7),
+                                  fontSize: 11),
+                            ),
+                          ],
+                        ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _insightCard({
+    required BuildContext context,
+    required dynamic vc,
+    required bool isDark,
+    required Color accentColor,
+    required IconData icon,
+    required String title,
+    required String headline,
+    required Widget body,
+  }) {
+    return Container(
+      width: 340,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF0F1923) : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+            color: accentColor.withValues(alpha: 0.3), width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: accentColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Icon(icon, size: 14, color: accentColor),
+              ),
+              const SizedBox(width: 8),
+              Text(title,
+                  style: TextStyle(
+                      color: vc.textMuted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            headline,
+            style: TextStyle(
+              color: accentColor,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          body,
+        ],
+      ),
+    );
+  }
+
+  Widget _featureChip(String feature, Color color,
+      {required bool isDark, bool outlined = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: outlined ? Colors.transparent : color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: outlined ? 0.4 : 0.0)),
+      ),
+      child: Text(
+        _featureDisplayName(feature),
+        style: TextStyle(
+          color: outlined
+              ? color.withValues(alpha: 0.7)
+              : color,
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
         ),
       ),
     );

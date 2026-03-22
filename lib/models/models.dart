@@ -776,6 +776,7 @@ class ClientConfig {
   // Preview mode state
   static bool _isPreviewMode = false;
   static AppUser? _savedAdminUser;
+  static String? _previewClientId; // tracks active preview owner; guards against stale dispose() calls
 
   static bool get isPreviewMode => _isPreviewMode;
 
@@ -962,19 +963,34 @@ class ClientConfig {
   }
 
   /// Enter preview mode — saves current admin state, sets client context.
+  /// Safe to call while already in preview (switching clients): preserves
+  /// the original admin user so exitPreview always restores correctly.
   static void enterPreview(Client client, AppUser tempUser) {
-    _savedAdminUser = _currentUser;
+    if (!_isPreviewMode) {
+      // Only save the real admin user on the first enter; sequential enters
+      // (e.g. switching clients before the old widget disposes) must not
+      // overwrite _savedAdminUser with a temp user.
+      _savedAdminUser = _currentUser;
+    }
     _currentClient = client;
     _currentUser = tempUser;
     _isPreviewMode = true;
+    _previewClientId = client.id;
   }
 
   /// Exit preview mode — restores admin state.
-  static void exitPreview() {
+  ///
+  /// Pass [clientId] when calling from a widget's dispose() so that stale
+  /// dispose calls (old widget disposed after new widget is already mounted)
+  /// do not clear the newly-set client context.
+  static void exitPreview({String? clientId}) {
+    // If a newer preview is already active, ignore this stale exit call.
+    if (clientId != null && _previewClientId != clientId) return;
     _currentUser = _savedAdminUser;
     _currentClient = null;
     _savedAdminUser = null;
     _isPreviewMode = false;
+    _previewClientId = null;
   }
 
   static void clear() {
@@ -982,6 +998,7 @@ class ClientConfig {
     _currentUser = null;
     _isPreviewMode = false;
     _savedAdminUser = null;
+    _previewClientId = null;
   }
 
   static String get currentUserName => _currentUser?.name ?? 'User';
