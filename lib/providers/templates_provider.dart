@@ -467,9 +467,27 @@ class TemplatesProvider extends ChangeNotifier {
       }));
 
       // Use adminClient to bypass RLS on per-client templates table writes.
-      await SupabaseService.adminClient
+      // Split into insert/update to avoid needing a unique constraint on meta_template_id.
+      final existingResponse = await SupabaseService.adminClient
           .from(tableName)
-          .upsert(rows, onConflict: 'meta_template_id');
+          .select('meta_template_id')
+          .eq('client_id', clientId);
+      final existingIds = (existingResponse as List)
+          .map((r) => r['meta_template_id'] as String)
+          .toSet();
+      final toInsert =
+          rows.where((r) => !existingIds.contains(r['meta_template_id'])).toList();
+      final toUpdate =
+          rows.where((r) => existingIds.contains(r['meta_template_id'])).toList();
+      if (toInsert.isNotEmpty) {
+        await SupabaseService.adminClient.from(tableName).insert(toInsert);
+      }
+      for (final row in toUpdate) {
+        await SupabaseService.adminClient
+            .from(tableName)
+            .update(row)
+            .eq('meta_template_id', row['meta_template_id'] as String);
+      }
 
       // Clean up stale rows — templates deleted from Meta but still in DB
       final validIds = rows.map((r) => r['meta_template_id'] as String).toSet();
@@ -563,9 +581,20 @@ class TemplatesProvider extends ChangeNotifier {
 
       debugPrint('[syncSingleTemplate] Upserting ${t.name} (display: ${displayName ?? t.name}, offer_image_url: ${row['offer_image_url'] ?? 'omitted'})');
       // Use adminClient to bypass RLS on per-client templates table writes.
-      await SupabaseService.adminClient
+      // Check existence first to avoid needing a unique constraint on meta_template_id.
+      final existingRow = await SupabaseService.adminClient
           .from(tableName)
-          .upsert(row, onConflict: 'meta_template_id');
+          .select('id')
+          .eq('meta_template_id', t.id)
+          .maybeSingle();
+      if (existingRow != null) {
+        await SupabaseService.adminClient
+            .from(tableName)
+            .update(row)
+            .eq('meta_template_id', t.id);
+      } else {
+        await SupabaseService.adminClient.from(tableName).insert(row);
+      }
 
       debugPrint('[syncSingleTemplate] Done');
       return null;

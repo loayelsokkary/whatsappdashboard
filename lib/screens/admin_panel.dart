@@ -8,13 +8,12 @@ import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import '../providers/admin_provider.dart';
 import '../services/supabase_service.dart';
-import '../providers/admin_analytics_provider.dart';
 import '../providers/agent_provider.dart';
-import '../providers/templates_provider.dart';
 import '../models/models.dart';
 import '../theme/vivid_theme.dart';
-import '../widgets/client_analytics_view.dart';
 import '../widgets/vivid_company_analytics_view.dart';
+import '../providers/roi_analytics_provider.dart';
+import 'analytics_screen.dart' as client_analytics;
 import '../utils/initials_helper.dart';
 import '../widgets/activity_logs_panel.dart';
 import '../widgets/command_center_tab.dart';
@@ -47,12 +46,16 @@ class AdminPanel extends StatefulWidget {
 
 class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 10, vsync: this);
-    
+    _tabController.addListener(() {
+      if (!_tabController.indexIsChanging) setState(() {});
+    });
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = context.read<AdminProvider>();
       provider.fetchClients();
@@ -70,39 +73,54 @@ class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateM
   @override
   Widget build(BuildContext context) {
     final vc = context.vividColors;
+    final isMobile = MediaQuery.of(context).size.width < 600;
+
+    final tabContent = TabBarView(
+      controller: _tabController,
+      children: [
+        CommandCenterTab(
+          onSelectClient: (client) {
+            _tabController.animateTo(1);
+            context.read<AdminProvider>().selectClient(client);
+          },
+        ),
+        _ClientsTab(
+          onViewAnalytics: (client) {
+            context.read<AdminProvider>().selectClient(client);
+            _tabController.animateTo(4);
+          },
+        ),
+        _UsersTab(),
+        const _AdminTemplatesTab(),
+        _AnalyticsTab(),
+        const VividCompanyAnalyticsView(),
+        const FinancialsTab(),
+        const ActivityLogsPanel(isAdmin: true),
+        const OutreachPanel(),
+        const SettingsTab(),
+      ],
+    );
+
+    if (isMobile) {
+      return Scaffold(
+        key: _scaffoldKey,
+        backgroundColor: vc.background,
+        drawer: _buildDrawer(),
+        body: Column(
+          children: [
+            _buildHeader(),
+            Expanded(child: tabContent),
+          ],
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: vc.background,
-      body: Column(
+      body: Row(
         children: [
-          _buildHeader(),
-          _buildTabs(),
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                CommandCenterTab(
-                  onSelectClient: (client) {
-                    _tabController.animateTo(1);
-                    context.read<AdminProvider>().selectClient(client);
-                  },
-                ),
-                _ClientsTab(
-                  onViewAnalytics: (client) {
-                    context.read<AdminProvider>().selectClient(client);
-                    _tabController.animateTo(4);
-                  },
-                ),
-                _UsersTab(),
-                const _AdminTemplatesTab(),
-                _AnalyticsTab(),
-                const VividCompanyAnalyticsView(),
-                const FinancialsTab(),
-                const ActivityLogsPanel(isAdmin: true),
-                const OutreachPanel(),
-                const SettingsTab(),
-              ],
-            ),
-          ),
+          _buildSidebar(vc),
+          Expanded(child: tabContent),
         ],
       ),
     );
@@ -131,6 +149,16 @@ class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateM
           ),
           child: Row(
             children: [
+              // Hamburger menu (mobile only)
+              if (isMobile) ...[
+                IconButton(
+                  onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+                  icon: Icon(Icons.menu, color: vc.textPrimary),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                ),
+                const SizedBox(width: 4),
+              ],
               // Logo
               Container(
                 padding: const EdgeInsets.all(8),
@@ -138,7 +166,7 @@ class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateM
                   gradient: VividColors.primaryGradient,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.admin_panel_settings, color: Colors.white, size: 24),
+                child: Image.asset('assets/images/vivid_icon_white.png', width: 28, height: 28),
               ),
               const SizedBox(width: 12),
 
@@ -287,50 +315,218 @@ class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateM
     );
   }
 
-  Widget _buildTabs() {
-    final vc = context.vividColors;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isMobile = constraints.maxWidth < 600;
+  // ── Sidebar (desktop) ───────────────────────────────
 
-        return Container(
-          color: vc.surface,
-          child: TabBar(
-            controller: _tabController,
-            indicatorColor: VividColors.cyan,
-            indicatorWeight: 3,
-            labelColor: VividColors.cyan,
-            unselectedLabelColor: vc.textMuted,
-            isScrollable: isMobile,
-            tabAlignment: isMobile ? TabAlignment.start : null,
-            tabs: isMobile
-                ? const [
-                    Tab(icon: Tooltip(message: 'Home', child: Icon(Icons.dashboard))),
-                    Tab(icon: Tooltip(message: 'Clients', child: Icon(Icons.business))),
-                    Tab(icon: Tooltip(message: 'Users', child: Icon(Icons.people))),
-                    Tab(icon: Tooltip(message: 'Templates', child: Icon(Icons.description))),
-                    Tab(icon: Tooltip(message: 'Client Analytics', child: Icon(Icons.insights))),
-                    Tab(icon: Tooltip(message: 'Vivid Analytics', child: Icon(Icons.auto_graph))),
-                    Tab(icon: Tooltip(message: 'Financials', child: Icon(Icons.account_balance_wallet))),
-                    Tab(icon: Tooltip(message: 'Activity Logs', child: Icon(Icons.history))),
-                    Tab(icon: Tooltip(message: 'Outreach', child: Icon(Icons.rocket_launch))),
-                    Tab(icon: Tooltip(message: 'Settings', child: Icon(Icons.settings))),
-                  ]
-                : const [
-                    Tab(icon: Icon(Icons.dashboard), text: 'Home'),
-                    Tab(icon: Icon(Icons.business), text: 'Clients'),
-                    Tab(icon: Icon(Icons.people), text: 'Users'),
-                    Tab(icon: Icon(Icons.description), text: 'Templates'),
-                    Tab(icon: Icon(Icons.insights), text: 'Client Analytics'),
-                    Tab(icon: Icon(Icons.auto_graph), text: 'Vivid Analytics'),
-                    Tab(icon: Icon(Icons.account_balance_wallet), text: 'Financials'),
-                    Tab(icon: Icon(Icons.history), text: 'Activity Logs'),
-                    Tab(icon: Icon(Icons.rocket_launch), text: 'Outreach'),
-                    Tab(icon: Icon(Icons.settings), text: 'Settings'),
+  Widget _buildSidebar(VividColorScheme vc) {
+    final agent = context.watch<AgentProvider>().agent;
+    return Container(
+      width: 220,
+      decoration: BoxDecoration(
+        color: const Color(0xFF0A1628),
+        border: Border(right: BorderSide(color: Colors.white.withOpacity(0.08))),
+      ),
+      child: Column(
+        children: [
+          // Logo + title
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    gradient: VividColors.primaryGradient,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Image.asset('assets/images/vivid_icon_white.png', width: 28, height: 28),
+                ),
+                const SizedBox(width: 10),
+                const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Vivid Admin', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+                    Text('Management', style: TextStyle(color: Colors.white38, fontSize: 11)),
                   ],
+                ),
+              ],
+            ),
           ),
-        );
-      },
+          Divider(color: Colors.white.withOpacity(0.08), height: 1),
+          const SizedBox(height: 8),
+          // Nav items
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Column(
+                children: [
+                  _sidebarItem(0, Icons.dashboard, 'Home'),
+                  _sidebarItem(1, Icons.business, 'Clients'),
+                  _sidebarItem(2, Icons.people, 'Users'),
+                  _sidebarItem(3, Icons.description, 'Templates'),
+                  _sidebarItem(4, Icons.insights, 'Client Analytics'),
+                  _sidebarItem(5, Icons.auto_graph, 'Vivid Analytics'),
+                  _sidebarItem(6, Icons.account_balance_wallet, 'Financials'),
+                  _sidebarItem(7, Icons.history, 'Activity Logs'),
+                  _sidebarItem(8, Icons.rocket_launch, 'Outreach'),
+                  _sidebarItem(9, Icons.settings, 'Settings'),
+                ],
+              ),
+            ),
+          ),
+          // Preview + user info + logout
+          Divider(color: Colors.white.withOpacity(0.08), height: 1),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              children: [
+                _buildPreviewButton(false),
+                if (agent != null) ...[
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 14,
+                        backgroundColor: VividColors.brightBlue.withOpacity(0.2),
+                        child: Text(
+                          agent.initials,
+                          style: const TextStyle(color: VividColors.cyan, fontSize: 11, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          agent.name,
+                          style: const TextStyle(color: Colors.white70, fontSize: 12),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => context.read<AgentProvider>().logout(),
+                        icon: const Icon(Icons.logout, color: Colors.white38, size: 18),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        tooltip: 'Logout',
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Drawer (mobile) ─────────────────────────────────
+
+  Widget _buildDrawer() {
+    final agent = context.watch<AgentProvider>().agent;
+    return Drawer(
+      backgroundColor: const Color(0xFF0A1628),
+      child: Column(
+        children: [
+          DrawerHeader(
+            decoration: const BoxDecoration(color: Color(0xFF0A1628)),
+            margin: EdgeInsets.zero,
+            padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    gradient: VividColors.primaryGradient,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Image.asset('assets/images/vivid_icon_white.png', width: 28, height: 28),
+                ),
+                const SizedBox(width: 10),
+                const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Vivid Admin', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                    Text('Management', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Column(
+                children: [
+                  _sidebarItem(0, Icons.dashboard, 'Home'),
+                  _sidebarItem(1, Icons.business, 'Clients'),
+                  _sidebarItem(2, Icons.people, 'Users'),
+                  _sidebarItem(3, Icons.description, 'Templates'),
+                  _sidebarItem(4, Icons.insights, 'Client Analytics'),
+                  _sidebarItem(5, Icons.auto_graph, 'Vivid Analytics'),
+                  _sidebarItem(6, Icons.account_balance_wallet, 'Financials'),
+                  _sidebarItem(7, Icons.history, 'Activity Logs'),
+                  _sidebarItem(8, Icons.rocket_launch, 'Outreach'),
+                  _sidebarItem(9, Icons.settings, 'Settings'),
+                ],
+              ),
+            ),
+          ),
+          Divider(color: Colors.white.withOpacity(0.08), height: 1),
+          if (agent != null)
+            ListTile(
+              leading: CircleAvatar(
+                radius: 14,
+                backgroundColor: VividColors.brightBlue.withOpacity(0.2),
+                child: Text(agent.initials, style: const TextStyle(color: VividColors.cyan, fontSize: 11, fontWeight: FontWeight.w600)),
+              ),
+              title: Text(agent.name, style: const TextStyle(color: Colors.white70, fontSize: 13)),
+              trailing: IconButton(
+                onPressed: () => context.read<AgentProvider>().logout(),
+                icon: const Icon(Icons.logout, color: Colors.white38, size: 18),
+              ),
+            ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  // ── Sidebar item ─────────────────────────────────────
+
+  Widget _sidebarItem(int index, IconData icon, String label) {
+    final isSelected = _tabController.index == index;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () {
+            _tabController.animateTo(index);
+            Scaffold.maybeOf(context)?.closeDrawer();
+            setState(() {});
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              color: isSelected ? const Color(0xFF22D3EE).withOpacity(0.1) : Colors.transparent,
+            ),
+            child: Row(
+              children: [
+                Icon(icon, size: 20, color: isSelected ? const Color(0xFF22D3EE) : Colors.white54),
+                const SizedBox(width: 12),
+                Text(label, style: TextStyle(
+                  fontSize: 13,
+                  color: isSelected ? const Color(0xFF22D3EE) : Colors.white70,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                )),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -5609,7 +5805,7 @@ class _AnalyticsTabState extends State<_AnalyticsTab> {
                         ],
                       ),
                     ),
-                    Expanded(child: ClientAnalyticsView(client: _selectedClient!)),
+                    Expanded(child: _ClientAnalyticsWrapper(key: ValueKey(_selectedClient!.id), client: _selectedClient!)),
                   ],
                 );
               }
@@ -5712,7 +5908,7 @@ class _AnalyticsTabState extends State<_AnalyticsTab> {
                 Expanded(
                   child: _selectedClient == null
                       ? _buildEmptyState(context)
-                      : ClientAnalyticsView(client: _selectedClient!),
+                      : _ClientAnalyticsWrapper(key: ValueKey(_selectedClient!.id), client: _selectedClient!),
                 ),
               ],
             );
@@ -5751,6 +5947,115 @@ class _AnalyticsTabState extends State<_AnalyticsTab> {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Client Analytics Wrapper — renders the EXACT client-facing AnalyticsScreen
+// by temporarily setting ClientConfig to the selected client.
+// ─────────────────────────────────────────────────────────────────────────────
+class _ClientAnalyticsWrapper extends StatefulWidget {
+  final Client client;
+  const _ClientAnalyticsWrapper({super.key, required this.client});
+
+  @override
+  State<_ClientAnalyticsWrapper> createState() =>
+      _ClientAnalyticsWrapperState();
+}
+
+class _ClientAnalyticsWrapperState extends State<_ClientAnalyticsWrapper> {
+  @override
+  void initState() {
+    super.initState();
+    _enterPreview(widget.client);
+  }
+
+  @override
+  void didUpdateWidget(_ClientAnalyticsWrapper oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.client.id != widget.client.id) {
+      ClientConfig.exitPreview();
+      _enterPreview(widget.client);
+    }
+  }
+
+  @override
+  void dispose() {
+    ClientConfig.exitPreview();
+    super.dispose();
+  }
+
+  void _enterPreview(Client client) {
+    final adminUser = ClientConfig.currentUser;
+    final tempUser = adminUser != null
+        ? AppUser(
+            id: adminUser.id,
+            email: adminUser.email,
+            name: '${adminUser.name} (viewing ${client.name})',
+            role: UserRole.admin,
+            clientId: client.id,
+            createdAt: adminUser.createdAt,
+          )
+        : AppUser(
+            id: 'admin',
+            email: 'admin@vivid.com',
+            name: 'Admin',
+            role: UserRole.admin,
+            clientId: client.id,
+            createdAt: DateTime.now(),
+          );
+    ClientConfig.enterPreview(client, tempUser);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        // "Viewing as" banner
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          color: VividColors.cyan.withValues(alpha: 0.08),
+          child: Row(
+            children: [
+              const Icon(Icons.visibility_outlined,
+                  size: 14, color: VividColors.cyan),
+              const SizedBox(width: 6),
+              Text(
+                'Viewing as: ${widget.client.name}',
+                style: const TextStyle(
+                    color: VividColors.cyan,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: VividColors.cyan.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                      color: VividColors.cyan.withValues(alpha: 0.4)),
+                ),
+                child: const Text('Client View',
+                    style: TextStyle(
+                        color: VividColors.cyan,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+        ),
+        // Client-facing analytics screen with its own fresh provider
+        Expanded(
+          child: ChangeNotifierProvider(
+            create: (_) => RoiAnalyticsProvider(),
+            child: const client_analytics.AnalyticsScreen(),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -6496,92 +6801,239 @@ class _AdminTemplatesTab extends StatefulWidget {
 }
 
 class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
-  List<WhatsAppTemplate> _templates = [];
-  bool _isLoading = false;
-  String? _error;
+  Client? _selectedTemplateClient;
+  List<Map<String, dynamic>> _clientTemplates = [];
+  bool _isLoadingTemplates = false;
+  String? _templateError;
   String _search = '';
   String? _statusFilter;
   String? _categoryFilter;
-  WhatsAppTemplate? _selected;
+  Map<String, dynamic>? _selected;
   bool _isDeleting = false;
   bool _isSyncingAll = false;
-
-  /// Maps normalized prefix → Client for badge display
-  Map<String, Client> _prefixMap = {};
-
-  void _buildPrefixMap() {
-    final clients = context.read<AdminProvider>().clients;
-    final map = <String, Client>{};
-    for (final c in clients) {
-      final p = '${TemplatesProvider.normalizeSlug(c.slug)}_';
-      if (p.length > 1) map[p] = c;
-    }
-    _prefixMap = map;
-  }
-
-  String? _clientForTemplate(String templateName) {
-    for (final entry in _prefixMap.entries) {
-      if (templateName.startsWith(entry.key)) return entry.value.name;
-    }
-    return null;
-  }
-
-  static String get _baseUrl =>
-      'https://graph.facebook.com/${SupabaseService.metaApiVersion}';
-
-  Map<String, String> get _headers => {
-        'Authorization': 'Bearer ${SupabaseService.metaAccessToken}',
-        'Content-Type': 'application/json',
-      };
 
   @override
   void initState() {
     super.initState();
-    _fetchTemplates();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final clients = context.read<AdminProvider>().clients;
+      if (clients.isNotEmpty) _loadClientTemplates(clients.first);
+    });
   }
 
-  Future<void> _fetchTemplates() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
-    try {
-      final all = <WhatsAppTemplate>[];
-      String? nextUrl =
-          '$_baseUrl/${SupabaseService.metaWabaId}/message_templates?limit=100&fields=id,name,status,language,category,components';
-
-      while (nextUrl != null) {
-        final response = await http.get(Uri.parse(nextUrl), headers: _headers);
-        if (response.statusCode != 200) {
-          final body = jsonDecode(response.body) as Map<String, dynamic>;
-          final err = body['error'] as Map<String, dynamic>?;
-          throw Exception(err?['message'] ?? 'HTTP ${response.statusCode}');
-        }
+  /// Fetch templates from Meta API for a given WABA. Returns raw JSON maps.
+  Future<List<Map<String, dynamic>>> _fetchMetaTemplates(
+      String wabaId, String token) async {
+    final baseUrl =
+        'https://graph.facebook.com/${SupabaseService.metaApiVersion}';
+    final headers = {
+      'Authorization': 'Bearer $token',
+      'Content-Type': 'application/json',
+    };
+    final all = <Map<String, dynamic>>[];
+    String? nextUrl =
+        '$baseUrl/$wabaId/message_templates?limit=100&fields=id,name,status,language,category,components';
+    while (nextUrl != null) {
+      final response = await http.get(Uri.parse(nextUrl), headers: headers);
+      if (response.statusCode != 200) {
         final body = jsonDecode(response.body) as Map<String, dynamic>;
-        final data = body['data'] as List<dynamic>? ?? [];
-        for (final item in data) {
-          all.add(WhatsAppTemplate.fromJson(item as Map<String, dynamic>));
+        final err = body['error'] as Map<String, dynamic>?;
+        throw Exception(err?['message'] ?? 'HTTP ${response.statusCode}');
+      }
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      final data = body['data'] as List<dynamic>? ?? [];
+      for (final item in data) {
+        all.add(item as Map<String, dynamic>);
+      }
+      final paging = body['paging'] as Map<String, dynamic>?;
+      final next = paging?['next'] as String?;
+      nextUrl = (next != null && next.isNotEmpty) ? next : null;
+    }
+    return all;
+  }
+
+  /// Load templates for a client from its Supabase table.
+  Future<void> _loadClientTemplates(Client client) async {
+    setState(() {
+      _selectedTemplateClient = client;
+      _isLoadingTemplates = true;
+      _templateError = null;
+      _selected = null;
+    });
+
+    final table = client.templatesTable;
+    if (table == null || table.isEmpty) {
+      setState(() {
+        _clientTemplates = [];
+        _isLoadingTemplates = false;
+        _templateError = 'No templates table configured for ${client.name}';
+      });
+      return;
+    }
+
+    try {
+      final response = await SupabaseService.adminClient
+          .from(table)
+          .select()
+          .order('template_name');
+
+      final templates = (response as List).cast<Map<String, dynamic>>();
+      debugPrint(
+          'ADMIN_TEMPLATES: loaded ${templates.length} templates from $table');
+
+      // Debug HOB contamination
+      if (client.slug.toLowerCase().contains('hob')) {
+        for (final t in templates) {
+          final name = t['template_name'] as String? ?? '';
+          if (!name.startsWith('hob_') && !name.startsWith('HOB_')) {
+            debugPrint('HOB_CONTAMINATION: foreign template in table: $name');
+          }
         }
-        final paging = body['paging'] as Map<String, dynamic>?;
-        final next = paging?['next'] as String?;
-        nextUrl = (next != null && next.isNotEmpty) ? next : null;
       }
 
-      all.sort((a, b) => a.name.compareTo(b.name));
-      debugPrint('ADMIN_TEMPLATES: fetched ${all.length} templates from Meta API');
       if (mounted) {
-        _buildPrefixMap();
-        setState(() => _templates = all);
+        setState(() {
+          _clientTemplates = templates;
+          _isLoadingTemplates = false;
+        });
       }
     } catch (e) {
-      debugPrint('ADMIN_TEMPLATES: error: $e');
-      if (mounted) setState(() => _error = e.toString());
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+      debugPrint('ADMIN_TEMPLATES: load error: $e');
+      if (mounted) {
+        setState(() {
+          _templateError = e.toString();
+          _isLoadingTemplates = false;
+        });
+      }
     }
   }
 
-  Future<void> _deleteTemplate(WhatsAppTemplate t) async {
+  /// Fetch from Meta for this client's WABA, upsert into its table, then reload.
+  Future<void> _refreshFromMeta(Client client) async {
+    final table = client.templatesTable;
+    if (table == null || table.isEmpty) {
+      VividToast.show(context,
+          message: 'No templates table for ${client.name}',
+          type: ToastType.error);
+      return;
+    }
+
+    setState(() => _isLoadingTemplates = true);
+    try {
+      final wabaId = client.wabaId ?? SupabaseService.metaWabaId;
+      final token =
+          client.metaAccessToken ?? SupabaseService.metaAccessToken;
+
+      final metaTemplates = await _fetchMetaTemplates(wabaId, token);
+      debugPrint(
+          'ADMIN_TEMPLATES: fetched ${metaTemplates.length} from Meta for ${client.name}');
+
+      final now = DateTime.now().toIso8601String();
+      final toInsert = <Map<String, dynamic>>[];
+      final toUpdate = <Map<String, dynamic>>[];
+
+      for (final raw in metaTemplates) {
+        final t = WhatsAppTemplate.fromJson(raw);
+        final varCount =
+            RegExp(r'\{\{\d+\}\}').allMatches(t.body).length;
+
+        // Preserve existing labels/sources/image; non-null means row exists
+        final existing = await SupabaseService.adminClient
+            .from(table)
+            .select(
+                'body_variable_labels, body_variable_sources, offer_image_url')
+            .eq('template_name', t.name)
+            .eq('client_id', client.id)
+            .maybeSingle();
+
+        final existingLabels = existing?['body_variable_labels'];
+        final hasLabels = existingLabels is List &&
+            existingLabels.isNotEmpty &&
+            existingLabels
+                .any((l) => (l as String?)?.trim().isNotEmpty == true);
+        final labels = hasLabels
+            ? List<String>.from(existingLabels)
+            : List.generate(varCount, (i) => 'Variable ${i + 1}');
+
+        final existingSources = existing?['body_variable_sources'];
+        final hasSources =
+            existingSources is List && existingSources.isNotEmpty;
+        final sources = hasSources
+            ? List<String>.from(existingSources)
+            : List.generate(varCount, (_) => 'customer_data');
+
+        final existingImageUrl = existing?['offer_image_url'] as String?;
+        final offerImageUrl = (existingImageUrl != null &&
+                existingImageUrl.contains('supabase.co/storage') &&
+                !existingImageUrl.contains('scontent'))
+            ? existingImageUrl
+            : null;
+
+        final headerType =
+            t.headerType.toLowerCase() == 'none' ? 'none' : t.headerType.toLowerCase();
+
+        final row = {
+          'meta_template_id': t.id,
+          'client_id': client.id,
+          'template_name': t.name,
+          'display_name': t.name,
+          'language_code': t.language,
+          'category': t.category,
+          'status': t.status,
+          'header_type': headerType,
+          'header_text': t.headerText,
+          'header_media_url': null,
+          'header_has_variable': false,
+          'body_text': t.body,
+          'body_variable_count': varCount,
+          'body_variable_labels': labels,
+          'body_variable_descriptions': labels,
+          'body_variable_sources': sources,
+          'buttons':
+              t.buttons.map((b) => {'type': b.type, 'text': b.text}).toList(),
+          'button_count': t.buttons.length,
+          'is_active': t.status == 'APPROVED',
+          'updated_at': now,
+          'offer_image_url': offerImageUrl,
+        };
+
+        if (existing != null) {
+          toUpdate.add(row);
+        } else {
+          toInsert.add(row);
+        }
+      }
+
+      if (toInsert.isNotEmpty) {
+        await SupabaseService.adminClient.from(table).insert(toInsert);
+      }
+      for (final row in toUpdate) {
+        await SupabaseService.adminClient
+            .from(table)
+            .update(row)
+            .eq('meta_template_id', row['meta_template_id'] as String);
+      }
+
+      await _loadClientTemplates(client);
+
+      if (mounted) {
+        VividToast.show(context,
+            message:
+                'Refreshed ${toInsert.length + toUpdate.length} templates for ${client.name}',
+            type: ToastType.success);
+      }
+    } catch (e) {
+      debugPrint('ADMIN_TEMPLATES: refresh error: $e');
+      if (mounted) {
+        setState(() => _isLoadingTemplates = false);
+        VividToast.show(context,
+            message: 'Refresh failed: $e', type: ToastType.error);
+      }
+    }
+  }
+
+  Future<void> _deleteTemplate(Map<String, dynamic> t) async {
+    final templateName = t['template_name'] as String? ?? '';
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) {
@@ -6590,7 +7042,7 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
           backgroundColor: vc.surface,
           title: Text('Delete Template', style: TextStyle(color: vc.textPrimary)),
           content: Text(
-            "Delete '${t.name}'? This will remove it from your WhatsApp Business Account and all client tables.",
+            "Delete '$templateName'? This will remove it from your WhatsApp Business Account and the client table.",
             style: TextStyle(color: vc.textSecondary),
           ),
           actions: [
@@ -6611,180 +7063,185 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
 
     setState(() => _isDeleting = true);
     try {
+      final wabaId =
+          _selectedTemplateClient?.wabaId ?? SupabaseService.metaWabaId;
+      final token = _selectedTemplateClient?.metaAccessToken ??
+          SupabaseService.metaAccessToken;
+      final baseUrl =
+          'https://graph.facebook.com/${SupabaseService.metaApiVersion}';
+
       // Step 1: Delete from Meta API
       final uri = Uri.parse(
-        '$_baseUrl/${SupabaseService.metaWabaId}/message_templates?name=${t.name}',
-      );
-      final response = await http.delete(uri, headers: _headers);
+          '$baseUrl/$wabaId/message_templates?name=$templateName');
+      final response = await http.delete(uri, headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      });
       if (response.statusCode != 200) {
         final decoded = jsonDecode(response.body) as Map<String, dynamic>;
         final err = decoded['error'] as Map<String, dynamic>?;
         throw Exception(err?['message'] ?? 'Failed (${response.statusCode})');
       }
 
-      // Step 2: Delete from all client Supabase tables
-      final clients = context.read<AdminProvider>().clients;
-      int cleaned = 0;
-      for (final c in clients) {
-        if (c.templatesTable != null && c.templatesTable!.isNotEmpty) {
-          try {
-            await SupabaseService.adminClient
-                .from(c.templatesTable!)
-                .delete()
-                .eq('template_name', t.name);
-            cleaned++;
-          } catch (_) {
-            // Table may not exist or row may not exist — skip
-          }
-        }
+      // Step 2: Delete from current client's Supabase table
+      final table = _selectedTemplateClient?.templatesTable;
+      if (table != null && table.isNotEmpty) {
+        await SupabaseService.adminClient
+            .from(table)
+            .delete()
+            .eq('template_name', templateName);
       }
 
-      debugPrint('ADMIN_TEMPLATES: deleted "${t.name}" from Meta + $cleaned client tables');
+      debugPrint('ADMIN_TEMPLATES: deleted "$templateName"');
       if (mounted) {
         setState(() {
-          _templates.removeWhere((x) => x.name == t.name);
-          if (_selected?.name == t.name) _selected = null;
+          _clientTemplates
+              .removeWhere((x) => x['template_name'] == templateName);
+          if (_selected?['template_name'] == templateName) _selected = null;
         });
         VividToast.show(context,
-            message: 'Template deleted from Meta + $cleaned client table${cleaned == 1 ? '' : 's'}',
+            message: 'Template "$templateName" deleted',
             type: ToastType.success);
       }
     } catch (e) {
       debugPrint('ADMIN_TEMPLATES: delete error: $e');
       if (mounted) {
-        VividToast.show(context, message: 'Delete failed: $e', type: ToastType.error);
+        VividToast.show(context,
+            message: 'Delete failed: $e', type: ToastType.error);
       }
     } finally {
       if (mounted) setState(() => _isDeleting = false);
     }
   }
 
-  Future<void> _syncToAllClients() async {
+  /// Sync all clients — each uses its own WABA.
+  Future<void> _syncAllClients() async {
     setState(() => _isSyncingAll = true);
     try {
       final clients = context.read<AdminProvider>().clients;
-      final now = DateTime.now().toIso8601String();
       int synced = 0;
 
       for (final client in clients) {
         final table = client.templatesTable;
         if (table == null || table.isEmpty) continue;
 
-        final clientPrefix = '${TemplatesProvider.normalizeSlug(client.slug)}_';
-        // Build set of OTHER client prefixes
-        final otherPrefixes = <String>{};
-        for (final c in clients) {
-          final p = '${TemplatesProvider.normalizeSlug(c.slug)}_';
-          if (p != clientPrefix && p.length > 1) otherPrefixes.add(p);
-        }
+        try {
+          final wabaId = client.wabaId ?? SupabaseService.metaWabaId;
+          final token =
+              client.metaAccessToken ?? SupabaseService.metaAccessToken;
 
-        final rows = <Map<String, dynamic>>[];
-        for (final t in _templates) {
-          String displayName;
-          if (clientPrefix.length > 1 && t.name.startsWith(clientPrefix)) {
-            // This client's template
-            displayName = t.name.substring(clientPrefix.length);
-          } else if (otherPrefixes.any((p) => t.name.startsWith(p))) {
-            // Another client's template — skip
-            continue;
-          } else {
-            // Global template
-            displayName = t.name;
+          final metaTemplates = await _fetchMetaTemplates(wabaId, token);
+          final now = DateTime.now().toIso8601String();
+          final rows = <Map<String, dynamic>>[];
+
+          for (final raw in metaTemplates) {
+            final t = WhatsAppTemplate.fromJson(raw);
+            final varCount =
+                RegExp(r'\{\{\d+\}\}').allMatches(t.body).length;
+            final headerType = t.headerType.toLowerCase() == 'none'
+                ? 'none'
+                : t.headerType.toLowerCase();
+            rows.add({
+              'meta_template_id': t.id,
+              'client_id': client.id,
+              'template_name': t.name,
+              'display_name': t.name,
+              'language_code': t.language,
+              'category': t.category,
+              'status': t.status,
+              'header_type': headerType,
+              'header_text': t.headerText,
+              'header_media_url': null,
+              'header_has_variable': false,
+              'body_text': t.body,
+              'body_variable_count': varCount,
+              'body_variable_labels':
+                  List.generate(varCount, (i) => 'Variable ${i + 1}'),
+              'body_variable_descriptions':
+                  List.generate(varCount, (i) => 'Variable ${i + 1}'),
+              'body_variable_sources':
+                  List.generate(varCount, (_) => 'customer_data'),
+              'buttons': t.buttons
+                  .map((b) => {'type': b.type, 'text': b.text})
+                  .toList(),
+              'button_count': t.buttons.length,
+              'is_active': t.status == 'APPROVED',
+              'updated_at': now,
+            });
           }
 
-          // Read existing row to preserve labels/sources/image
-          final existing = await SupabaseService.adminClient
-              .from(table)
-              .select('body_variable_labels, body_variable_sources, offer_image_url')
-              .eq('template_name', t.name)
-              .eq('client_id', client.id)
-              .maybeSingle();
-
-          final varCount = RegExp(r'\{\{\d+\}\}').allMatches(t.body).length;
-
-          final existingLabels = existing?['body_variable_labels'];
-          final hasLabels = existingLabels is List && existingLabels.isNotEmpty &&
-              existingLabels.any((l) => (l as String?)?.trim().isNotEmpty == true);
-          final labels = hasLabels
-              ? List<String>.from(existingLabels)
-              : List.generate(varCount, (i) => 'Variable ${i + 1}');
-
-          final existingSources = existing?['body_variable_sources'];
-          final hasSources = existingSources is List && existingSources.isNotEmpty;
-          final sources = hasSources
-              ? List<String>.from(existingSources)
-              : List.generate(varCount, (_) => 'customer_data');
-
-          final existingImageUrl = existing?['offer_image_url'] as String?;
-          final offerImageUrl = (existingImageUrl != null &&
-                  existingImageUrl.contains('supabase.co/storage') &&
-                  !existingImageUrl.contains('scontent'))
-              ? existingImageUrl
-              : null;
-
-          final headerType = t.headerType.toLowerCase() == 'none'
-              ? 'none'
-              : t.headerType.toLowerCase();
-
-          rows.add({
-            'meta_template_id': t.id,
-            'client_id': client.id,
-            'template_name': t.name,
-            'display_name': displayName,
-            'language_code': t.language,
-            'category': t.category,
-            'status': t.status,
-            'header_type': headerType,
-            'header_text': t.headerText,
-            'header_media_url': null,
-            'header_has_variable': false,
-            'body_text': t.body,
-            'body_variable_count': varCount,
-            'body_variable_labels': labels,
-            'body_variable_descriptions': labels,
-            'body_variable_sources': sources,
-            'buttons': t.buttons.map((b) => {'type': b.type, 'text': b.text}).toList(),
-            'button_count': t.buttons.length,
-            'is_active': t.status == 'APPROVED',
-            'updated_at': now,
-            'offer_image_url': offerImageUrl,
-          });
+          if (rows.isNotEmpty) {
+            final existingResponse = await SupabaseService.adminClient
+                .from(table)
+                .select('meta_template_id');
+            final existingIds = (existingResponse as List)
+                .map((r) => r['meta_template_id'] as String)
+                .toSet();
+            final toInsert = rows
+                .where((r) => !existingIds.contains(r['meta_template_id']))
+                .toList();
+            final toUpdate = rows
+                .where((r) => existingIds.contains(r['meta_template_id']))
+                .toList();
+            if (toInsert.isNotEmpty) {
+              await SupabaseService.adminClient.from(table).insert(toInsert);
+            }
+            for (final row in toUpdate) {
+              await SupabaseService.adminClient
+                  .from(table)
+                  .update(row)
+                  .eq('meta_template_id', row['meta_template_id'] as String);
+            }
+            synced++;
+          }
+        } catch (e) {
+          debugPrint(
+              'ADMIN_TEMPLATES: sync error for ${client.name}: $e');
         }
+      }
 
-        if (rows.isNotEmpty) {
-          await SupabaseService.adminClient
-              .from(table)
-              .upsert(rows, onConflict: 'meta_template_id');
-          synced++;
-        }
+      // Reload current client
+      if (_selectedTemplateClient != null && mounted) {
+        await _loadClientTemplates(_selectedTemplateClient!);
       }
 
       if (mounted) {
         VividToast.show(context,
-            message: 'Synced templates to $synced client${synced == 1 ? '' : 's'}',
+            message:
+                'Synced all templates for $synced client${synced == 1 ? '' : 's'}',
             type: ToastType.success);
       }
     } catch (e) {
       debugPrint('ADMIN_TEMPLATES: sync all error: $e');
       if (mounted) {
-        VividToast.show(context, message: 'Sync failed: $e', type: ToastType.error);
+        VividToast.show(context,
+            message: 'Sync failed: $e', type: ToastType.error);
       }
     } finally {
       if (mounted) setState(() => _isSyncingAll = false);
     }
   }
 
-  List<WhatsAppTemplate> get _filtered {
-    var list = _templates;
+  List<Map<String, dynamic>> get _filtered {
+    var list = _clientTemplates;
     if (_statusFilter != null) {
-      list = list.where((t) => t.status.toUpperCase() == _statusFilter).toList();
+      list = list
+          .where((t) =>
+              (t['status'] as String? ?? '').toUpperCase() == _statusFilter)
+          .toList();
     }
     if (_categoryFilter != null) {
-      list = list.where((t) => t.category.toUpperCase() == _categoryFilter).toList();
+      list = list
+          .where((t) =>
+              (t['category'] as String? ?? '').toUpperCase() == _categoryFilter)
+          .toList();
     }
     if (_search.isNotEmpty) {
       final q = _search.toLowerCase();
-      list = list.where((t) => t.name.toLowerCase().contains(q)).toList();
+      list = list
+          .where((t) =>
+              (t['template_name'] as String? ?? '').toLowerCase().contains(q))
+          .toList();
     }
     return list;
   }
@@ -6792,37 +7249,142 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
   @override
   Widget build(BuildContext context) {
     final vc = context.vividColors;
-    return Column(
+    final clients = context.watch<AdminProvider>().clients;
+    return Row(
       children: [
-        _buildHeader(vc),
-        _buildFilters(vc),
+        _buildClientList(vc, clients),
+        Container(width: 1, color: vc.border),
         Expanded(
-          child: _isLoading
-              ? const Center(child: CircularProgressIndicator(color: VividColors.cyan))
-              : _error != null
-                  ? Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.error_outline, color: VividColors.statusUrgent, size: 40),
-                          const SizedBox(height: 8),
-                          Text(_error!, style: TextStyle(color: vc.textMuted, fontSize: 13)),
-                          const SizedBox(height: 12),
-                          OutlinedButton(
-                            onPressed: _fetchTemplates,
-                            child: const Text('Retry'),
-                          ),
-                        ],
-                      ),
-                    )
-                  : Row(
-                      children: [
-                        Expanded(child: _buildGrid(vc)),
-                        if (_selected != null) _buildPreview(vc),
-                      ],
-                    ),
+          child: Column(
+            children: [
+              _buildHeader(vc),
+              _buildFilters(vc),
+              Expanded(
+                child: _isLoadingTemplates
+                    ? const Center(
+                        child: CircularProgressIndicator(
+                            color: VividColors.cyan))
+                    : _templateError != null
+                        ? Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.error_outline,
+                                    color: VividColors.statusUrgent, size: 40),
+                                const SizedBox(height: 8),
+                                Text(_templateError!,
+                                    style: TextStyle(
+                                        color: vc.textMuted, fontSize: 13)),
+                                const SizedBox(height: 12),
+                                OutlinedButton(
+                                  onPressed: _selectedTemplateClient != null
+                                      ? () => _loadClientTemplates(
+                                          _selectedTemplateClient!)
+                                      : null,
+                                  child: const Text('Retry'),
+                                ),
+                              ],
+                            ),
+                          )
+                        : _selectedTemplateClient == null
+                            ? Center(
+                                child: Text(
+                                  'Select a client to view templates',
+                                  style: TextStyle(
+                                      color: vc.textMuted, fontSize: 14),
+                                ),
+                              )
+                            : Row(
+                                children: [
+                                  Expanded(child: _buildGrid(vc)),
+                                  if (_selected != null) _buildPreview(vc),
+                                ],
+                              ),
+              ),
+            ],
+          ),
         ),
       ],
+    );
+  }
+
+  Widget _buildClientList(VividColorScheme vc, List<Client> clients) {
+    return Container(
+      width: 200,
+      color: vc.surface,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(
+              'CLIENTS',
+              style: TextStyle(
+                  color: vc.textMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.5),
+            ),
+          ),
+          Expanded(
+            child: ListView.builder(
+              itemCount: clients.length,
+              itemBuilder: (context, i) {
+                final client = clients[i];
+                final isSelected =
+                    _selectedTemplateClient?.id == client.id;
+                return InkWell(
+                  onTap: () => _loadClientTemplates(client),
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? VividColors.cyan.withValues(alpha: 0.1)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border(
+                        left: BorderSide(
+                          color: isSelected
+                              ? VividColors.cyan
+                              : Colors.transparent,
+                          width: 3,
+                        ),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          client.name,
+                          style: TextStyle(
+                            color: isSelected
+                                ? VividColors.cyan
+                                : vc.textPrimary,
+                            fontSize: 13,
+                            fontWeight: isSelected
+                                ? FontWeight.w600
+                                : FontWeight.w500,
+                          ),
+                        ),
+                        if (client.templatesTable != null)
+                          Text(
+                            client.templatesTable!,
+                            style:
+                                TextStyle(color: vc.textMuted, fontSize: 10),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -6833,11 +7395,17 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
         children: [
           Icon(Icons.description, color: VividColors.cyan, size: 20),
           const SizedBox(width: 8),
-          Text('WhatsApp Templates',
-              style: TextStyle(color: vc.textPrimary, fontSize: 18, fontWeight: FontWeight.w700)),
+          Text(
+            _selectedTemplateClient != null
+                ? '${_selectedTemplateClient!.name} Templates'
+                : 'WhatsApp Templates',
+            style: TextStyle(
+                color: vc.textPrimary,
+                fontSize: 18,
+                fontWeight: FontWeight.w700)),
           const SizedBox(width: 12),
-          if (!_isLoading)
-            Text('${_templates.length} total',
+          if (!_isLoadingTemplates && _selectedTemplateClient != null)
+            Text('${_clientTemplates.length} total',
                 style: TextStyle(color: vc.textMuted, fontSize: 13)),
           const Spacer(),
           SizedBox(
@@ -6884,9 +7452,9 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
                   width: 20, height: 20,
                   child: CircularProgressIndicator(strokeWidth: 2, color: VividColors.cyan))
               : OutlinedButton.icon(
-                  onPressed: _isLoading ? null : _syncToAllClients,
+                  onPressed: _isLoadingTemplates ? null : _syncAllClients,
                   icon: const Icon(Icons.sync, size: 16),
-                  label: const Text('Sync to All Clients'),
+                  label: const Text('Sync All Clients'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: VividColors.statusSuccess,
                     side: const BorderSide(color: VividColors.statusSuccess),
@@ -6895,17 +7463,22 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
                   ),
                 ),
           const SizedBox(width: 8),
-          OutlinedButton.icon(
-            onPressed: _isLoading ? null : _fetchTemplates,
-            icon: const Icon(Icons.refresh, size: 16),
-            label: const Text('Refresh'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: VividColors.cyan,
-              side: const BorderSide(color: VividColors.cyan),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+          if (_selectedTemplateClient != null)
+            OutlinedButton.icon(
+              onPressed: _isLoadingTemplates
+                  ? null
+                  : () => _refreshFromMeta(_selectedTemplateClient!),
+              icon: const Icon(Icons.refresh, size: 16),
+              label: const Text('Refresh from Meta'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: VividColors.cyan,
+                side: const BorderSide(color: VividColors.cyan),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                textStyle:
+                    const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -6987,7 +7560,7 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
             Icon(Icons.description_outlined, color: vc.textMuted, size: 48),
             const SizedBox(height: 8),
             Text(
-              _templates.isEmpty ? 'No templates found' : 'No templates match filters',
+              _clientTemplates.isEmpty ? 'No templates found' : 'No templates match filters',
               style: TextStyle(color: vc.textMuted, fontSize: 14),
             ),
           ],
@@ -7018,13 +7591,29 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
     );
   }
 
-  Widget _buildCard(VividColorScheme vc, WhatsAppTemplate t) {
-    final isSelected = _selected?.id == t.id;
-    final (statusColor, statusLabel) = switch (t.status.toUpperCase()) {
+  Widget _buildCard(VividColorScheme vc, Map<String, dynamic> t) {
+    final name = t['template_name'] as String? ?? '';
+    final status = t['status'] as String? ?? '';
+    final language = t['language_code'] as String? ?? '';
+    final category = t['category'] as String? ?? '';
+    final body = t['body_text'] as String? ?? '';
+    final headerType = (t['header_type'] as String? ?? '').toUpperCase();
+    final offerImageUrl = t['offer_image_url'] as String?;
+    final headerMediaUrl = t['header_media_url'] as String?;
+    final imageUrl =
+        (offerImageUrl != null && offerImageUrl.isNotEmpty)
+            ? offerImageUrl
+            : (headerMediaUrl != null && headerMediaUrl.isNotEmpty)
+                ? headerMediaUrl
+                : null;
+    final isSelected =
+        _selected?['meta_template_id'] == t['meta_template_id'];
+
+    final (statusColor, statusLabel) = switch (status.toUpperCase()) {
       'APPROVED' => (VividColors.statusSuccess, 'Approved'),
       'PENDING' || 'PENDING_DELETION' => (VividColors.statusWarning, 'Pending'),
       'REJECTED' => (VividColors.statusUrgent, 'Rejected'),
-      _ => (vc.textMuted, t.status),
+      _ => (vc.textMuted, status),
     };
 
     return Material(
@@ -7036,108 +7625,132 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: isSelected ? VividColors.cyan : vc.border),
+            border:
+                Border.all(color: isSelected ? VividColors.cyan : vc.border),
           ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 4,
-                decoration: BoxDecoration(
-                  color: isSelected ? VividColors.cyan : Colors.transparent,
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(12),
-                    bottomLeft: Radius.circular(12),
+              // Image header
+              if (imageUrl != null)
+                SizedBox(
+                  height: 80,
+                  width: double.infinity,
+                  child: Image.network(
+                    imageUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      color: vc.surfaceAlt,
+                      child: Center(
+                        child: Icon(Icons.broken_image_outlined,
+                            color: vc.textMuted, size: 24),
+                      ),
+                    ),
                   ),
                 ),
-              ),
+              // Content row with left accent bar
               Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              t.name,
-                              style: TextStyle(
-                                color: vc.textPrimary,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                child: Row(
+                  children: [
+                    Container(
+                      width: 4,
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? VividColors.cyan
+                            : Colors.transparent,
+                        borderRadius: imageUrl == null
+                            ? const BorderRadius.only(
+                                topLeft: Radius.circular(12),
+                                bottomLeft: Radius.circular(12),
+                              )
+                            : null,
+                      ),
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    name,
+                                    style: TextStyle(
+                                      color: vc.textPrimary,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 7, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color:
+                                        statusColor.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(5),
+                                    border: Border.all(
+                                        color: statusColor
+                                            .withValues(alpha: 0.3)),
+                                  ),
+                                  child: Text(statusLabel,
+                                      style: TextStyle(
+                                          color: statusColor,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w600)),
+                                ),
+                              ],
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: statusColor.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(5),
-                              border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+                            const SizedBox(height: 4),
+                            Text(
+                              '$language · $category',
+                              style:
+                                  TextStyle(color: vc.textMuted, fontSize: 11),
                             ),
-                            child: Text(statusLabel,
-                                style: TextStyle(
-                                    color: statusColor, fontSize: 10, fontWeight: FontWeight.w600)),
-                          ),
-                          const SizedBox(width: 6),
-                          Builder(builder: (_) {
-                            final clientName = _clientForTemplate(t.name);
-                            final isGlobal = clientName == null;
-                            final badgeColor = isGlobal ? Colors.blueGrey : VividColors.cyan;
-                            return Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: badgeColor.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: badgeColor.withValues(alpha: 0.3)),
-                              ),
+                            const SizedBox(height: 6),
+                            Expanded(
                               child: Text(
-                                isGlobal ? 'Global' : clientName,
+                                body,
                                 style: TextStyle(
-                                    color: badgeColor, fontSize: 9, fontWeight: FontWeight.w600),
+                                    color: vc.textSecondary,
+                                    fontSize: 12,
+                                    height: 1.4),
+                                maxLines: imageUrl != null ? 2 : 3,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                            );
-                          }),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        '${t.language} · ${t.category}',
-                        style: TextStyle(color: vc.textMuted, fontSize: 11),
-                      ),
-                      const SizedBox(height: 8),
-                      Expanded(
-                        child: Text(
-                          t.body,
-                          style: TextStyle(color: vc.textSecondary, fontSize: 12, height: 1.4),
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
+                            ),
+                            if (headerType.isNotEmpty &&
+                                headerType != 'NONE' &&
+                                imageUrl == null)
+                              Align(
+                                alignment: Alignment.bottomRight,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: vc.surfaceAlt,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    headerType,
+                                    style: TextStyle(
+                                        color: vc.textMuted,
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w600,
+                                        letterSpacing: 0.3),
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       ),
-                      if (t.headerType.isNotEmpty)
-                        Align(
-                          alignment: Alignment.bottomRight,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: vc.surfaceAlt,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              t.headerType,
-                              style: TextStyle(
-                                  color: vc.textMuted,
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: 0.3),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -7149,12 +7762,34 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
 
   Widget _buildPreview(VividColorScheme vc) {
     final t = _selected!;
-    final isApproved = t.status.toUpperCase() == 'APPROVED';
-    final (statusColor, statusLabel) = switch (t.status.toUpperCase()) {
+    final name = t['template_name'] as String? ?? '';
+    final status = t['status'] as String? ?? '';
+    final language = t['language_code'] as String? ?? '';
+    final category = t['category'] as String? ?? '';
+    final body = t['body_text'] as String? ?? '';
+    final headerType = (t['header_type'] as String? ?? '').toUpperCase();
+    final headerText = t['header_text'] as String?;
+    final templateId =
+        t['meta_template_id'] as String? ?? t['id'] as String? ?? '';
+    final rawButtons = t['buttons'];
+    final buttons = (rawButtons is List)
+        ? rawButtons.cast<Map<String, dynamic>>()
+        : <Map<String, dynamic>>[];
+    final isApproved = status.toUpperCase() == 'APPROVED';
+    final offerImageUrl = t['offer_image_url'] as String?;
+    final headerMediaUrl = t['header_media_url'] as String?;
+    final imageUrl =
+        (offerImageUrl != null && offerImageUrl.isNotEmpty)
+            ? offerImageUrl
+            : (headerMediaUrl != null && headerMediaUrl.isNotEmpty)
+                ? headerMediaUrl
+                : null;
+
+    final (statusColor, statusLabel) = switch (status.toUpperCase()) {
       'APPROVED' => (VividColors.statusSuccess, 'Approved'),
       'PENDING' || 'PENDING_DELETION' => (VividColors.statusWarning, 'Pending'),
       'REJECTED' => (VividColors.statusUrgent, 'Rejected'),
-      _ => (vc.textMuted, t.status),
+      _ => (vc.textMuted, status),
     };
 
     return Container(
@@ -7170,23 +7805,29 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
             child: Row(
               children: [
                 Expanded(
-                  child: Text(t.name,
+                  child: Text(name,
                       style: TextStyle(
-                          color: vc.textPrimary, fontSize: 15, fontWeight: FontWeight.w700),
+                          color: vc.textPrimary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis),
                 ),
                 const SizedBox(width: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                   decoration: BoxDecoration(
                     color: statusColor.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(5),
-                    border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+                    border:
+                        Border.all(color: statusColor.withValues(alpha: 0.3)),
                   ),
                   child: Text(statusLabel,
-                      style:
-                          TextStyle(color: statusColor, fontSize: 10, fontWeight: FontWeight.w600)),
+                      style: TextStyle(
+                          color: statusColor,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600)),
                 ),
                 IconButton(
                   icon: Icon(Icons.close, size: 18, color: vc.textMuted),
@@ -7202,6 +7843,26 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Offer image preview (above bubble)
+                  if (imageUrl != null) ...[
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Image.network(
+                        imageUrl,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          height: 160,
+                          color: vc.surfaceAlt,
+                          child: Center(
+                            child: Icon(Icons.broken_image_outlined,
+                                color: vc.textMuted, size: 32),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   // WhatsApp-style bubble
                   Container(
                     width: double.infinity,
@@ -7220,31 +7881,34 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (t.headerType == 'IMAGE')
-                          Container(
-                            height: 120,
-                            width: double.infinity,
-                            margin: const EdgeInsets.only(bottom: 10),
-                            decoration: BoxDecoration(
-                              color: vc.surfaceAlt,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: t.headerMediaUrl != null
-                                ? ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: Image.network(
-                                      t.headerMediaUrl!,
+                        if (headerType == 'IMAGE')
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: SizedBox(
+                              height: 120,
+                              width: double.infinity,
+                              child: imageUrl != null
+                                  ? Image.network(
+                                      imageUrl,
                                       fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => Center(
-                                        child: Icon(Icons.image, color: vc.textMuted, size: 32),
+                                      errorBuilder: (_, __, ___) => Container(
+                                        color: vc.surfaceAlt,
+                                        child: Center(
+                                          child: Icon(Icons.image,
+                                              color: vc.textMuted, size: 32),
+                                        ),
+                                      ),
+                                    )
+                                  : Container(
+                                      color: vc.surfaceAlt,
+                                      child: Center(
+                                        child: Icon(Icons.image,
+                                            color: vc.textMuted, size: 32),
                                       ),
                                     ),
-                                  )
-                                : Center(
-                                    child: Icon(Icons.image, color: vc.textMuted, size: 32),
-                                  ),
+                            ),
                           ),
-                        if (t.headerType == 'VIDEO')
+                        if (headerType == 'VIDEO')
                           Container(
                             height: 120,
                             width: double.infinity,
@@ -7254,10 +7918,11 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Center(
-                              child: Icon(Icons.play_circle_outline, color: vc.textMuted, size: 40),
+                              child: Icon(Icons.play_circle_outline,
+                                  color: vc.textMuted, size: 40),
                             ),
                           ),
-                        if (t.headerType == 'DOCUMENT')
+                        if (headerType == 'DOCUMENT')
                           Container(
                             height: 50,
                             width: double.infinity,
@@ -7269,70 +7934,77 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.insert_drive_file, color: vc.textMuted, size: 20),
+                                Icon(Icons.insert_drive_file,
+                                    color: vc.textMuted, size: 20),
                                 const SizedBox(width: 6),
-                                Text('Document', style: TextStyle(color: vc.textMuted, fontSize: 12)),
+                                Text('Document',
+                                    style: TextStyle(
+                                        color: vc.textMuted, fontSize: 12)),
                               ],
                             ),
                           ),
-                        if (t.headerType == 'TEXT' && t.headerText != null)
+                        if (headerType == 'TEXT' && headerText != null)
                           Padding(
                             padding: const EdgeInsets.only(bottom: 8),
                             child: Text(
-                              t.headerText!,
+                              headerText,
                               style: TextStyle(
-                                  color: vc.textPrimary, fontSize: 14, fontWeight: FontWeight.w700),
+                                  color: vc.textPrimary,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700),
                             ),
                           ),
-                        _buildBodyWithVars(vc, t.body),
-                        if (t.footer != null && t.footer!.isNotEmpty) ...[
-                          const SizedBox(height: 8),
-                          Text(t.footer!,
-                              style: TextStyle(
-                                  color: vc.textMuted, fontSize: 11, fontStyle: FontStyle.italic)),
-                        ],
+                        _buildBodyWithVars(vc, body),
                       ],
                     ),
                   ),
-                  if (t.buttons.isNotEmpty) ...[
+                  if (buttons.isNotEmpty) ...[
                     const SizedBox(height: 8),
-                    ...t.buttons.map((btn) => Padding(
+                    ...buttons.map((btn) => Padding(
                           padding: const EdgeInsets.only(bottom: 4),
                           child: Container(
                             width: double.infinity,
-                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            padding:
+                                const EdgeInsets.symmetric(vertical: 8),
                             decoration: BoxDecoration(
                               color: vc.surfaceAlt,
                               borderRadius: BorderRadius.circular(6),
                               border: Border.all(color: vc.border),
                             ),
                             child: Text(
-                              btn.text,
+                              btn['text'] as String? ?? '',
                               textAlign: TextAlign.center,
                               style: TextStyle(
-                                  color: VividColors.cyan, fontSize: 12, fontWeight: FontWeight.w600),
+                                  color: VividColors.cyan,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600),
                             ),
                           ),
                         )),
                   ],
                   const SizedBox(height: 20),
                   _metaRow(vc, 'Status', statusLabel),
-                  _metaRow(vc, 'Language', t.language),
-                  _metaRow(vc, 'Category', t.category),
-                  _metaRow(vc, 'Header', t.headerType.isEmpty ? 'None' : t.headerType),
-                  _metaRow(vc, 'ID', t.id),
+                  _metaRow(vc, 'Language', language),
+                  _metaRow(vc, 'Category', category),
+                  _metaRow(
+                      vc, 'Header', headerType.isEmpty ? 'None' : headerType),
+                  _metaRow(vc, 'ID', templateId),
                   const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
-                      onPressed: _isDeleting ? null : () => _deleteTemplate(t),
+                      onPressed:
+                          _isDeleting ? null : () => _deleteTemplate(t),
                       icon: const Icon(Icons.delete_outline, size: 16),
-                      label: Text(_isDeleting ? 'Deleting…' : 'Delete Template'),
+                      label:
+                          Text(_isDeleting ? 'Deleting…' : 'Delete Template'),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: VividColors.statusUrgent,
-                        side: const BorderSide(color: VividColors.statusUrgent),
+                        side: const BorderSide(
+                            color: VividColors.statusUrgent),
                         padding: const EdgeInsets.symmetric(vertical: 10),
-                        textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                        textStyle: const TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.w600),
                       ),
                     ),
                   ),
