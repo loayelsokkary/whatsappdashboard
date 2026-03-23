@@ -142,7 +142,10 @@ class _MainScaffoldState extends State<MainScaffold> {
     // Initialize providers ONLY for properly configured features
     Future.microtask(() {
       if (ClientConfig.isPreviewMode) {
-        // Preview mode: skip realtime subscriptions, only fetch static data
+        // Preview mode: fetch static snapshots — no real-time subscriptions
+        if (_isFeatureConfigured('conversations')) {
+          context.read<ConversationsProvider>().initializePreview();
+        }
         if (_isFeatureConfigured('broadcasts')) {
           context.read<BroadcastsProvider>().fetchBroadcasts();
         }

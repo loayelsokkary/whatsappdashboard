@@ -259,6 +259,25 @@ class ConversationsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Fetch conversations for a preview client — no real-time subscription.
+  /// Safe to call multiple times; clears previous data on each call.
+  Future<void> initializePreview() async {
+    _isLoading = true;
+    _allExchanges = [];
+    _conversations = [];
+    _error = null;
+    notifyListeners();
+    try {
+      final service = SupabaseService.instance;
+      _allExchanges = await service.fetchAllExchanges();
+      _buildConversations();
+    } catch (e) {
+      _error = 'Failed to load: $e';
+    }
+    _isLoading = false;
+    notifyListeners();
+  }
+
   Future<void> fetchConversations() async {
     _isLoading = true;
     _error = null;

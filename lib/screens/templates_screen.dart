@@ -130,8 +130,12 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
                   const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
             ),
           ),
-          // Sync to AI + New Template — admin only (Meta API access)
-          if (ClientConfig.isVividAdmin) ...[
+          // Sync to AI + New Template — Vivid Admins, preview mode, and client Admins/Managers
+          if (ClientConfig.isVividAdmin ||
+              ClientConfig.isPreviewMode ||
+              (ClientConfig.currentClient != null &&
+                  ClientConfig.currentUserRole != UserRole.agent &&
+                  ClientConfig.currentUserRole != UserRole.viewer)) ...[
             const SizedBox(width: 10),
             OutlinedButton.icon(
               onPressed: provider.isSyncing

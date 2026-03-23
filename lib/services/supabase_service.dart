@@ -43,8 +43,8 @@ class SupabaseService {
   // ============================================
 
   static String metaApiVersion = 'v21.0';
-  static String metaAccessToken = 'EAAbZB1YmaTZBgBQ9VyQAhCOumHulultZAfCeC7srDnVTFH7VpPDmywE50zYi6Eq5uOVnVSjAL24ZASRNYZARFdH429CKEhcafZBhS5o4gAZCAF5YRoMWIV0kfwZBScUp7au1TDji2fSVvUMifGQqmjgxlxjYIpiRainEV1gSCO7EYeuY1PFcAtfB1fzsiP0eiwZDZD';
-  static String metaWabaId = '699577226572846';
+  static String metaAccessToken = '';
+  static String metaWabaId = '';
   static String metaAppId = '1969042950344680';
 
   // ============================================
@@ -68,6 +68,10 @@ class SupabaseService {
   static Future<void> initialize() async {
     await Supabase.initialize(url: _supabaseUrl, anonKey: _supabaseAnonKey);
     _client = Supabase.instance.client;
+    ClientConfig.registerPreviewCredentialCallbacks(
+      onEnter: applyClientMetaConfig,
+      onExit: resetToDefaultMetaConfig,
+    );
     print('Supabase initialized');
   }
 
@@ -124,7 +128,7 @@ class SupabaseService {
                 if (adminClientResponse != null) {
                   final clientData = Client.fromJson(adminClientResponse);
                   ClientConfig.setClientUser(clientData, user);
-                  _applyClientMetaConfig(clientData);
+                  applyClientMetaConfig(clientData);
                 }
               } catch (e) {
                 print('Could not load client config for admin: $e');
@@ -154,7 +158,7 @@ class SupabaseService {
 
             final clientData = Client.fromJson(clientResponse);
             ClientConfig.setClientUser(clientData, user);
-            _applyClientMetaConfig(clientData);
+            applyClientMetaConfig(clientData);
           }
 
           // Log the login
@@ -218,7 +222,7 @@ class SupabaseService {
             if (adminClientResponse != null) {
               final clientData = Client.fromJson(adminClientResponse);
               ClientConfig.setClientUser(clientData, user);
-              _applyClientMetaConfig(clientData);
+              applyClientMetaConfig(clientData);
             }
           } catch (e) {
             print('Could not load client config for admin: $e');
@@ -246,7 +250,7 @@ class SupabaseService {
 
         final clientData = Client.fromJson(clientResponse);
         ClientConfig.setClientUser(clientData, user);
-        _applyClientMetaConfig(clientData);
+        applyClientMetaConfig(clientData);
 
         print('Logged in as ${user.name} for ${clientData.name}');
         print('Enabled features: ${clientData.enabledFeatures}');
@@ -274,27 +278,37 @@ class SupabaseService {
   // PER-CLIENT META CONFIG
   // ============================================
 
-  // These defaults are Karisma's credentials — they are used as fallbacks
-  // when a client row has null waba_id / meta_access_token.
-  static const String _defaultMetaAccessToken = 'EAAbZB1YmaTZBgBQ9VyQAhCOumHulultZAfCeC7srDnVTFH7VpPDmywE50zYi6Eq5uOVnVSjAL24ZASRNYZARFdH429CKEhcafZBhS5o4gAZCAF5YRoMWIV0kfwZBScUp7au1TDji2fSVvUMifGQqmjgxlxjYIpiRainEV1gSCO7EYeuY1PFcAtfB1fzsiP0eiwZDZD';
-  static const String _defaultMetaWabaId = '699577226572846';
+  // Safe empty defaults — no client's credentials are baked in.
+  // Each client must have waba_id and meta_access_token set in the DB.
+  static const String _defaultMetaAccessToken = '';
+  static const String _defaultMetaWabaId = '';
+
+  /// Resets metaWabaId / metaAccessToken back to empty defaults.
+  /// Called when exiting client preview mode.
+  static void resetToDefaultMetaConfig() {
+    metaWabaId = _defaultMetaWabaId;
+    metaAccessToken = _defaultMetaAccessToken;
+  }
 
   /// Overrides metaWabaId / metaAccessToken from the client's DB row.
-  /// Falls back to the hardcoded defaults when the client has null values.
-  void _applyClientMetaConfig(Client client) {
+  /// Logs a warning when credentials are missing — fails loudly instead
+  /// of silently using another client's token.
+  static void applyClientMetaConfig(Client client) {
     if (client.wabaId != null && client.wabaId!.isNotEmpty) {
       metaWabaId = client.wabaId!;
     } else {
       metaWabaId = _defaultMetaWabaId;
+      debugPrint('[Meta] WARNING: No waba_id for client ${client.name} — set it in Supabase clients table.');
     }
     if (client.metaAccessToken != null && client.metaAccessToken!.isNotEmpty) {
       metaAccessToken = client.metaAccessToken!;
     } else {
       metaAccessToken = _defaultMetaAccessToken;
+      debugPrint('[Meta] WARNING: No meta_access_token for client ${client.name} — template sync will fail. Set token in Supabase clients table.');
     }
     debugPrint('📋 Client loaded: ${client.name}');
     debugPrint('📋 Messages table: ${ClientConfig.messagesTable}');
-    debugPrint('📋 Templates table: ${ClientConfig.templatesTableName}');
+    debugPrint('📋 Templates table: ${ClientConfig.templatesTable}');
     debugPrint('📋 AI Settings table: ${ClientConfig.aiSettingsTableName}');
     debugPrint('📋 Predictions table: ${ClientConfig.customerPredictionsTableName}');
     debugPrint('📋 WABA ID: $metaWabaId');
@@ -477,6 +491,7 @@ class SupabaseService {
     String? customerPredictionsTable,
     bool hasAiConversations = true,
     String? wabaId,
+    String? metaAccessToken,
     int? broadcastLimit,
   }) async {
     try {
@@ -500,6 +515,7 @@ class SupabaseService {
         'manager_chat_webhook_url': managerChatWebhookUrl,
         'has_ai_conversations': hasAiConversations,
         if (wabaId != null && wabaId.isNotEmpty) 'waba_id': wabaId,
+        if (metaAccessToken != null && metaAccessToken.isNotEmpty) 'meta_access_token': metaAccessToken,
         if (broadcastLimit != null) 'broadcast_limit': broadcastLimit,
       }).select().single();
 
@@ -599,6 +615,54 @@ class SupabaseService {
       return CustomerPrediction.fromJson(response);
     } catch (e) {
       print('Error fetching prediction: $e');
+      return null;
+    }
+  }
+
+  /// Fetch aggregate prediction stats for the Vivid AI panel.
+  /// Returns null if predictions table is not configured or on any error.
+  static Future<PredictionStats?> fetchPredictionStats() async {
+    final table = ClientConfig.customerPredictionsTable;
+    if (table == null || table.isEmpty) return null;
+
+    try {
+      final today = DateTime.now().toIso8601String().split('T')[0];
+      final in7Days =
+          DateTime.now().add(const Duration(days: 7)).toIso8601String().split('T')[0];
+      final in30Days =
+          DateTime.now().add(const Duration(days: 30)).toIso8601String().split('T')[0];
+
+      final overdueRes = await adminClient.from(table).select().lt('predicted_next_visit', today);
+      final weekRes = await adminClient
+          .from(table)
+          .select()
+          .gte('predicted_next_visit', today)
+          .lte('predicted_next_visit', in7Days);
+      final monthRes = await adminClient
+          .from(table)
+          .select()
+          .gt('predicted_next_visit', in7Days)
+          .lte('predicted_next_visit', in30Days);
+      final allRows = await adminClient.from(table).select('primary_service');
+
+      final Map<String, int> services = {};
+      for (final row in allRows as List) {
+        final svc = (row['primary_service'] as String?) ?? 'Other';
+        services[svc] = (services[svc] ?? 0) + 1;
+      }
+      final sorted = Map.fromEntries(
+        services.entries.toList()..sort((a, b) => b.value.compareTo(a.value)),
+      );
+      final top5 = Map.fromEntries(sorted.entries.take(5));
+
+      return PredictionStats(
+        overdueCount: (overdueRes as List).length,
+        thisWeekCount: (weekRes as List).length,
+        thisMonthCount: (monthRes as List).length,
+        serviceBreakdown: top5,
+      );
+    } catch (e) {
+      debugPrint('[PredictionStats] fetch failed: $e');
       return null;
     }
   }
@@ -915,6 +979,7 @@ class SupabaseService {
     try {
       // Use dynamic table name from ClientConfig
       final tableName = ClientConfig.messagesTableName;
+      if (tableName == null || tableName.isEmpty) return [];
       final businessPhone = ClientConfig.conversationsPhone;
 
       if (businessPhone == null || businessPhone.isEmpty) {
@@ -963,6 +1028,7 @@ class SupabaseService {
   Future<List<Map<String, dynamic>>> searchMessages(String query) async {
     try {
       final tableName = ClientConfig.messagesTableName;
+      if (tableName == null || tableName.isEmpty) return [];
       final businessPhone = ClientConfig.conversationsPhone;
       if (businessPhone == null || businessPhone.isEmpty) return [];
 
@@ -987,8 +1053,14 @@ class SupabaseService {
   // ============================================
 
   void subscribeToExchanges() {
+    // Never subscribe to real-time updates in preview mode — read-only snapshot only
+    if (ClientConfig.isPreviewMode) {
+      print('Preview mode — skipping real-time subscription');
+      return;
+    }
+
     final businessPhone = ClientConfig.conversationsPhone;
-    
+
     // Check if conversations is configured
     if (!ClientConfig.isConversationsConfigured) {
       print('Conversations not configured - skipping subscription');
@@ -1198,6 +1270,7 @@ class SupabaseService {
       }
       
       final tableName = ClientConfig.messagesTableName;
+      if (tableName == null || tableName.isEmpty) return AnalyticsData(totalMessages: 0, aiResponses: 0, managerResponses: 0, uniqueCustomers: 0, todayMessages: 0, thisWeekMessages: 0, thisMonthMessages: 0, last7Days: [], topCustomers: []);
       final businessPhone = ClientConfig.conversationsPhone!;
       final now = DateTime.now();
       final todayStart = DateTime(now.year, now.month, now.day);

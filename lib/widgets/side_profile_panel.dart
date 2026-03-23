@@ -196,6 +196,9 @@ Future<SideProfileData> fetchSideProfileData(String phone) async {
   final client = SupabaseService.adminClient;
   final msgsTable = ClientConfig.messagesTableName;
   final broadcastsTable = ClientConfig.broadcastsTableName;
+  if (msgsTable == null || msgsTable.isEmpty || broadcastsTable == null || broadcastsTable.isEmpty) {
+    return const SideProfileData(totalMessages: 0, receivedCount: 0, sentCount: 0, distinctLabels: [], broadcastTotal: 0, broadcastResponded: 0, paymentCount: 0);
+  }
   final recipientsTable =
       broadcastsTable.replaceAll('broadcasts', 'broadcast_recipients');
 

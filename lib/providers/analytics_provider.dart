@@ -45,7 +45,7 @@ class AnalyticsProvider extends ChangeNotifier {
       return;
     }
 
-    final tableName = ClientConfig.messagesTableName;
+    final tableName = ClientConfig.messagesTableName!;
     final businessPhone = ClientConfig.conversationsPhone!;
 
     // Fetch all messages from dynamic table (adminClient bypasses RLS on per-client tables)
@@ -203,7 +203,7 @@ class AnalyticsProvider extends ChangeNotifier {
       return;
     }
 
-    final tableName = ClientConfig.broadcastsTableName;
+    final tableName = ClientConfig.broadcastsTableName!;
 
     // Fetch broadcasts from dynamic table (adminClient bypasses RLS on per-client tables)
     final broadcastsResponse = await SupabaseService.adminClient

@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/manager_chat_provider.dart';
+import '../providers/broadcasts_provider.dart';
 import '../models/models.dart';
 import '../theme/vivid_theme.dart';
 import '../utils/date_formatter.dart';
 import '../services/impersonate_service.dart';
+import '../services/supabase_service.dart';
 
 /// Manager Chatbot Panel with ChatGPT-style session history sidebar
 class ManagerChatPanel extends StatefulWidget {
@@ -98,6 +101,19 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
               ],
             ),
           ),
+          // ── Prediction panel (HOB only — hidden when table is null) ──
+          if (ClientConfig.customerPredictionsTable != null) ...[
+            Container(width: 1, color: vc.border),
+            SizedBox(
+              width: 280,
+              child: _PredictionInsightsPanel(
+                onPrefillChat: (text) {
+                  _messageController.text = text;
+                  _focusNode.requestFocus();
+                },
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -174,6 +190,7 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
         final messages = provider.messages;
 
         final displayItems = <_ChatDisplayItem>[];
+        const _broadcastRe = r'\[BROADCAST: ([^\]]+)\]';
         for (final msg in messages) {
           if (msg.userMessage != null && msg.userMessage!.isNotEmpty) {
             displayItems.add(_ChatDisplayItem(
@@ -183,10 +200,14 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
             ));
           }
           if (msg.aiResponse != null && msg.aiResponse!.isNotEmpty) {
+            final raw = msg.aiResponse!;
+            final match = RegExp(_broadcastRe).firstMatch(raw);
+            final cleanText = raw.replaceAll(RegExp(_broadcastRe), '').trim();
             displayItems.add(_ChatDisplayItem(
-              text: msg.aiResponse!,
+              text: cleanText.isNotEmpty ? cleanText : raw,
               isUser: false,
               createdAt: msg.createdAt,
+              broadcastInstruction: match?.group(1),
             ));
           }
         }
@@ -729,11 +750,13 @@ class _ChatDisplayItem {
   final String text;
   final bool isUser;
   final DateTime createdAt;
+  final String? broadcastInstruction; // extracted from [BROADCAST: ...] in AI response
 
   _ChatDisplayItem({
     required this.text,
     required this.isUser,
     required this.createdAt,
+    this.broadcastInstruction,
   });
 }
 
@@ -851,6 +874,50 @@ class _MessageBubble extends StatelessWidget {
                           fontSize: 10,
                         ),
                       ),
+                      // Broadcast action button — only appears on AI messages with [BROADCAST: ...] marker
+                      if (!isUser && item.broadcastInstruction != null) ...[
+                        const SizedBox(height: 10),
+                        GestureDetector(
+                          onTap: () async {
+                            final instruction = item.broadcastInstruction!;
+                            final provider = context.read<BroadcastsProvider>();
+                            final messenger = ScaffoldMessenger.of(context);
+                            final success = await provider.sendBroadcast(instruction);
+                            messenger.showSnackBar(SnackBar(
+                              content: Text(success
+                                  ? 'Broadcast sent successfully'
+                                  : 'Broadcast failed — check webhook configuration or monthly limit'),
+                              backgroundColor: success
+                                  ? const Color(0xFF38A169)
+                                  : const Color(0xFFE53E3E),
+                              duration: Duration(seconds: success ? 3 : 4),
+                            ));
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                            decoration: BoxDecoration(
+                              color: VividColors.cyan.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: VividColors.cyan.withValues(alpha: 0.4)),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.send_rounded, size: 13, color: VividColors.cyan),
+                                SizedBox(width: 6),
+                                Text(
+                                  'Confirm & Send Broadcast',
+                                  style: TextStyle(
+                                    color: VividColors.cyan,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -928,6 +995,524 @@ class _TypingDotState extends State<_TypingDot>
           ),
         );
       },
+    );
+  }
+}
+
+// ============================================================
+// PREDICTION INSIGHTS PANEL  (HOB only — shown when
+// ClientConfig.customerPredictionsTable != null)
+// ============================================================
+
+class _PredictionInsightsPanel extends StatefulWidget {
+  final void Function(String) onPrefillChat;
+
+  const _PredictionInsightsPanel({required this.onPrefillChat});
+
+  @override
+  State<_PredictionInsightsPanel> createState() => _PredictionInsightsPanelState();
+}
+
+class _PredictionInsightsPanelState extends State<_PredictionInsightsPanel> {
+  PredictionStats? _stats;
+  List<Map<String, dynamic>> _approvedTemplates = [];
+  bool _loading = true;
+  bool _refreshing = false;
+  Timer? _refreshTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+    _refreshTimer = Timer.periodic(const Duration(minutes: 5), (_) => _loadData());
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadData({bool isRefresh = false}) async {
+    if (isRefresh && mounted) setState(() => _refreshing = true);
+    try {
+      final stats = await SupabaseService.fetchPredictionStats();
+      final templatesTable = ClientConfig.templatesTable;
+      List<Map<String, dynamic>> templates = [];
+      if (templatesTable != null && templatesTable.isNotEmpty) {
+        final res = await SupabaseService.adminClient
+            .from(templatesTable)
+            .select('template_name, display_name')
+            .eq('status', 'APPROVED');
+        templates = (res as List).cast<Map<String, dynamic>>();
+      }
+      if (mounted) {
+        setState(() {
+          _stats = stats;
+          _approvedTemplates = templates;
+          _loading = false;
+          _refreshing = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() { _loading = false; _refreshing = false; });
+    }
+  }
+
+  void _showBroadcastModal(
+    BuildContext context, {
+    required String label,
+    required int count,
+    required String audienceDescription,
+  }) {
+    String? selectedTemplate;
+    bool sending = false;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1F2E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      isScrollControlled: true,
+      builder: (ctx) {
+        return StatefulBuilder(builder: (ctx, setModalState) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Drag handle
+                Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Send Broadcast to $count $label customers?',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 20),
+                if (_approvedTemplates.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Text(
+                      'No approved templates found. Sync templates first.',
+                      style: TextStyle(color: Colors.amber.withValues(alpha: 0.8), fontSize: 12),
+                    ),
+                  ),
+                DropdownButtonFormField<String>(
+                  value: selectedTemplate,
+                  dropdownColor: const Color(0xFF1A1F2E),
+                  decoration: InputDecoration(
+                    labelText: 'Select Template',
+                    labelStyle: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: VividColors.cyan),
+                    ),
+                  ),
+                  style: const TextStyle(color: Colors.white),
+                  hint: Text('Choose a template', style: TextStyle(color: Colors.white.withValues(alpha: 0.4))),
+                  items: _approvedTemplates.map((t) {
+                    final display = (t['display_name'] as String?)?.isNotEmpty == true
+                        ? t['display_name'] as String
+                        : t['template_name'] as String;
+                    return DropdownMenuItem(
+                      value: t['template_name'] as String,
+                      child: Text(display),
+                    );
+                  }).toList(),
+                  onChanged: (v) => setModalState(() => selectedTemplate = v),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: (selectedTemplate == null || sending)
+                        ? null
+                        : () async {
+                            final instruction =
+                                'Send $selectedTemplate to all customers who are $audienceDescription for a visit';
+                            final messenger = ScaffoldMessenger.of(context);
+                            final provider = context.read<BroadcastsProvider>();
+                            setModalState(() => sending = true);
+                            final success = await provider.sendBroadcast(instruction);
+                            setModalState(() => sending = false);
+                            if (context.mounted) Navigator.pop(ctx);
+                            if (context.mounted) {
+                              messenger.showSnackBar(SnackBar(
+                                content: Text(success
+                                    ? 'Broadcast queued for $count customers'
+                                    : 'Broadcast failed — check configuration or monthly limit'),
+                                backgroundColor: success
+                                    ? const Color(0xFF38A169)
+                                    : const Color(0xFFE53E3E),
+                                duration: Duration(seconds: success ? 2 : 4),
+                              ));
+                            }
+                          },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: VividColors.cyan,
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    child: sending
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.black,
+                            ),
+                          )
+                        : const Text('Send Broadcast', style: TextStyle(fontWeight: FontWeight.w600)),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text('Cancel', style: TextStyle(color: Colors.white.withValues(alpha: 0.5))),
+                ),
+              ],
+            ),
+          );
+        });
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Silently hide panel on any error / null stats
+    if (!_loading && _stats == null) return const SizedBox.shrink();
+
+    return Container(
+      color: const Color(0xFF0F1623),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ── Header ────────────────────────────────────────
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F1623),
+              border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
+            ),
+            child: Row(
+              children: [
+                VividWidgets.icon(size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Broadcast Intelligence',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        'Live prediction data',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.5),
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // ── Content ───────────────────────────────────────
+          Expanded(
+            child: _loading
+                ? const Center(
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: VividColors.cyan),
+                    ),
+                  )
+                : SingleChildScrollView(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildSectionLabel('PRIORITY TARGETS'),
+                        const SizedBox(height: 8),
+                        _buildStatCard(
+                          context,
+                          icon: Icons.warning_rounded,
+                          iconColor: const Color(0xFFF87171),
+                          label: 'Overdue',
+                          count: _stats!.overdueCount,
+                          subtitle: 'Past predicted visit date',
+                          countColor: const Color(0xFFF87171),
+                          audienceDescription: 'overdue',
+                        ),
+                        const SizedBox(height: 8),
+                        _buildStatCard(
+                          context,
+                          icon: Icons.schedule_rounded,
+                          iconColor: const Color(0xFFFBBF24),
+                          label: 'Due This Week',
+                          count: _stats!.thisWeekCount,
+                          subtitle: 'Predicted in next 7 days',
+                          countColor: const Color(0xFFFBBF24),
+                          audienceDescription: 'due this week',
+                        ),
+                        const SizedBox(height: 8),
+                        _buildStatCard(
+                          context,
+                          icon: Icons.calendar_month_rounded,
+                          iconColor: VividColors.cyan,
+                          label: 'Due This Month',
+                          count: _stats!.thisMonthCount,
+                          subtitle: 'Predicted in 8–30 days',
+                          countColor: VividColors.cyan,
+                          audienceDescription: 'due this month',
+                        ),
+                        const SizedBox(height: 16),
+                        if (_stats!.serviceBreakdown.isNotEmpty) ...[
+                          _buildSectionLabel('SERVICE BREAKDOWN'),
+                          const SizedBox(height: 8),
+                          _buildServiceBreakdown(),
+                          const SizedBox(height: 16),
+                        ],
+                        _buildSectionLabel('QUICK ACTIONS'),
+                        const SizedBox(height: 8),
+                        _buildQuickAction(
+                          context,
+                          icon: Icons.send_rounded,
+                          label: 'Send to Overdue Customers',
+                          onTap: () => _showBroadcastModal(
+                            context,
+                            label: 'overdue',
+                            count: _stats!.overdueCount,
+                            audienceDescription: 'overdue',
+                          ),
+                        ),
+                        if (_stats!.thisWeekCount > 0) ...[
+                          const SizedBox(height: 6),
+                          _buildQuickAction(
+                            context,
+                            icon: Icons.calendar_today_outlined,
+                            label: 'Send to Due This Week',
+                            onTap: () => _showBroadcastModal(
+                              context,
+                              label: 'due this week',
+                              count: _stats!.thisWeekCount,
+                              audienceDescription: 'due this week',
+                            ),
+                          ),
+                        ],
+                        if (_stats!.thisMonthCount > 0) ...[
+                          const SizedBox(height: 6),
+                          _buildQuickAction(
+                            context,
+                            icon: Icons.calendar_month_outlined,
+                            label: 'Send to Due This Month',
+                            onTap: () => _showBroadcastModal(
+                              context,
+                              label: 'due this month',
+                              count: _stats!.thisMonthCount,
+                              audienceDescription: 'due this month',
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 6),
+                        _buildQuickAction(
+                          context,
+                          icon: Icons.bar_chart_rounded,
+                          label: 'Get Prediction Summary',
+                          onTap: () => widget.onPrefillChat(
+                            'Give me a summary of this week\'s customer predictions and who I should broadcast to',
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        _buildQuickAction(
+                          context,
+                          icon: Icons.refresh_rounded,
+                          label: _refreshing ? 'Refreshing...' : 'Refresh Data',
+                          onTap: _refreshing ? null : () => _loadData(isRefresh: true),
+                          loading: _refreshing,
+                        ),
+                      ],
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionLabel(String label) {
+    return Text(
+      label,
+      style: TextStyle(
+        color: Colors.white.withValues(alpha: 0.4),
+        fontSize: 10,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 0.8,
+      ),
+    );
+  }
+
+  Widget _buildStatCard(
+    BuildContext context, {
+    required IconData icon,
+    required Color iconColor,
+    required String label,
+    required int count,
+    required String subtitle,
+    required Color countColor,
+    required String audienceDescription,
+  }) {
+    return GestureDetector(
+      onTap: () => _showBroadcastModal(
+        context,
+        label: label.toLowerCase(),
+        count: count,
+        audienceDescription: audienceDescription,
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 16, color: iconColor),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
+                      style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500)),
+                  Text(subtitle,
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 10)),
+                ],
+              ),
+            ),
+            Text(
+              '$count',
+              style: TextStyle(color: countColor, fontSize: 18, fontWeight: FontWeight.w700),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildServiceBreakdown() {
+    final entries = _stats!.serviceBreakdown.entries.toList();
+    final maxCount = entries.isEmpty ? 1 : entries.first.value;
+
+    return Column(
+      children: entries.map((e) {
+        final fraction = maxCount > 0 ? e.value / maxCount : 0.0;
+        return GestureDetector(
+          onTap: () => widget.onPrefillChat('How many ${e.key} customers are overdue?'),
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(e.key,
+                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                          overflow: TextOverflow.ellipsis),
+                    ),
+                    Text(
+                      '${e.value}',
+                      style: const TextStyle(
+                        color: VividColors.cyan,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(2),
+                  child: LinearProgressIndicator(
+                    value: fraction,
+                    minHeight: 4,
+                    backgroundColor: Colors.white.withValues(alpha: 0.08),
+                    valueColor: const AlwaysStoppedAnimation<Color>(VividColors.cyan),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildQuickAction(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required VoidCallback? onTap,
+    bool loading = false,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        ),
+        child: Row(
+          children: [
+            if (loading)
+              const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 1.5, color: VividColors.cyan),
+              )
+            else
+              Icon(icon, size: 14, color: VividColors.cyan),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.7),
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

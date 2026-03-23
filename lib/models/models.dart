@@ -778,6 +778,18 @@ class ClientConfig {
   static AppUser? _savedAdminUser;
   static String? _previewClientId; // tracks active preview owner; guards against stale dispose() calls
 
+  // Callbacks registered by SupabaseService to avoid circular import
+  static void Function(Client)? _onEnterPreviewCredentials;
+  static void Function()? _onExitPreviewCredentials;
+
+  static void registerPreviewCredentialCallbacks({
+    required void Function(Client) onEnter,
+    required void Function() onExit,
+  }) {
+    _onEnterPreviewCredentials = onEnter;
+    _onExitPreviewCredentials = onExit;
+  }
+
   static bool get isPreviewMode => _isPreviewMode;
 
   static Client? get currentClient => _currentClient;
@@ -841,32 +853,14 @@ class ClientConfig {
   static String? get broadcastRecipientsTableName => _currentClient?.broadcastRecipientsTable;
 
 
-  /// Get messages table name, throws if not configured
-  static String get messagesTableName {
-    final table = _currentClient?.messagesTable;
-    if (table == null || table.isEmpty) {
-      throw Exception('Messages table not configured for this client');
-    }
-    return table;
-  }
+  /// Get messages table name — null-safe (returns null if not configured)
+  static String? get messagesTableName => _currentClient?.messagesTable;
 
-  /// Get broadcasts table name, throws if not configured
-  static String get broadcastsTableName {
-    final table = _currentClient?.broadcastsTable;
-    if (table == null || table.isEmpty) {
-      throw Exception('Broadcasts table not configured for this client');
-    }
-    return table;
-  }
+  /// Get broadcasts table name — null-safe (returns null if not configured)
+  static String? get broadcastsTableName => _currentClient?.broadcastsTable;
 
-  /// Get templates table name, throws if not configured
-  static String get templatesTableName {
-    final table = _currentClient?.templatesTable;
-    if (table == null || table.isEmpty) {
-      throw Exception('Templates table not configured for this client');
-    }
-    return table;
-  }
+  /// Get templates table name — null-safe (returns null if not configured)
+  static String? get templatesTableName => _currentClient?.templatesTable;
 
   /// Get manager chats table name, throws if not configured
   static String get managerChatsTableName {
@@ -976,6 +970,7 @@ class ClientConfig {
     _currentUser = tempUser;
     _isPreviewMode = true;
     _previewClientId = client.id;
+    _onEnterPreviewCredentials?.call(client);
   }
 
   /// Exit preview mode — restores admin state.
@@ -991,6 +986,7 @@ class ClientConfig {
     _savedAdminUser = null;
     _isPreviewMode = false;
     _previewClientId = null;
+    _onExitPreviewCredentials?.call();
   }
 
   static void clear() {
@@ -1378,4 +1374,26 @@ class CustomerPrediction {
       category: json['category'] as String? ?? 'New',
     );
   }
+}
+
+// ─── Prediction aggregate stats (Vivid AI panel) ─────────────────────────────
+class PredictionStats {
+  final int overdueCount;
+  final int thisWeekCount;
+  final int thisMonthCount;
+  final Map<String, int> serviceBreakdown;
+
+  PredictionStats({
+    required this.overdueCount,
+    required this.thisWeekCount,
+    required this.thisMonthCount,
+    required this.serviceBreakdown,
+  });
+
+  static PredictionStats empty() => PredictionStats(
+        overdueCount: 0,
+        thisWeekCount: 0,
+        thisMonthCount: 0,
+        serviceBreakdown: {},
+      );
 }

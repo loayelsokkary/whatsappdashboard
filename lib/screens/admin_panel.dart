@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import '../providers/admin_provider.dart';
+import '../providers/conversations_provider.dart';
+import '../providers/broadcasts_provider.dart';
 import '../services/supabase_service.dart';
 import '../providers/agent_provider.dart';
 import '../models/models.dart';
@@ -3124,6 +3126,7 @@ class _ClientOnboardingWizardState extends State<_ClientOnboardingWizard> {
   final _remindersWebhookController = TextEditingController();
   final _managerChatWebhookController = TextEditingController();
   final _wabaIdController = TextEditingController();
+  final _accessTokenController = TextEditingController();
   final _broadcastLimitController = TextEditingController(text: '500');
   // Step 4 — First User
   bool _createUser = false;
@@ -3145,6 +3148,7 @@ class _ClientOnboardingWizardState extends State<_ClientOnboardingWizard> {
     _remindersWebhookController.dispose();
     _managerChatWebhookController.dispose();
     _wabaIdController.dispose();
+    _accessTokenController.dispose();
     _broadcastLimitController.dispose();
     _userNameController.dispose();
     _userEmailController.dispose();
@@ -3227,6 +3231,7 @@ class _ClientOnboardingWizardState extends State<_ClientOnboardingWizard> {
       remindersWebhookUrl: _remindersWebhookController.text.trim().isEmpty ? null : _remindersWebhookController.text.trim(),
       managerChatWebhookUrl: _managerChatWebhookController.text.trim().isEmpty ? null : _managerChatWebhookController.text.trim(),
       wabaId: _wabaIdController.text.trim().isEmpty ? null : _wabaIdController.text.trim(),
+      metaAccessToken: _accessTokenController.text.trim().isEmpty ? null : _accessTokenController.text.trim(),
       broadcastLimit: int.tryParse(_broadcastLimitController.text.trim()),
     );
 
@@ -3976,6 +3981,16 @@ class _ClientOnboardingWizardState extends State<_ClientOnboardingWizard> {
                     hint: 'From Meta Business Manager (e.g., 4194190724181657)',
                     icon: Icons.account_balance,
                     required: false,
+                  ),
+                  const SizedBox(height: 10),
+                  _buildWizardField(
+                    vc,
+                    controller: _accessTokenController,
+                    label: 'Meta Access Token',
+                    hint: 'Leave empty if using shared Vivid Systems token',
+                    icon: Icons.vpn_key,
+                    required: false,
+                    obscure: true,
                   ),
                   const SizedBox(height: 10),
                   _buildWizardField(
@@ -5998,6 +6013,16 @@ class _ClientAnalyticsWrapperState extends State<_ClientAnalyticsWrapper> {
             createdAt: DateTime.now(),
           );
     ClientConfig.enterPreview(client, tempUser);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (client.conversationsPhone?.isNotEmpty == true) {
+        context.read<ConversationsProvider>().initializePreview();
+      }
+      if (client.broadcastsPhone?.isNotEmpty == true ||
+          client.broadcastsWebhookUrl?.isNotEmpty == true) {
+        context.read<BroadcastsProvider>().fetchBroadcasts();
+      }
+    });
   }
 
   @override
@@ -8419,13 +8444,16 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
       debugPrint(
           'ADMIN_TEMPLATES: loaded ${templates.length} templates from $table');
 
-      // Debug HOB contamination
-      if (client.slug.toLowerCase().contains('hob')) {
-        for (final t in templates) {
-          final name = t['template_name'] as String? ?? '';
-          if (!name.startsWith('hob_') && !name.startsWith('HOB_')) {
-            debugPrint('HOB_CONTAMINATION: foreign template in table: $name');
-          }
+      // Debug cross-client template contamination (generic for all clients)
+      final currentSlug = client.slug.toLowerCase();
+      if (currentSlug.isNotEmpty) {
+        const universalTemplates = {'hello_world', 'vivddemo'};
+        final contaminated = templates.where((t) {
+          final name = (t['template_name'] as String? ?? '').toLowerCase();
+          return !name.startsWith(currentSlug) && !universalTemplates.contains(name);
+        }).toList();
+        if (contaminated.isNotEmpty) {
+          debugPrint('[templates] WARNING: ${contaminated.length} potentially foreign templates in ${currentSlug}_whatsapp_templates: ${contaminated.map((t) => t['template_name']).join(', ')}');
         }
       }
 

@@ -57,8 +57,13 @@ class _TemplateDetailScreenState extends State<TemplateDetailScreen> {
       _loadError = null;
     });
     try {
+      final tblName = ClientConfig.templatesTableName;
+      if (tblName == null || tblName.isEmpty) {
+        setState(() { _loadError = 'Templates table not configured'; _isLoading = false; });
+        return;
+      }
       final row = await SupabaseService.adminClient
-          .from(ClientConfig.templatesTableName)
+          .from(tblName)
           .select(
               'id, body_variable_count, body_variable_labels, body_variable_sources, offer_image_url, body_text, template_name, header_type')
           .eq('meta_template_id', widget.template.id)
@@ -151,8 +156,10 @@ class _TemplateDetailScreenState extends State<TemplateDetailScreen> {
       }
 
       final clientId = ClientConfig.currentClient?.id ?? '';
+      final saveTblName = ClientConfig.templatesTableName;
+      if (saveTblName == null || saveTblName.isEmpty) return;
       await SupabaseService.adminClient
-          .from(ClientConfig.templatesTableName)
+          .from(saveTblName)
           .update({
             'body_variable_labels': _labels,
             'body_variable_descriptions': _labels,

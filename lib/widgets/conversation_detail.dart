@@ -980,7 +980,7 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
             ),
           ),
 
-        if (ImpersonateService.isImpersonating)
+        if (ImpersonateService.isImpersonating || ClientConfig.isPreviewMode)
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(

@@ -13,6 +13,12 @@ class TemplatesProvider extends ChangeNotifier {
   bool _isSyncing = false;
   Map<String, Map<String, dynamic>> _templateDbStatuses = {};
 
+  // MEDIUM #4 — Global mutex: prevents concurrent syncs across instances/tabs
+  static bool _globalSyncLock = false;
+
+  // LOW #9 — Tracks last successful Meta API fetch to guard against stale cleanup
+  DateTime? _lastSuccessfulFetchTime;
+
   List<WhatsAppTemplate> get templates => _templates;
   bool get isLoading => _isLoading;
   String? get error => _error;
@@ -137,6 +143,7 @@ class TemplatesProvider extends ChangeNotifier {
 
       debugPrint('📋 Templates received: ${all.length} from WABA ${SupabaseService.metaWabaId}');
       _allMetaTemplates = all;
+      if (all.isNotEmpty) _lastSuccessfulFetchTime = DateTime.now();
       print('TEMPLATES: fetched ${all.length} templates from Meta API');
     } catch (e) {
       print('TEMPLATES: Meta API error: $e');
@@ -358,11 +365,24 @@ class TemplatesProvider extends ChangeNotifier {
   /// Fetches all templates from Meta API, then upserts them into the
   /// per-client Supabase table. Returns null on success, error string on failure.
   Future<String?> syncTemplatesToSupabase() async {
+    // MEDIUM #4 — Global mutex
+    if (_globalSyncLock) {
+      debugPrint('[sync] Another sync is already running globally — skipping');
+      return 'Sync already in progress';
+    }
+    _globalSyncLock = true;
+
     final clientId = ClientConfig.currentClient?.id ?? '';
-    if (clientId.isEmpty) return 'No client selected';
+    if (clientId.isEmpty) {
+      _globalSyncLock = false;
+      return 'No client selected';
+    }
 
     final tableName = ClientConfig.templatesTable;
-    if (tableName == null || tableName.isEmpty) return 'Templates table not configured';
+    if (tableName == null || tableName.isEmpty) {
+      _globalSyncLock = false;
+      return 'Templates table not configured';
+    }
 
     _isSyncing = true;
     notifyListeners();
@@ -370,37 +390,42 @@ class TemplatesProvider extends ChangeNotifier {
     try {
       // Step 1: Fetch fresh templates from Meta API
       await fetchMetaTemplates();
+      // LOW #9 — Stale cache guard: if Meta returned empty but we've had
+      // a successful fetch before, abort rather than triggering a stale cleanup.
       if (_allMetaTemplates.isEmpty) {
         _isSyncing = false;
         notifyListeners();
+        if (_lastSuccessfulFetchTime != null) {
+          debugPrint('[sync] Meta fetch returned empty but prior fetch succeeded — aborting to protect existing data');
+          return 'Meta API returned no templates. Sync aborted to protect existing data.';
+        }
         return 'No templates found in Meta API';
       }
 
       final now = DateTime.now().toIso8601String();
 
-      // Step 2: Build prefix sets for filtering templates per client.
-      // Only exclude templates that CLEARLY belong to another client
-      // (exact prefix match with a known slug).
+      // MEDIUM #6 — Safety: verify client hasn't changed mid-async gap
+      if (clientId != ClientConfig.currentClient?.id) {
+        debugPrint('[sync] SAFETY ABORT: clientId mismatch — refusing to write (expected $clientId, got ${ClientConfig.currentClient?.id})');
+        _isSyncing = false;
+        notifyListeners();
+        return 'Safety abort: client context changed during sync';
+      }
+
+      // Step 2: Set display_name for each template (full name — no prefix filtering).
+      // Each client syncs all templates from their own WABA. Cross-WABA isolation
+      // is guaranteed by CRITICAL Fix 1 (enterPreview updates metaWabaId).
       final slug = ClientConfig.currentClient?.slug ?? '';
       final clientPrefix = slug.isNotEmpty ? '${normalizeSlug(slug)}_' : '';
 
-      // Step 3: Set display_name for each template.
-      // If it starts with our prefix → strip for clean display_name.
-      // All other templates → display_name = full name (legacy/global).
-      // NOTE: We do NOT skip other clients' templates during sync —
-      // all templates are synced to all clients for backward compatibility.
-      // Prefix-based filtering will be opt-in in a future update.
-      final displayNames = <String, String>{}; // template.name → display_name
-
+      final displayNames = <String, String>{};
       for (final t in _allMetaTemplates) {
-        if (clientPrefix.isNotEmpty && t.name.startsWith(clientPrefix)) {
-          displayNames[t.name] = t.name.substring(clientPrefix.length);
-        } else {
-          displayNames[t.name] = t.name;
-        }
+        displayNames[t.name] = (clientPrefix.isNotEmpty && t.name.startsWith(clientPrefix))
+            ? t.name.substring(clientPrefix.length)
+            : t.name;
       }
 
-      debugPrint('[sync] ${_allMetaTemplates.length} Meta templates for "$slug" (prefix="$clientPrefix")');
+      debugPrint('[sync] ${_allMetaTemplates.length} Meta templates for "$slug"');
 
       // Build rows sequentially, doing a per-template DB read to reliably
       // preserve human-set labels/sources/images instead of overwriting them.
@@ -434,9 +459,14 @@ class TemplatesProvider extends ChangeNotifier {
             : t.headerType.toLowerCase();
 
         final existingImageUrl = existing?['offer_image_url'] as String?;
-        final offerImageUrl = (existingImageUrl != null &&
-                existingImageUrl.contains('supabase.co/storage') &&
-                !existingImageUrl.contains('scontent'))
+        // LOW #8 — Use exact project URL to avoid false positives on 'scontent' substring
+        final isSupabaseStorageUrl = existingImageUrl != null &&
+            existingImageUrl.contains('zxvjzaowvzvfgrzdimbm.supabase.co/storage/v1/object/public');
+        final isExpiringCdnUrl = existingImageUrl != null && (
+            existingImageUrl.contains('scontent.') ||
+            existingImageUrl.contains('fbcdn.net') ||
+            existingImageUrl.contains('cdninstagram.com'));
+        final offerImageUrl = (isSupabaseStorageUrl && !isExpiringCdnUrl)
             ? existingImageUrl
             : null;
 
@@ -480,12 +510,16 @@ class TemplatesProvider extends ChangeNotifier {
       final toUpdate =
           rows.where((r) => existingIds.contains(r['meta_template_id'])).toList();
       if (toInsert.isNotEmpty) {
-        await SupabaseService.adminClient.from(tableName).insert(toInsert);
+        await SupabaseService.adminClient.from(tableName).upsert(
+          toInsert,
+          onConflict: 'client_id,template_name,language_code',
+        );
       }
       for (final row in toUpdate) {
         await SupabaseService.adminClient
             .from(tableName)
             .update(row)
+            .eq('client_id', clientId)
             .eq('meta_template_id', row['meta_template_id'] as String);
       }
 
@@ -503,6 +537,7 @@ class TemplatesProvider extends ChangeNotifier {
         await SupabaseService.adminClient
             .from(tableName)
             .delete()
+            .eq('client_id', clientId)
             .inFilter('meta_template_id', staleIds);
         debugPrint('[sync] Removed ${staleIds.length} stale template(s) from $tableName');
       }
@@ -515,6 +550,9 @@ class TemplatesProvider extends ChangeNotifier {
       _isSyncing = false;
       notifyListeners();
       return e.toString();
+    } finally {
+      // MEDIUM #4 — Always release the global mutex
+      _globalSyncLock = false;
     }
   }
 

@@ -99,12 +99,16 @@ class ManagerChatProvider extends ChangeNotifier {
   RealtimeChannel? _chatChannel;
   Timer? _pollTimer;
 
+  // Prediction context — enriches n8n payload for HOB (null for all other clients)
+  PredictionStats? _predictionStats;
+
   // ─── Getters ───────────────────────────────────────────────
 
   bool get isLoading => _isLoading;
   bool get isWaitingForResponse => _isWaitingForResponse;
   String? get error => _error;
   String? get currentSessionId => _currentSessionId;
+  PredictionStats? get predictionStats => _predictionStats;
 
   /// Messages for the current session only
   List<ManagerChatMessage> get messages {
@@ -191,6 +195,14 @@ class ManagerChatProvider extends ChangeNotifier {
 
     _loadAllMessages();
     _subscribeToMessages();
+
+    // Async: enrich n8n payload with prediction context (HOB only — no-op for all other clients)
+    if (ClientConfig.customerPredictionsTable != null) {
+      SupabaseService.fetchPredictionStats().then((stats) {
+        _predictionStats = stats;
+        notifyListeners();
+      });
+    }
   }
 
   /// Subscribe to realtime messages for current user only
@@ -517,6 +529,31 @@ class ManagerChatProvider extends ChangeNotifier {
             'user_name': userName,
             'client_id': ClientConfig.currentClient?.id,
             'session_id': _currentSessionId,
+            'prediction_context': ClientConfig.customerPredictionsTable != null
+                ? {
+                    'overdue_count': _predictionStats?.overdueCount ?? 0,
+                    'due_this_week': _predictionStats?.thisWeekCount ?? 0,
+                    'due_this_month': _predictionStats?.thisMonthCount ?? 0,
+                    'top_services': _predictionStats?.serviceBreakdown.entries
+                            .take(3)
+                            .map((e) => '${e.key}: ${e.value}')
+                            .join(', ') ??
+                        '',
+                    'has_predictions': true,
+                    'date_today': DateTime.now().toIso8601String().split('T')[0],
+                    'date_week_end': DateTime.now()
+                        .add(const Duration(days: 7))
+                        .toIso8601String()
+                        .split('T')[0],
+                    'date_month_end': DateTime.now()
+                        .add(const Duration(days: 30))
+                        .toIso8601String()
+                        .split('T')[0],
+                    'data_source': 'flutter_dashboard_precomputed',
+                    'instruction':
+                        'Use ONLY the counts provided above. Do NOT query the database yourself. These numbers are authoritative: overdue_count=${_predictionStats?.overdueCount ?? 0}, due_this_week=${_predictionStats?.thisWeekCount ?? 0}, due_this_month=${_predictionStats?.thisMonthCount ?? 0}.',
+                  }
+                : null,
           }
         },
         'timestamp': DateTime.now().toIso8601String(),

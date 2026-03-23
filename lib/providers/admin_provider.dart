@@ -71,6 +71,7 @@ class AdminProvider extends ChangeNotifier {
     String? managerChatWebhookUrl,
     String? customerPredictionsTable,
     String? wabaId,
+    String? metaAccessToken,
     int? broadcastLimit,
   }) async {
     _error = null;
@@ -95,6 +96,7 @@ class AdminProvider extends ChangeNotifier {
       remindersWebhookUrl: remindersWebhookUrl,
       managerChatWebhookUrl: managerChatWebhookUrl,
       wabaId: wabaId,
+      metaAccessToken: metaAccessToken,
       broadcastLimit: broadcastLimit,
     );
 
