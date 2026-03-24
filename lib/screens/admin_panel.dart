@@ -1113,6 +1113,11 @@ class _ClientProfileCardState extends State<_ClientProfileCard> {
                       color: VividColors.brightBlue,
                       onTap: widget.onAnalytics!,
                     ),
+                  if (widget.client.customerPredictionsTable != null &&
+                      widget.client.predictionsRefreshWebhookUrl != null) ...[
+                    const SizedBox(width: 8),
+                    _RefreshPredictionsButton(client: widget.client),
+                  ],
                   const Spacer(),
                   GestureDetector(
                     onTap: widget.onEdit,
@@ -9638,6 +9643,80 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ================================================================
+// REFRESH PREDICTIONS BUTTON
+// ================================================================
+
+class _RefreshPredictionsButton extends StatefulWidget {
+  final Client client;
+  const _RefreshPredictionsButton({required this.client});
+
+  @override
+  State<_RefreshPredictionsButton> createState() =>
+      _RefreshPredictionsButtonState();
+}
+
+class _RefreshPredictionsButtonState extends State<_RefreshPredictionsButton> {
+  bool _loading = false;
+
+  Future<void> _refresh() async {
+    setState(() => _loading = true);
+    final success = await SupabaseService.refreshPredictions(
+      webhookUrl: widget.client.predictionsRefreshWebhookUrl!,
+      predictionsTable: widget.client.customerPredictionsTable!,
+      clientId: widget.client.id,
+      clientName: widget.client.name,
+    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(success
+            ? '🔄 Predictions refreshing for ${widget.client.name} (~15s)'
+            : 'Refresh failed — check webhook configuration'),
+        backgroundColor:
+            success ? const Color(0xFF38A169) : const Color(0xFFE53E3E),
+        duration: const Duration(seconds: 4),
+      ));
+      setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Refresh Predictions',
+      child: _loading
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, color: Color(0xFF00BCD4)),
+            )
+          : InkWell(
+              onTap: _refresh,
+              borderRadius: BorderRadius.circular(6),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  border: Border.all(
+                      color: const Color(0xFF00BCD4).withValues(alpha: 0.4)),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  const Icon(Icons.refresh, size: 14, color: Color(0xFF00BCD4)),
+                  const SizedBox(width: 4),
+                  const Text('Refresh',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF00BCD4),
+                          fontWeight: FontWeight.w500)),
+                ]),
+              ),
+            ),
     );
   }
 }

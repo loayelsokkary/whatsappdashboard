@@ -64,6 +64,7 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
   }
 
   void _onOpenSideProfileRequest() {
+    if (ClientConfig.isChatbotClient) return;
     if (openSideProfileNotifier.value && mounted) {
       openSideProfileNotifier.value = false;
       setState(() => _showSideProfile = true);
@@ -422,51 +423,75 @@ class _ConversationDetailPanelState extends State<ConversationDetailPanel> {
       ),
       child: Row(
         children: [
-          // Avatar — tap to toggle side profile
-          GestureDetector(
-            onTap: () => setState(() => _showSideProfile = !_showSideProfile),
-            child: MouseRegion(
-              cursor: SystemMouseCursors.click,
-              onEnter: (_) => setState(() => _avatarHovered = true),
-              onExit: (_) => setState(() => _avatarHovered = false),
-              child: AnimatedScale(
-                scale: _avatarHovered ? 1.08 : 1.0,
-                duration: const Duration(milliseconds: 150),
-                child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: _avatarHovered
-                      ? VividColors.cyan.withValues(alpha: 0.25)
-                      : _showSideProfile
-                          ? VividColors.brightBlue.withValues(alpha: 0.35)
-                          : VividColors.brightBlue.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(12),
-                  border: _showSideProfile
-                      ? Border.all(color: VividColors.brightBlue, width: 1.5)
-                      : _avatarHovered
-                          ? Border.all(color: VividColors.cyan, width: 1.5)
-                          : null,
-                ),
-                child: Center(
-                  child: Builder(builder: (context) {
-                    final initials = _getInitials();
-                    return Text(
-                      initials,
-                      textDirection: isArabicText(initials) ? TextDirection.rtl : TextDirection.ltr,
-                      style: const TextStyle(
-                        color: VividColors.brightBlue,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
-                      ),
-                    );
-                  }),
+          // Avatar — interactive for retention clients, static for chatbot
+          if (ClientConfig.isChatbotClient)
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: VividColors.brightBlue.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Center(
+                child: Builder(builder: (context) {
+                  final initials = _getInitials();
+                  return Text(
+                    initials,
+                    textDirection: isArabicText(initials) ? TextDirection.rtl : TextDirection.ltr,
+                    style: const TextStyle(
+                      color: VividColors.brightBlue,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
+                  );
+                }),
+              ),
+            )
+          else
+            GestureDetector(
+              onTap: () => setState(() => _showSideProfile = !_showSideProfile),
+              child: MouseRegion(
+                cursor: SystemMouseCursors.click,
+                onEnter: (_) => setState(() => _avatarHovered = true),
+                onExit: (_) => setState(() => _avatarHovered = false),
+                child: AnimatedScale(
+                  scale: _avatarHovered ? 1.08 : 1.0,
+                  duration: const Duration(milliseconds: 150),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: _avatarHovered
+                          ? VividColors.cyan.withValues(alpha: 0.25)
+                          : _showSideProfile
+                              ? VividColors.brightBlue.withValues(alpha: 0.35)
+                              : VividColors.brightBlue.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(12),
+                      border: _showSideProfile
+                          ? Border.all(color: VividColors.brightBlue, width: 1.5)
+                          : _avatarHovered
+                              ? Border.all(color: VividColors.cyan, width: 1.5)
+                              : null,
+                    ),
+                    child: Center(
+                      child: Builder(builder: (context) {
+                        final initials = _getInitials();
+                        return Text(
+                          initials,
+                          textDirection: isArabicText(initials) ? TextDirection.rtl : TextDirection.ltr,
+                          style: const TextStyle(
+                            color: VividColors.brightBlue,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          ),
+                        );
+                      }),
+                    ),
+                  ),
                 ),
               ),
             ),
-          ),
-        ),
           const SizedBox(width: 12),
 
           // Info

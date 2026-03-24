@@ -1368,8 +1368,48 @@ class _PredictionInsightsPanelState extends State<_PredictionInsightsPanel> {
                         _buildQuickAction(
                           context,
                           icon: Icons.refresh_rounded,
-                          label: _refreshing ? 'Refreshing...' : 'Refresh Data',
-                          onTap: _refreshing ? null : () => _loadData(isRefresh: true),
+                          label: _refreshing
+                              ? (ClientConfig.predictionsRefreshWebhookUrl != null
+                                  ? 'Recalculating... (~14s)'
+                                  : 'Refreshing...')
+                              : 'Refresh Data',
+                          onTap: _refreshing
+                              ? null
+                              : () async {
+                                  setState(() => _refreshing = true);
+                                  final messenger =
+                                      ScaffoldMessenger.of(context);
+                                  final webhookUrl =
+                                      ClientConfig.predictionsRefreshWebhookUrl;
+                                  final table =
+                                      ClientConfig.customerPredictionsTable;
+                                  final clientId =
+                                      ClientConfig.currentClient?.id;
+                                  final clientName =
+                                      ClientConfig.currentClient?.name;
+                                  if (webhookUrl != null &&
+                                      table != null &&
+                                      clientId != null &&
+                                      clientName != null) {
+                                    await SupabaseService.refreshPredictions(
+                                      webhookUrl: webhookUrl,
+                                      predictionsTable: table,
+                                      clientId: clientId,
+                                      clientName: clientName,
+                                    );
+                                    await Future.delayed(
+                                        const Duration(seconds: 14));
+                                  }
+                                  await _loadData(isRefresh: true);
+                                  if (mounted) {
+                                    setState(() => _refreshing = false);
+                                    messenger.showSnackBar(const SnackBar(
+                                      content: Text('Predictions updated'),
+                                      backgroundColor: Color(0xFF38A169),
+                                      duration: Duration(seconds: 2),
+                                    ));
+                                  }
+                                },
                           loading: _refreshing,
                         ),
                       ],

@@ -901,6 +901,15 @@ class ClientConfig {
   /// Whether the current client uses AI-powered conversations
   static bool get hasAiConversations => _currentClient?.hasAiConversations ?? false;
 
+  /// Product type: 'retention' or 'chatbot'. Defaults to 'retention' so existing clients are unaffected.
+  static String get productType => _currentClient?.productType ?? 'retention';
+
+  /// Whether this client is a chatbot product (no broadcasts, no payment pipeline)
+  static bool get isChatbotClient => productType == 'chatbot';
+
+  static String? get predictionsRefreshWebhookUrl =>
+      _currentClient?.predictionsRefreshWebhookUrl;
+
   /// Check if feature is enabled AND user has permission
   static bool hasFeature(String feature) {
     if (isVividAdmin) return true;
@@ -1044,6 +1053,12 @@ class Client {
   /// Whether this client uses AI-powered conversations
   final bool hasAiConversations;
 
+  /// Product type: 'retention' (Karisma-style broadcasts) or 'chatbot' (AI chatbot, no broadcasts)
+  final String productType;
+
+  /// Webhook URL to trigger n8n prediction recalculation (optional)
+  final String? predictionsRefreshWebhookUrl;
+
   final DateTime createdAt;
 
   const Client({
@@ -1072,6 +1087,8 @@ class Client {
     this.managerChatWebhookUrl,
     this.broadcastLimit,
     this.hasAiConversations = true,
+    this.productType = 'retention',
+    this.predictionsRefreshWebhookUrl,
     required this.createdAt,
   });
 
@@ -1113,6 +1130,8 @@ class Client {
       managerChatWebhookUrl: json['manager_chat_webhook_url'] as String?,
       broadcastLimit: json['broadcast_limit'] as int?,
       hasAiConversations: json['has_ai_conversations'] as bool? ?? true,
+      productType: json['product_type'] as String? ?? 'retention',
+      predictionsRefreshWebhookUrl: json['predictions_refresh_webhook_url'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
   }
@@ -1144,6 +1163,7 @@ class Client {
       'manager_chat_webhook_url': managerChatWebhookUrl,
       'broadcast_limit': broadcastLimit,
       'has_ai_conversations': hasAiConversations,
+      'product_type': productType,
       'created_at': createdAt.toIso8601String(),
     };
   }

@@ -5,6 +5,7 @@ import 'services/supabase_service.dart';
 import 'providers/conversations_provider.dart';
 import 'providers/agent_provider.dart';
 import 'providers/roi_analytics_provider.dart';
+import 'providers/chatbot_analytics_provider.dart';
 import 'providers/admin_analytics_provider.dart';
 import 'providers/notification_provider.dart';
 import 'providers/ai_settings_provider.dart';
@@ -49,6 +50,7 @@ class VividDashboardApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AgentProvider()),
         ChangeNotifierProvider(create: (_) => ConversationsProvider()),
         ChangeNotifierProvider(create: (_) => RoiAnalyticsProvider()),
+        ChangeNotifierProvider(create: (_) => ChatbotAnalyticsProvider()),
         ChangeNotifierProvider(create: (_) => AdminAnalyticsProvider()),
         ChangeNotifierProvider(create: (_) => NotificationProvider()),
         ChangeNotifierProvider(create: (_) => AiSettingsProvider()),

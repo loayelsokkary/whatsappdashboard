@@ -667,6 +667,32 @@ class SupabaseService {
     }
   }
 
+  static Future<bool> refreshPredictions({
+    required String webhookUrl,
+    required String predictionsTable,
+    required String clientId,
+    required String clientName,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse(webhookUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'predictions_table': predictionsTable,
+          'client_id': clientId,
+          'client_name': clientName,
+          'triggered_by': 'dashboard',
+          'timestamp': DateTime.now().toIso8601String(),
+        }),
+      );
+      debugPrint('[Predictions] Refresh response: ${response.statusCode}');
+      return response.statusCode >= 200 && response.statusCode < 300;
+    } catch (e) {
+      debugPrint('[Predictions] Refresh failed: $e');
+      return false;
+    }
+  }
+
   /// Delete a client
   Future<bool> deleteClient(String clientId) async {
     try {
