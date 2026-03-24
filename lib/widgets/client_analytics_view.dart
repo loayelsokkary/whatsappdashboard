@@ -1097,13 +1097,23 @@ class _ClientAnalyticsViewState extends State<ClientAnalyticsView>
                   label: 'Due This Week',
                   value: _fmt.format(p.dueThisWeek),
                   color: Colors.blueGrey,
-                  description: 'Expected to visit in the next 7 days'),
+                  description: 'Expected to visit in the next 7 days',
+                  onTap: p.dueThisWeek > 0 && client.customerPredictionsTable != null
+                      ? () => _showPriorityCustomersDialog(context,
+                          category: _PriorityCategory.dueThisWeek,
+                          tableName: client.customerPredictionsTable!)
+                      : null),
               _MetricCard(
                   icon: Icons.alarm,
                   label: 'Overdue',
                   value: _fmt.format(p.overdueCount),
                   color: Colors.red,
-                  description: 'Past their expected return date'),
+                  description: 'Past their expected return date',
+                  onTap: p.overdueCount > 0 && client.customerPredictionsTable != null
+                      ? () => _showPriorityCustomersDialog(context,
+                          category: _PriorityCategory.overdue,
+                          tableName: client.customerPredictionsTable!)
+                      : null),
               _MetricCard(
                   icon: Icons.timelapse,
                   label: 'Avg Gap',
@@ -1883,6 +1893,313 @@ class _ClientAnalyticsViewState extends State<ClientAnalyticsView>
 // REUSABLE WIDGETS
 // ═══════════════════════════════════════════════════════════════════
 
+// ─── Priority Targets Customer List Dialog ───────────────────────
+
+enum _PriorityCategory { overdue, dueThisWeek, dueThisMonth }
+
+Future<void> _showPriorityCustomersDialog(
+  BuildContext context, {
+  required _PriorityCategory category,
+  required String tableName,
+}) async {
+  final screenWidth = MediaQuery.of(context).size.width;
+  final isMobile = screenWidth < 600;
+
+  final rows = await SupabaseService.adminClient
+      .from(tableName)
+      .select()
+      .order('days_until_predicted', ascending: true);
+
+  final all = (rows as List)
+      .map((r) => CustomerPrediction.fromJson(r as Map<String, dynamic>))
+      .toList();
+
+  final List<CustomerPrediction> filtered;
+  final String title;
+  switch (category) {
+    case _PriorityCategory.overdue:
+      filtered = all.where((c) => c.daysUntilPredicted < 0).toList()
+        ..sort((a, b) => a.daysUntilPredicted.compareTo(b.daysUntilPredicted));
+      title = 'Overdue Customers';
+    case _PriorityCategory.dueThisWeek:
+      filtered = all
+          .where((c) => c.daysUntilPredicted >= 0 && c.daysUntilPredicted <= 7)
+          .toList()
+        ..sort((a, b) => a.daysUntilPredicted.compareTo(b.daysUntilPredicted));
+      title = 'Due This Week';
+    case _PriorityCategory.dueThisMonth:
+      filtered = all
+          .where(
+              (c) => c.daysUntilPredicted >= 8 && c.daysUntilPredicted <= 30)
+          .toList()
+        ..sort((a, b) => a.daysUntilPredicted.compareTo(b.daysUntilPredicted));
+      title = 'Due This Month';
+  }
+
+  if (!context.mounted) return;
+
+  showDialog(
+    context: context,
+    builder: (_) {
+      return _PriorityCustomersDialogContent(
+        title: title,
+        customers: filtered,
+        isMobile: isMobile,
+        screenWidth: screenWidth,
+        category: category,
+      );
+    },
+  );
+}
+
+class _PriorityCustomersDialogContent extends StatefulWidget {
+  final String title;
+  final List<CustomerPrediction> customers;
+  final bool isMobile;
+  final double screenWidth;
+  final _PriorityCategory category;
+
+  const _PriorityCustomersDialogContent({
+    required this.title,
+    required this.customers,
+    required this.isMobile,
+    required this.screenWidth,
+    required this.category,
+  });
+
+  @override
+  State<_PriorityCustomersDialogContent> createState() =>
+      _PriorityCustomersDialogContentState();
+}
+
+class _PriorityCustomersDialogContentState
+    extends State<_PriorityCustomersDialogContent> {
+  String _search = '';
+  static final _dateFmt = DateFormat('MMM d, yyyy');
+
+  List<CustomerPrediction> get _filtered {
+    if (_search.isEmpty) return widget.customers;
+    final q = _search.toLowerCase();
+    return widget.customers.where((c) {
+      final name = c.customerName?.toLowerCase() ?? '';
+      final phone = c.phone.toLowerCase();
+      return name.contains(q) || phone.contains(q);
+    }).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final vc = context.vividColors;
+    final items = _filtered;
+
+    return AlertDialog(
+      backgroundColor: vc.surface,
+      insetPadding: widget.isMobile
+          ? const EdgeInsets.symmetric(horizontal: 12, vertical: 24)
+          : const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
+      titlePadding: EdgeInsets.zero,
+      contentPadding: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: Container(
+        padding: const EdgeInsets.fromLTRB(20, 16, 8, 12),
+        decoration: BoxDecoration(
+          border: Border(bottom: BorderSide(color: vc.border)),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              widget.category == _PriorityCategory.overdue
+                  ? Icons.alarm
+                  : Icons.event,
+              color: widget.category == _PriorityCategory.overdue
+                  ? Colors.red
+                  : Colors.blueGrey,
+              size: 20,
+            ),
+            const SizedBox(width: 8),
+            Text(widget.title,
+                style: TextStyle(
+                    color: vc.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700)),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: VividColors.cyan.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text('${widget.customers.length}',
+                  style: const TextStyle(
+                      color: VividColors.cyan,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700)),
+            ),
+            const Spacer(),
+            IconButton(
+              icon: Icon(Icons.close, size: 18, color: vc.textMuted),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ],
+        ),
+      ),
+      content: SizedBox(
+        width: widget.isMobile ? widget.screenWidth : 620,
+        height: 500,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: TextField(
+                style: TextStyle(color: vc.textPrimary, fontSize: 13),
+                decoration: InputDecoration(
+                  hintText: 'Search by name or phone…',
+                  hintStyle: TextStyle(color: vc.textMuted, fontSize: 13),
+                  prefixIcon:
+                      Icon(Icons.search, size: 18, color: vc.textMuted),
+                  filled: true,
+                  fillColor: vc.surfaceAlt,
+                  contentPadding:
+                      const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: vc.border),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: vc.border),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: VividColors.cyan),
+                  ),
+                ),
+                onChanged: (v) => setState(() => _search = v),
+              ),
+            ),
+            Expanded(
+              child: items.isEmpty
+                  ? Center(
+                      child: Text('No customers found',
+                          style:
+                              TextStyle(color: vc.textMuted, fontSize: 13)))
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: items.length,
+                      itemBuilder: (_, i) =>
+                          _buildCustomerTile(vc, items[i]),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCustomerTile(VividColorScheme vc, CustomerPrediction c) {
+    final daysVal = c.daysUntilPredicted;
+    final String daysLabel;
+    final Color daysColor;
+
+    if (daysVal < 0) {
+      daysLabel = '${daysVal.abs()}d overdue';
+      daysColor = Colors.red;
+    } else if (daysVal == 0) {
+      daysLabel = 'Due today';
+      daysColor = Colors.orange;
+    } else {
+      daysLabel = 'In ${daysVal}d';
+      daysColor = Colors.blueGrey;
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: vc.surfaceAlt,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: vc.border.withValues(alpha: 0.5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  c.customerName ?? 'Unknown',
+                  style: TextStyle(
+                      color: vc.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700),
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: daysColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
+                  border:
+                      Border.all(color: daysColor.withValues(alpha: 0.3)),
+                ),
+                child: Text(daysLabel,
+                    style: TextStyle(
+                        color: daysColor,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Icon(Icons.phone, size: 12, color: vc.textMuted),
+              const SizedBox(width: 4),
+              Text(c.phone,
+                  style: TextStyle(color: vc.textMuted, fontSize: 12)),
+              if (c.primaryService != null) ...[
+                const SizedBox(width: 12),
+                Icon(Icons.spa, size: 12, color: vc.textMuted),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(c.primaryService!,
+                      style: TextStyle(color: vc.textMuted, fontSize: 12),
+                      overflow: TextOverflow.ellipsis),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Icon(Icons.history, size: 12, color: vc.textMuted),
+              const SizedBox(width: 4),
+              Text(
+                c.lastVisit != null
+                    ? 'Last: ${_dateFmt.format(c.lastVisit!)}'
+                    : 'No visit recorded',
+                style: TextStyle(color: vc.textMuted, fontSize: 11),
+              ),
+              const SizedBox(width: 12),
+              Icon(Icons.event, size: 12, color: vc.textMuted),
+              const SizedBox(width: 4),
+              Text(
+                c.predictedNextVisit != null
+                    ? 'Predicted: ${_dateFmt.format(c.predictedNextVisit!)}'
+                    : '—',
+                style: TextStyle(color: vc.textMuted, fontSize: 11),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Metric Card ─────────────────────────────────────────────────
+
 class _MetricCard extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -1890,6 +2207,7 @@ class _MetricCard extends StatelessWidget {
   final Color color;
   final String? description;
   final bool isHighlight;
+  final VoidCallback? onTap;
 
   const _MetricCard({
     required this.icon,
@@ -1898,12 +2216,13 @@ class _MetricCard extends StatelessWidget {
     required this.color,
     this.description,
     this.isHighlight = false,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final vc = context.vividColors;
-    return Container(
+    final card = Container(
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
         color: vc.surface,
@@ -1962,6 +2281,11 @@ class _MetricCard extends StatelessWidget {
           ],
         ],
       ),
+    );
+    if (onTap == null) return card;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(onTap: onTap, child: card),
     );
   }
 }

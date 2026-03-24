@@ -99,6 +99,12 @@ class ManagerChatProvider extends ChangeNotifier {
   RealtimeChannel? _chatChannel;
   Timer? _pollTimer;
 
+  /// Draft message text preserved across navigation.
+  String _draftMessage = '';
+  String get draftMessage => _draftMessage;
+  set draftMessage(String value) => _draftMessage = value;
+  void clearDraft() => _draftMessage = '';
+
   // Prediction context — enriches n8n payload for HOB (null for all other clients)
   PredictionStats? _predictionStats;
 
