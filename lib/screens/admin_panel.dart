@@ -6321,10 +6321,15 @@ class _VividInsightsPanelState extends State<_VividInsightsPanel> {
   @override
   void initState() {
     super.initState();
-    // Trigger broadcast analytics fetch for this client.
+    // Trigger analytics fetch for this client.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         context.read<BroadcastAnalyticsProvider>().fetchAnalytics();
+        context.read<RoiAnalyticsProvider>().fetchAnalytics(
+          clientId: widget.client.id,
+          messagesTable: ClientConfig.messagesTable,
+          broadcastsTable: ClientConfig.broadcastsTable,
+        );
       }
     });
   }

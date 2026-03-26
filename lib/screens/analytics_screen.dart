@@ -931,7 +931,7 @@ class _ConversationsView extends StatelessWidget {
             label: 'Organic Leads',
             value: '${m.organicLeads}',
             color: const Color(0xFF8B5CF6),
-            description: 'Leads not attributed to any broadcast campaign',
+            description: 'New conversations from customers who have never received a broadcast',
             isHighlight: m.organicLeads > 0,
             change: c != null ? _calcChange(m.organicLeads.toDouble(), c.organicLeads.toDouble()) : null,
             compareLabel: _compareLabel,

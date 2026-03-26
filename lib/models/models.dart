@@ -910,6 +910,8 @@ class ClientConfig {
   static String? get predictionsRefreshWebhookUrl =>
       _currentClient?.predictionsRefreshWebhookUrl;
 
+  static bool get isSharedWaba => _currentClient?.isSharedWaba ?? false;
+
   /// Check if feature is enabled AND user has permission
   static bool hasFeature(String feature) {
     if (isVividAdmin) return true;
@@ -1059,6 +1061,10 @@ class Client {
   /// Webhook URL to trigger n8n prediction recalculation (optional)
   final String? predictionsRefreshWebhookUrl;
 
+  /// True when this client shares a WABA with other clients (e.g. HOB + Vivid Demo on same WABA).
+  /// Enables slug-prefix filtering during Sync to AI to prevent cross-client template contamination.
+  final bool isSharedWaba;
+
   final DateTime createdAt;
 
   const Client({
@@ -1089,6 +1095,7 @@ class Client {
     this.hasAiConversations = true,
     this.productType = 'retention',
     this.predictionsRefreshWebhookUrl,
+    this.isSharedWaba = false,
     required this.createdAt,
   });
 
@@ -1132,6 +1139,7 @@ class Client {
       hasAiConversations: json['has_ai_conversations'] as bool? ?? true,
       productType: json['product_type'] as String? ?? 'retention',
       predictionsRefreshWebhookUrl: json['predictions_refresh_webhook_url'] as String?,
+      isSharedWaba: json['is_shared_waba'] as bool? ?? false,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
   }

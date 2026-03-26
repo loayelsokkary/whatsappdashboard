@@ -71,7 +71,6 @@ class RoiAnalyticsProvider extends ChangeNotifier {
           await _supabase
               .from(broadcastsTable)
               .select()
-              .eq('client_id', clientId)
               .order('sent_at', ascending: false),
         );
 
@@ -315,42 +314,52 @@ class RoiAnalyticsProvider extends ChangeNotifier {
     int organicLeads = 0;
     final List<LeadContributor> leadContributors = [];
     final List<LeadContributor> organicLeadContributors = [];
-    for (final entry in byPhone.entries) {
-      final phone = entry.key;
-      final msgs = entry.value;
-      DateTime? lastCM;
-      String? nameAttr;
-      for (final m in msgs) {
-        if (!_hasCustomerMessage(m)) continue;
-        nameAttr ??= m['customer_name']?.toString();
-        final createdAt = _parseDate(m);
-        if (createdAt == null) continue;
-        if (lastCM == null || createdAt.difference(lastCM).inHours >= 24) {
-          totalLeads++;
-          // Last-touch attribution: a lead is "from broadcast" only if the
-          // most recent broadcast to this phone was within the attribution window.
-          final lastCampaign = _lastCampaignBefore(
-              phone, createdAt, phoneCampaigns, campaignSentAt);
-          final lastSentAt =
-              lastCampaign != null ? campaignSentAt[lastCampaign] : null;
-          final isFromBroadcast = lastSentAt != null &&
-              createdAt.difference(lastSentAt).inHours <=
-                  _kAttributionWindowHours;
-          if (!isFromBroadcast) {
-            organicLeads++;
+    try {
+      for (final entry in byPhone.entries) {
+        final phone = entry.key;
+        final msgs = entry.value;
+        DateTime? lastCM;
+        String? nameAttr;
+        for (final m in msgs) {
+          if (!_hasCustomerMessage(m)) continue;
+          nameAttr ??= m['customer_name']?.toString();
+          final createdAt = _parseDate(m);
+          if (createdAt == null) continue;
+          if (lastCM == null || createdAt.difference(lastCM).inHours >= 24) {
+            totalLeads++;
+            // Ever-touched attribution: a lead is "from broadcast" if this phone
+            // has EVER been in broadcast_recipients — regardless of how long ago.
+            // Rationale: if we never messaged them first, they wouldn't have returned.
+            // For phones never reached by any broadcast, fall back to the 72h window
+            // (covers edge cases like manual outreach or new customers).
+            final wasEverBroadcasted = phoneCampaigns.containsKey(phone) &&
+                (phoneCampaigns[phone]?.isNotEmpty ?? false);
+            final lastCampaign = _lastCampaignBefore(
+                phone, createdAt, phoneCampaigns, campaignSentAt);
+            final lastSentAt =
+                lastCampaign != null ? campaignSentAt[lastCampaign] : null;
+            final isFromBroadcast = wasEverBroadcasted ||
+                (lastSentAt != null &&
+                    createdAt.difference(lastSentAt).inHours <=
+                        _kAttributionWindowHours);
+            if (!isFromBroadcast) {
+              organicLeads++;
+            }
+            final lc = LeadContributor(
+              phone: phone,
+              name: nameAttr,
+              displayName: nameAttr ?? phone,
+              date: createdAt,
+              isOrganic: !isFromBroadcast,
+            );
+            leadContributors.add(lc);
+            if (!isFromBroadcast) organicLeadContributors.add(lc);
           }
-          final lc = LeadContributor(
-            phone: phone,
-            name: nameAttr,
-            displayName: nameAttr ?? phone,
-            date: createdAt,
-            isOrganic: !isFromBroadcast,
-          );
-          leadContributors.add(lc);
-          if (!isFromBroadcast) organicLeadContributors.add(lc);
+          lastCM = createdAt;
         }
-        lastCM = createdAt;
       }
+    } catch (e) {
+      debugPrint('Leads calculation error: $e');
     }
 
     // ---- REVENUE: label-based × offer_amount ----

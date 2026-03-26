@@ -12,6 +12,7 @@ class BroadcastAnalyticsData {
   final int totalFailed;
   final double deliveryRate;
   final double readRate;
+  final double totalRevenue;
   final List<CampaignPerformance> recentCampaigns;
   final List<DailyBroadcastActivity> last7Days;
 
@@ -23,6 +24,7 @@ class BroadcastAnalyticsData {
     required this.totalFailed,
     required this.deliveryRate,
     required this.readRate,
+    this.totalRevenue = 0.0,
     required this.recentCampaigns,
     required this.last7Days,
   });
@@ -147,17 +149,28 @@ class BroadcastAnalyticsProvider extends ChangeNotifier {
         final status = (r['status']?.toString() ?? '').toLowerCase().trim();
         if (status == 'failed') {
           totalFailed++;
+        } else if (status == 'read') {
+          totalRead++;
+          totalDelivered++;
         } else {
           // NULL, empty, 'accepted', 'sent', 'delivered', etc. → sent successfully
           totalDelivered++;
         }
       }
 
+      // Sum offer_amount across all broadcasts
+      double totalRevenue = 0.0;
+      for (final b in broadcasts) {
+        totalRevenue += double.tryParse(b['offer_amount']?.toString() ?? '0') ?? 0.0;
+      }
+
       // Calculate rates
       final deliveryRate = totalRecipients > 0
           ? totalDelivered / totalRecipients * 100
           : 0.0;
-      const readRate = 0.0;
+      final readRate = totalRecipients > 0
+          ? totalRead / totalRecipients * 100
+          : 0.0;
 
       // Get campaign performance
       final recentCampaigns = <CampaignPerformance>[];
@@ -175,6 +188,9 @@ class BroadcastAnalyticsProvider extends ChangeNotifier {
           final status = (r['status']?.toString() ?? '').toLowerCase().trim();
           if (status == 'failed') {
             failed++;
+          } else if (status == 'read') {
+            read++;
+            delivered++;
           } else {
             // NULL, empty, 'accepted', 'sent', 'delivered', etc. → sent successfully
             delivered++;
@@ -225,6 +241,7 @@ class BroadcastAnalyticsProvider extends ChangeNotifier {
         totalFailed: totalFailed,
         deliveryRate: deliveryRate,
         readRate: readRate,
+        totalRevenue: totalRevenue,
         recentCampaigns: recentCampaigns,
         last7Days: last7Days,
       );
