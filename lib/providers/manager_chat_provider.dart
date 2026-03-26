@@ -190,8 +190,8 @@ class ManagerChatProvider extends ChangeNotifier {
     _currentUserId = userId;
     _initialized = true;
 
-    print('💬 Initializing chat for user: $_currentUserId');
-    print('💬 Manager chats table: ${_managerChatsTable ?? "NOT CONFIGURED"}');
+    debugPrint('💬 Initializing chat for user: $_currentUserId');
+    debugPrint('💬 Manager chats table: ${_managerChatsTable ?? "NOT CONFIGURED"}');
 
     if (_managerChatsTable == null) {
       _error = 'Manager chats table not configured for this client';
@@ -218,7 +218,7 @@ class ManagerChatProvider extends ChangeNotifier {
     final table = _managerChatsTable;
     final userId = _currentUserId;
     if (table == null || userId == null) {
-      print('💬 Cannot subscribe: table=$table, userId=$userId');
+      debugPrint('💬 Cannot subscribe: table=$table, userId=$userId');
       return;
     }
 
@@ -234,7 +234,7 @@ class ManagerChatProvider extends ChangeNotifier {
             value: userId,
           ),
           callback: (payload) {
-            print('💬 New manager chat message received');
+            debugPrint('💬 New manager chat message received');
             _handleNewMessage(payload.newRecord);
           },
         )
@@ -248,13 +248,13 @@ class ManagerChatProvider extends ChangeNotifier {
             value: userId,
           ),
           callback: (payload) {
-            print('💬 Manager chat message updated');
+            debugPrint('💬 Manager chat message updated');
             _handleMessageUpdate(payload.newRecord);
           },
         )
         .subscribe();
 
-    print('💬 Subscribed to $table for user: $userId');
+    debugPrint('💬 Subscribed to $table for user: $userId');
   }
 
   // ─── Message handlers ──────────────────────────────────────
@@ -305,7 +305,7 @@ class ManagerChatProvider extends ChangeNotifier {
       }
       notifyListeners();
     } catch (e) {
-      print('Error handling new message: $e');
+      debugPrint('Error handling new message: $e');
     }
   }
 
@@ -353,7 +353,7 @@ class ManagerChatProvider extends ChangeNotifier {
       }
       notifyListeners();
     } catch (e) {
-      print('Error handling message update: $e');
+      debugPrint('Error handling message update: $e');
     }
   }
 
@@ -382,9 +382,9 @@ class ManagerChatProvider extends ChangeNotifier {
           .from(_managerChatsTable!)
           .update({'session_id': sessionId})
           .eq('id', messageId);
-      print('💬 Patched session_id=$sessionId on message $messageId');
+      debugPrint('💬 Patched session_id=$sessionId on message $messageId');
     } catch (e) {
-      print('Failed to patch session_id: $e');
+      debugPrint('Failed to patch session_id: $e');
     }
   }
 
@@ -404,7 +404,7 @@ class ManagerChatProvider extends ChangeNotifier {
         return;
       }
 
-      print('💬 Loading all messages from: $_managerChatsTable for user: $userId');
+      debugPrint('💬 Loading all messages from: $_managerChatsTable for user: $userId');
 
       // Use adminClient to bypass RLS on per-client tables
       final response = await SupabaseService.adminClient
@@ -421,7 +421,7 @@ class ManagerChatProvider extends ChangeNotifier {
         return cached != null ? _withSessionId(msg, cached) : msg;
       }).toList();
 
-      print('💬 Loaded ${_allMessages.length} messages');
+      debugPrint('💬 Loaded ${_allMessages.length} messages');
 
       // Auto-select most recent session
       if (_currentSessionId == null) {
@@ -435,7 +435,7 @@ class ManagerChatProvider extends ChangeNotifier {
         // If no messages at all, _currentSessionId stays null until user sends first message
       }
     } catch (e) {
-      print('Load messages error: $e');
+      debugPrint('Load messages error: $e');
       _error = 'Failed to load messages';
     }
 
@@ -466,7 +466,7 @@ class ManagerChatProvider extends ChangeNotifier {
 
       notifyListeners();
     } catch (e) {
-      print('Refresh messages error: $e');
+      debugPrint('Refresh messages error: $e');
     }
   }
 
@@ -567,15 +567,19 @@ class ManagerChatProvider extends ChangeNotifier {
         'executionMode': 'production',
       };
 
-      print('💬 Calling webhook: $webhookUrl');
+      debugPrint('[ManagerChat] Calling webhook');
 
       final response = await http.post(
         Uri.parse(webhookUrl),
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          if (SupabaseService.webhookSecret.isNotEmpty)
+            'X-Vivid-Secret': SupabaseService.webhookSecret,
+        },
         body: jsonEncode(payload),
       );
 
-      print('💬 Webhook response: ${response.statusCode}');
+      debugPrint('[ManagerChat] Webhook response: ${response.statusCode}');
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
         await SupabaseService.instance.log(
@@ -593,7 +597,7 @@ class ManagerChatProvider extends ChangeNotifier {
 
       _startPolling();
     } catch (e) {
-      print('Send message error: $e');
+      debugPrint('Send message error: $e');
       _error = 'Failed to send message';
       _isWaitingForResponse = false;
       notifyListeners();
@@ -679,7 +683,7 @@ class ManagerChatProvider extends ChangeNotifier {
         notifyListeners();
       }
     } catch (e) {
-      print('Poll for response error: $e');
+      debugPrint('Poll for response error: $e');
     }
   }
 

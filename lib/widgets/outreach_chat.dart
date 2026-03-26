@@ -414,11 +414,11 @@ class _ChatPanelState extends State<_ChatPanel> {
                     fontSize: 10,
                     fontWeight: FontWeight.w600)),
           ),
-          if (!provider.hasWebhook) ...[
+          if (!provider.hasSendWebhook) ...[
             const SizedBox(width: 8),
             Tooltip(
               message:
-                  'Webhook not configured — messages saved but not sent via WhatsApp',
+                  'Send webhook not configured — messages saved but not sent via WhatsApp',
               child: Icon(Icons.warning_amber_rounded,
                   size: 18, color: VividColors.statusWarning),
             ),

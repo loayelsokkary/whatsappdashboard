@@ -176,7 +176,7 @@ class BroadcastsProvider extends ChangeNotifier {
           schema: 'public',
           table: _broadcastsTable,
           callback: (payload) {
-            print('📢 New broadcast received');
+            debugPrint('📢 New broadcast received');
             _handleNewBroadcast(payload.newRecord);
           },
         )
@@ -185,13 +185,13 @@ class BroadcastsProvider extends ChangeNotifier {
           schema: 'public',
           table: _broadcastsTable,
           callback: (payload) {
-            print('📢 Broadcast updated');
+            debugPrint('📢 Broadcast updated');
             _handleBroadcastUpdate(payload.newRecord);
           },
         )
         .subscribe();
 
-    print('📢 Subscribed to $_broadcastsTable realtime updates');
+    debugPrint('📢 Subscribed to $_broadcastsTable realtime updates');
   }
 
   void _handleNewBroadcast(Map<String, dynamic> data) {
@@ -203,7 +203,7 @@ class BroadcastsProvider extends ChangeNotifier {
       _broadcasts.insert(0, broadcast);
       notifyListeners();
     } catch (e) {
-      print('Error handling new broadcast: $e');
+      debugPrint('Error handling new broadcast: $e');
     }
   }
 
@@ -222,7 +222,7 @@ class BroadcastsProvider extends ChangeNotifier {
         notifyListeners();
       }
     } catch (e) {
-      print('Error handling broadcast update: $e');
+      debugPrint('Error handling broadcast update: $e');
     }
   }
 
@@ -241,13 +241,13 @@ class BroadcastsProvider extends ChangeNotifier {
             value: broadcastId,
           ),
           callback: (payload) {
-            print('📢 New recipient received');
+            debugPrint('📢 New recipient received');
             _handleNewRecipient(payload.newRecord);
           },
         )
         .subscribe();
 
-    print('📢 Subscribed to $_recipientsTable realtime updates');
+    debugPrint('📢 Subscribed to $_recipientsTable realtime updates');
   }
 
   void _handleNewRecipient(Map<String, dynamic> data) {
@@ -268,7 +268,7 @@ class BroadcastsProvider extends ChangeNotifier {
         notifyListeners();
       }
     } catch (e) {
-      print('Error handling new recipient: $e');
+      debugPrint('Error handling new recipient: $e');
     }
   }
 
@@ -278,7 +278,7 @@ class BroadcastsProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      print('📢 Fetching from table: $_broadcastsTable');
+      debugPrint('📢 Fetching from table: $_broadcastsTable');
       
       // Use adminClient to bypass RLS on per-client tables
       final response = await SupabaseService.adminClient
@@ -290,7 +290,7 @@ class BroadcastsProvider extends ChangeNotifier {
         return Broadcast.fromJson(json);
       }).toList();
 
-      print('📢 Fetched ${_broadcasts.length} broadcasts from $_broadcastsTable');
+      debugPrint('📢 Fetched ${_broadcasts.length} broadcasts from $_broadcastsTable');
 
       await fetchMonthlySentCount();
 
@@ -299,7 +299,7 @@ class BroadcastsProvider extends ChangeNotifier {
 
       _subscribeToBroadcasts();
     } catch (e) {
-      print('Fetch broadcasts error: $e');
+      debugPrint('Fetch broadcasts error: $e');
       _error = 'Failed to load broadcasts';
       _isLoading = false;
       notifyListeners();
@@ -346,7 +346,7 @@ class BroadcastsProvider extends ChangeNotifier {
           .count(CountOption.exact);
       return result.count;
     } catch (e) {
-      print('Error fetching recipient count: $e');
+      debugPrint('Error fetching recipient count: $e');
       return -1;
     }
   }
@@ -365,7 +365,7 @@ class BroadcastsProvider extends ChangeNotifier {
       _hasMoreRecipients = rows.length >= _recipientsPageSize;
       notifyListeners();
     } catch (e) {
-      print('Fetch recipients error: $e');
+      debugPrint('Fetch recipients error: $e');
     }
   }
 
@@ -389,7 +389,7 @@ class BroadcastsProvider extends ChangeNotifier {
       _recipientOffset += rows.length;
       _hasMoreRecipients = rows.length >= _recipientsPageSize;
     } catch (e) {
-      print('Load more recipients error: $e');
+      debugPrint('Load more recipients error: $e');
     }
     _isLoadingMoreRecipients = false;
     notifyListeners();
@@ -407,7 +407,7 @@ class BroadcastsProvider extends ChangeNotifier {
       _recipientSentCount = result.count;
       notifyListeners();
     } catch (e) {
-      print('Error fetching recipient stats: $e');
+      debugPrint('Error fetching recipient stats: $e');
     }
   }
 
@@ -442,7 +442,7 @@ class BroadcastsProvider extends ChangeNotifier {
       _monthlySentCount = countResult.count;
       notifyListeners();
     } catch (e) {
-      print('Error fetching monthly broadcast count: $e');
+      debugPrint('Error fetching monthly broadcast count: $e');
     }
   }
 
@@ -464,8 +464,8 @@ class BroadcastsProvider extends ChangeNotifier {
 
       final persistedName = verify?['campaign_name']?.toString();
       if (persistedName != newName) {
-        print('⚠️ Rename did not persist! DB has: $persistedName, expected: $newName');
-        print('⚠️ This is likely an RLS policy issue — check UPDATE policy on $_broadcastsTable');
+        debugPrint('⚠️ Rename did not persist! DB has: $persistedName, expected: $newName');
+        debugPrint('⚠️ This is likely an RLS policy issue — check UPDATE policy on $_broadcastsTable');
         throw Exception('Rename failed — check Supabase RLS policies on $_broadcastsTable');
       }
 
@@ -479,7 +479,7 @@ class BroadcastsProvider extends ChangeNotifier {
       }
       notifyListeners();
     } catch (e) {
-      print('Error renaming broadcast: $e');
+      debugPrint('Error renaming broadcast: $e');
       rethrow;
     }
   }
@@ -509,13 +509,8 @@ class BroadcastsProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // Debug: log config state
       final client = ClientConfig.currentClient;
-      print('📢 [sendBroadcast] Client: ${client?.name} (${client?.id})');
-      print('📢 [sendBroadcast] broadcastsPhone: ${ClientConfig.broadcastsPhone}');
-      print('📢 [sendBroadcast] broadcastsWebhookUrl: ${ClientConfig.broadcastsWebhookUrl}');
-      print('📢 [sendBroadcast] businessPhone fallback: ${client?.businessPhone}');
-      print('📢 [sendBroadcast] webhookUrl fallback: ${client?.webhookUrl}');
+      debugPrint('[sendBroadcast] Initiating broadcast for client: ${client?.name}');
 
       final webhookUrl = ClientConfig.broadcastsWebhookUrl;
       if (webhookUrl == null || webhookUrl.isEmpty) {
@@ -545,19 +540,20 @@ class BroadcastsProvider extends ChangeNotifier {
         'timestamp': DateTime.now().toIso8601String(),
       };
 
-      print('📢 [sendBroadcast] Sending to: $webhookUrl');
-      print('📢 [sendBroadcast] Payload: $payload');
-
       final response = await http.post(
         Uri.parse(webhookUrl),
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          if (SupabaseService.webhookSecret.isNotEmpty)
+            'X-Vivid-Secret': SupabaseService.webhookSecret,
+        },
         body: jsonEncode(payload),
       );
 
-      print('📢 [sendBroadcast] Response: ${response.statusCode} ${response.body}');
+      debugPrint('[sendBroadcast] Response: ${response.statusCode}');
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
-        print('📢 [sendBroadcast] Success!');
+        debugPrint('📢 [sendBroadcast] Success!');
 
         // Log the broadcast action
         await SupabaseService.instance.log(
@@ -579,13 +575,13 @@ class BroadcastsProvider extends ChangeNotifier {
         return true;
       } else {
         _sendError = 'Server error (${response.statusCode}). Please try again.';
-        print('📢 [sendBroadcast] Server error: ${response.statusCode} ${response.body}');
+        debugPrint('📢 [sendBroadcast] Server error: ${response.statusCode} ${response.body}');
         _isSending = false;
         notifyListeners();
         return false;
       }
     } catch (e) {
-      print('📢 [sendBroadcast] Error: $e');
+      debugPrint('📢 [sendBroadcast] Error: $e');
       _sendError = e.toString().contains('XMLHttpRequest')
           ? 'Network error — could not reach the broadcast server. Check webhook URL.'
           : 'Failed to send: $e';

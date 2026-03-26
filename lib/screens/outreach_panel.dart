@@ -5,6 +5,7 @@ import '../models/models.dart';
 import '../providers/outreach_provider.dart';
 import '../theme/vivid_theme.dart';
 import '../widgets/outreach_chat.dart';
+import 'new_outreach_template_screen.dart';
 
 /// Main outreach tab widget with 4 sub-sections.
 class OutreachPanel extends StatefulWidget {
@@ -28,7 +29,7 @@ class _OutreachPanelState extends State<OutreachPanel>
       p.fetchContacts();
       p.fetchBroadcasts();
       p.fetchTemplates();
-      p.loadWebhookUrl();
+      p.reloadOutreachConfig();
     });
   }
 
@@ -1660,6 +1661,24 @@ class _TemplatesSection extends StatelessWidget {
                       fontSize: 16,
                       fontWeight: FontWeight.w700)),
               const Spacer(),
+              FilledButton.icon(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const NewOutreachTemplateScreen()),
+                ),
+                icon: const Icon(Icons.add_rounded, size: 16),
+                label: const Text('Create'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: VividColors.cyan,
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  textStyle: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w500),
+                ),
+              ),
+              const SizedBox(width: 8),
               OutlinedButton.icon(
                 onPressed: provider.isLoadingTemplates
                     ? null

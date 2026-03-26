@@ -1040,6 +1040,8 @@ class Client {
   final String? managerChatWebhookUrl;
 
   final int? broadcastLimit;
+  final String? productType;
+  final String? predictionsRefreshWebhookUrl;
 
   /// Whether this client uses AI-powered conversations
   final bool hasAiConversations;
@@ -1071,6 +1073,8 @@ class Client {
     this.remindersWebhookUrl,
     this.managerChatWebhookUrl,
     this.broadcastLimit,
+    this.productType,
+    this.predictionsRefreshWebhookUrl,
     this.hasAiConversations = true,
     required this.createdAt,
   });
@@ -1112,6 +1116,8 @@ class Client {
       remindersWebhookUrl: json['reminders_webhook_url'] as String?,
       managerChatWebhookUrl: json['manager_chat_webhook_url'] as String?,
       broadcastLimit: json['broadcast_limit'] as int?,
+      productType: json['product_type'] as String?,
+      predictionsRefreshWebhookUrl: json['predictions_refresh_webhook_url'] as String?,
       hasAiConversations: json['has_ai_conversations'] as bool? ?? true,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
@@ -1143,6 +1149,8 @@ class Client {
       'reminders_webhook_url': remindersWebhookUrl,
       'manager_chat_webhook_url': managerChatWebhookUrl,
       'broadcast_limit': broadcastLimit,
+      'product_type': productType,
+      'predictions_refresh_webhook_url': predictionsRefreshWebhookUrl,
       'has_ai_conversations': hasAiConversations,
       'created_at': createdAt.toIso8601String(),
     };

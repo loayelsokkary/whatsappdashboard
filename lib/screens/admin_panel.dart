@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'dart:html' as html;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import '../providers/admin_provider.dart';
@@ -3104,13 +3105,14 @@ class _ClientOnboardingWizard extends StatefulWidget {
 
 class _ClientOnboardingWizardState extends State<_ClientOnboardingWizard> {
   int _currentStep = 0;
-  static const _totalSteps = 5;
+  static const _totalSteps = 6;
   final _formKeys = List.generate(_totalSteps, (_) => GlobalKey<FormState>());
 
   // Step 1 — Basic Info
   final _nameController = TextEditingController();
   final _slugController = TextEditingController();
   bool _slugManuallyEdited = false;
+  String _selectedProductType = 'retention';
 
   // Step 2 — Features
   final Set<String> _selectedFeatures = {};
@@ -3128,6 +3130,7 @@ class _ClientOnboardingWizardState extends State<_ClientOnboardingWizard> {
   final _wabaIdController = TextEditingController();
   final _accessTokenController = TextEditingController();
   final _broadcastLimitController = TextEditingController(text: '500');
+  final _predictionsWebhookController = TextEditingController();
   // Step 4 — First User
   bool _createUser = false;
   final _userNameController = TextEditingController();
@@ -3135,6 +3138,9 @@ class _ClientOnboardingWizardState extends State<_ClientOnboardingWizard> {
   final _userPasswordController = TextEditingController();
 
   bool _isSubmitting = false;
+  bool _rpcFailed = false;
+  String? _rpcError;
+  String? _createdClientName;
 
   @override
   void dispose() {
@@ -3150,6 +3156,7 @@ class _ClientOnboardingWizardState extends State<_ClientOnboardingWizard> {
     _wabaIdController.dispose();
     _accessTokenController.dispose();
     _broadcastLimitController.dispose();
+    _predictionsWebhookController.dispose();
     _userNameController.dispose();
     _userEmailController.dispose();
     _userPasswordController.dispose();
@@ -3233,6 +3240,8 @@ class _ClientOnboardingWizardState extends State<_ClientOnboardingWizard> {
       wabaId: _wabaIdController.text.trim().isEmpty ? null : _wabaIdController.text.trim(),
       metaAccessToken: _accessTokenController.text.trim().isEmpty ? null : _accessTokenController.text.trim(),
       broadcastLimit: int.tryParse(_broadcastLimitController.text.trim()),
+      productType: _selectedProductType,
+      predictionsRefreshWebhookUrl: _predictionsWebhookController.text.trim().isEmpty ? null : _predictionsWebhookController.text.trim(),
     );
 
     if (!success) {
@@ -3262,12 +3271,14 @@ class _ClientOnboardingWizardState extends State<_ClientOnboardingWizard> {
       debugPrint('✅ Client tables created for $slug');
     } catch (e) {
       debugPrint('⚠️ Table creation failed: $e');
-      // Show warning but don't block wizard completion — tables can be created manually
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Warning: Table creation failed. Tables may need manual setup. Error: $e')),
-        );
+        setState(() {
+          _rpcFailed = true;
+          _rpcError = e.toString();
+          _isSubmitting = false;
+        });
       }
+      return; // Stay on review step — don't proceed
     }
 
     // Find the newly created client
@@ -3298,12 +3309,78 @@ class _ClientOnboardingWizardState extends State<_ClientOnboardingWizard> {
       );
     }
 
+    // Move to post-creation checklist (Step 6) instead of closing
     if (mounted) {
-      Navigator.pop(context);
-      VividToast.show(context,
-        message: 'Client "${_nameController.text.trim()}" created successfully',
-        type: ToastType.success,
+      setState(() {
+        _createdClientName = _nameController.text.trim();
+        _isSubmitting = false;
+        _currentStep = 5; // Step 6 (0-indexed)
+      });
+    }
+  }
+
+  Future<void> _retryRpc() async {
+    final slug = _slugController.text.trim();
+    setState(() {
+      _rpcFailed = false;
+      _rpcError = null;
+      _isSubmitting = true;
+    });
+
+    try {
+      final features = <String>[..._selectedFeatures];
+      if (_hasAiConversations) features.add('ai_conversations');
+
+      await SupabaseService.adminClient.rpc('create_client_tables', params: {
+        'p_slug': slug.toLowerCase(),
+        'p_features': features,
+      });
+
+      debugPrint('✅ Client tables created for $slug (retry)');
+
+      // Continue with user creation and checklist
+      final provider = context.read<AdminProvider>();
+      final newClient = provider.clients.firstWhere(
+        (c) => c.slug == slug,
+        orElse: () => provider.clients.first,
       );
+
+      if (_createUser && _userNameController.text.trim().isNotEmpty) {
+        await provider.createUser(
+          clientId: newClient.id,
+          name: _userNameController.text.trim(),
+          email: _userEmailController.text.trim(),
+          password: _userPasswordController.text.trim(),
+          role: 'admin',
+        );
+      }
+
+      for (final trigger in _pendingTriggers) {
+        await provider.createLabelTrigger(
+          clientId: newClient.id,
+          label: trigger['label'] as String,
+          triggerWords: List<String>.from(trigger['trigger_words'] as List),
+          color: trigger['color'] as String? ?? '#38BEC9',
+          autoApply: trigger['auto_apply'] as bool? ?? true,
+        );
+      }
+
+      if (mounted) {
+        setState(() {
+          _createdClientName = _nameController.text.trim();
+          _isSubmitting = false;
+          _currentStep = 5;
+        });
+      }
+    } catch (e) {
+      debugPrint('⚠️ Table creation retry failed: $e');
+      if (mounted) {
+        setState(() {
+          _rpcFailed = true;
+          _rpcError = e.toString();
+          _isSubmitting = false;
+        });
+      }
     }
   }
 
@@ -3337,7 +3414,7 @@ class _ClientOnboardingWizardState extends State<_ClientOnboardingWizard> {
                 child: _buildCurrentStep(vc, isMobile),
               ),
             ),
-            _buildNavBar(vc, isMobile),
+            if (_currentStep < 5) _buildNavBar(vc, isMobile),
           ],
         ),
       ),
@@ -3489,6 +3566,8 @@ class _ClientOnboardingWizardState extends State<_ClientOnboardingWizard> {
         content = _buildStep4User(vc, isMobile);
       case 4:
         content = _buildStep5Review(vc, isMobile);
+      case 5:
+        content = _buildStep6Checklist(vc, isMobile);
       default:
         content = const SizedBox.shrink();
     }
@@ -3537,6 +3616,33 @@ class _ClientOnboardingWizardState extends State<_ClientOnboardingWizard> {
                 _slugManuallyEdited = v.isNotEmpty;
                 setState(() {});
               },
+            ),
+            const SizedBox(height: 16),
+            // Product Type
+            Text('Product Type', style: TextStyle(color: vc.textPrimary, fontSize: 13, fontWeight: FontWeight.w500)),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              initialValue: _selectedProductType,
+              decoration: InputDecoration(
+                prefixIcon: Icon(Icons.category, color: vc.textMuted, size: 18),
+                helperText: 'Retention for clinics & salons. Chatbot for AI-driven conversation businesses.',
+                helperMaxLines: 2,
+                helperStyle: TextStyle(color: vc.textMuted, fontSize: 11),
+                filled: true,
+                fillColor: vc.background,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: vc.border)),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: vc.border)),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: VividColors.cyan)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+              ),
+              dropdownColor: vc.surfaceAlt,
+              style: TextStyle(color: vc.textPrimary, fontSize: 14),
+              icon: Icon(Icons.keyboard_arrow_down_rounded, color: vc.textMuted, size: 20),
+              items: [
+                DropdownMenuItem(value: 'retention', child: Text('Retention Platform', style: TextStyle(color: vc.textPrimary))),
+                DropdownMenuItem(value: 'chatbot', child: Text('Chatbot', style: TextStyle(color: vc.textPrimary))),
+              ],
+              onChanged: (v) => setState(() => _selectedProductType = v ?? 'retention'),
             ),
             const SizedBox(height: 24),
             if (slug.isNotEmpty)
@@ -3952,6 +4058,40 @@ class _ClientOnboardingWizardState extends State<_ClientOnboardingWizard> {
               _buildConfigSection(vc, Icons.smart_toy, 'Manager Chat (AI)', Colors.purple,
                   webhookController: _managerChatWebhookController,
                   webhookHint: 'n8n webhook for AI assistant'),
+            if (_selectedFeatures.contains('predictive_intelligence')) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.deepPurple.withValues(alpha: 0.04),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.deepPurple.withValues(alpha: 0.18)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.auto_graph, color: Colors.deepPurple, size: 18),
+                        const SizedBox(width: 8),
+                        Text('Predictive Intelligence', style: TextStyle(color: Colors.deepPurple, fontWeight: FontWeight.w600, fontSize: 13)),
+                        const SizedBox(width: 6),
+                        Text('(Optional)', style: TextStyle(color: Colors.deepPurple.withValues(alpha: 0.6), fontSize: 11)),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    _buildWizardField(
+                      vc,
+                      controller: _predictionsWebhookController,
+                      label: 'Predictions Refresh Webhook URL',
+                      hint: 'https://n8n.vividsystems.cloud/webhook/...',
+                      icon: Icons.refresh,
+                      required: false,
+                    ),
+                  ],
+                ),
+              ),
+            ],
             // WhatsApp Business Configuration (always visible)
             const SizedBox(height: 8),
             Container(
@@ -4163,6 +4303,58 @@ class _ClientOnboardingWizardState extends State<_ClientOnboardingWizard> {
                 ('Role', 'admin'),
               ]),
             ],
+            // RPC failure error + retry
+            if (_rpcFailed) ...[
+              const SizedBox(height: 24),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.error_outline, color: Colors.red, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text('Table Creation Failed', style: TextStyle(color: Colors.red.shade300, fontSize: 14, fontWeight: FontWeight.w600)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _rpcError ?? 'Unknown error',
+                      style: TextStyle(color: vc.textSecondary, fontSize: 12),
+                      maxLines: 4,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 12),
+                    Text('The client was created but tables could not be set up. Tap Retry or contact support.',
+                        style: TextStyle(color: vc.textMuted, fontSize: 11)),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _isSubmitting ? null : _retryRpc,
+                        icon: _isSubmitting
+                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : const Icon(Icons.refresh, size: 18),
+                        label: Text(_isSubmitting ? 'Retrying...' : 'Retry Table Creation'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red.shade400,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -4280,10 +4472,149 @@ class _ClientOnboardingWizardState extends State<_ClientOnboardingWizard> {
     );
   }
 
+  // ── Step 6: Post-Creation Checklist ────────────────
+
+  Widget _buildStep6Checklist(VividColorScheme vc, bool isMobile) {
+    final checklistItems = <String>[];
+
+    // Always present
+    checklistItems.add('Verify all client tables were created in Supabase');
+
+    // Feature-dependent items
+    if (_selectedFeatures.contains('conversations')) {
+      checklistItems.add('Create n8n conversations workflow');
+    }
+    if (_selectedFeatures.contains('broadcasts')) {
+      checklistItems.add('Create n8n broadcasts workflow');
+      checklistItems.add('Verify WABA + phone number are active');
+    }
+    if (_selectedFeatures.contains('manager_chat')) {
+      checklistItems.add('Create n8n manager chat workflow');
+    }
+    if (_selectedFeatures.contains('conversations') ||
+        _selectedFeatures.contains('broadcasts') ||
+        _selectedFeatures.contains('manager_chat')) {
+      checklistItems.add('Configure Meta webhook → n8n URL');
+    }
+    if (_selectedFeatures.contains('whatsapp_templates')) {
+      checklistItems.add('Import/sync WhatsApp templates');
+    }
+    if (_selectedFeatures.contains('predictive_intelligence')) {
+      if (_predictionsWebhookController.text.trim().isEmpty) {
+        checklistItems.add('Set predictions_refresh_webhook_url for client');
+      }
+    }
+
+    final checklistText = checklistItems.asMap().entries.map((e) => '${e.key + 1}. ${e.value}').join('\n');
+
+    return SingleChildScrollView(
+      padding: EdgeInsets.all(isMobile ? 16 : 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Success header
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: VividColors.statusSuccess.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: VividColors.statusSuccess.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.check_circle, color: VividColors.statusSuccess, size: 28),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Client Created Successfully',
+                        style: TextStyle(color: vc.textPrimary, fontSize: 16, fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${_createdClientName ?? _nameController.text.trim()} is ready. Complete the checklist below to finish setup.',
+                        style: TextStyle(color: vc.textSecondary, fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Checklist
+          Text('Setup Checklist', style: TextStyle(color: vc.textPrimary, fontSize: 15, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 12),
+          ...checklistItems.map((item) => Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.radio_button_unchecked, size: 18, color: vc.textMuted),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(item, style: TextStyle(color: vc.textPrimary, fontSize: 13)),
+                ),
+              ],
+            ),
+          )),
+          const SizedBox(height: 24),
+
+          // Action buttons
+          Row(
+            children: [
+              OutlinedButton.icon(
+                onPressed: () {
+                  final clipboard = 'Post-Creation Checklist — ${_createdClientName ?? _nameController.text.trim()}\n\n$checklistText';
+                  Clipboard.setData(ClipboardData(text: clipboard));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Checklist copied to clipboard'), duration: Duration(seconds: 2)),
+                  );
+                },
+                icon: const Icon(Icons.copy, size: 16),
+                label: const Text('Copy Checklist'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: vc.textSecondary,
+                  side: BorderSide(color: vc.border),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+              const SizedBox(width: 12),
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.pop(context, true);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('${_createdClientName ?? 'Client'} created successfully'),
+                      backgroundColor: VividColors.statusSuccess,
+                      duration: const Duration(seconds: 3),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.check, size: 18),
+                label: const Text('Done'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: VividColors.statusSuccess,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── Navigation Bar ──────────────────────────────────
 
   Widget _buildNavBar(VividColorScheme vc, bool isMobile) {
-    final isLastStep = _currentStep == _totalSteps - 1;
+    final isLastStep = _currentStep == 4; // Review step is submit step; step 5 is post-creation checklist
     return Container(
       padding: EdgeInsets.symmetric(horizontal: isMobile ? 16 : 24, vertical: 12),
       decoration: BoxDecoration(
@@ -4416,7 +4747,12 @@ class _ClientDialogState extends State<_ClientDialog> {
   late TextEditingController _remindersPhoneController;
   late TextEditingController _remindersWebhookController;
   late TextEditingController _managerChatWebhookController;
-  
+  late TextEditingController _wabaIdController;
+  late TextEditingController _accessTokenController;
+  late TextEditingController _broadcastLimitController;
+  late TextEditingController _predictionsWebhookEditController;
+  String _selectedProductType = 'retention';
+
   List<String> _selectedFeatures = [];
   bool _hasAiConversations = true;
   bool _isLoading = false;
@@ -4447,6 +4783,11 @@ class _ClientDialogState extends State<_ClientDialog> {
     _remindersPhoneController = TextEditingController(text: widget.client?.remindersPhone ?? '');
     _remindersWebhookController = TextEditingController(text: widget.client?.remindersWebhookUrl ?? '');
     _managerChatWebhookController = TextEditingController(text: widget.client?.managerChatWebhookUrl ?? '');
+    _wabaIdController = TextEditingController(text: widget.client?.wabaId ?? '');
+    _accessTokenController = TextEditingController(text: widget.client?.metaAccessToken ?? '');
+    _broadcastLimitController = TextEditingController(text: widget.client?.broadcastLimit?.toString() ?? '');
+    _predictionsWebhookEditController = TextEditingController(text: widget.client?.predictionsRefreshWebhookUrl ?? '');
+    _selectedProductType = widget.client?.productType ?? 'retention';
 
     _selectedFeatures = List.from(widget.client?.enabledFeatures ?? []);
     _hasAiConversations = widget.client?.hasAiConversations ?? true;
@@ -4481,6 +4822,10 @@ class _ClientDialogState extends State<_ClientDialog> {
     _remindersPhoneController.dispose();
     _remindersWebhookController.dispose();
     _managerChatWebhookController.dispose();
+    _wabaIdController.dispose();
+    _accessTokenController.dispose();
+    _broadcastLimitController.dispose();
+    _predictionsWebhookEditController.dispose();
     super.dispose();
   }
 
@@ -4619,6 +4964,48 @@ class _ClientDialogState extends State<_ClientDialog> {
                 ],
 
                 const SizedBox(height: 24),
+
+                // Meta & Limits Section
+                _buildSectionHeader(context, Icons.settings, 'Meta & Limits'),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: _selectedProductType,
+                  decoration: InputDecoration(
+                    labelText: 'Product Type',
+                    labelStyle: TextStyle(color: vc.textMuted),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: vc.popupBorder),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: VividColors.cyan),
+                    ),
+                    filled: true,
+                    fillColor: vc.surfaceAlt,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                  ),
+                  dropdownColor: vc.surface,
+                  style: TextStyle(color: vc.textPrimary),
+                  items: const [
+                    DropdownMenuItem(value: 'retention', child: Text('Retention Platform')),
+                    DropdownMenuItem(value: 'chatbot', child: Text('Chatbot')),
+                  ],
+                  onChanged: (v) => setState(() => _selectedProductType = v!),
+                ),
+                const SizedBox(height: 12),
+                _buildTextField(context, _wabaIdController, 'WABA ID', 'WhatsApp Business Account ID', required: false),
+                const SizedBox(height: 12),
+                _buildTextField(context, _accessTokenController, 'Meta Access Token', 'Meta API access token', required: false),
+                const SizedBox(height: 12),
+                _buildTextField(context, _broadcastLimitController, 'Broadcast Limit', 'Max broadcasts per day (e.g., 1000)', required: false),
+                const SizedBox(height: 12),
+                if (_selectedFeatures.contains('predictive_intelligence') || widget.client?.predictionsRefreshWebhookUrl != null) ...[
+                  _buildTextField(context, _predictionsWebhookEditController, 'Predictions Refresh Webhook', 'URL to trigger predictions refresh', required: false),
+                  const SizedBox(height: 12),
+                ],
+
+                const SizedBox(height: 8),
 
                 // Feature Configuration Sections
                 // Only show config for enabled features
@@ -5008,6 +5395,11 @@ class _ClientDialogState extends State<_ClientDialog> {
         remindersPhone: _remindersPhoneController.text.trim().isEmpty ? null : _remindersPhoneController.text.trim(),
         remindersWebhookUrl: _remindersWebhookController.text.trim().isEmpty ? null : _remindersWebhookController.text.trim(),
         managerChatWebhookUrl: _managerChatWebhookController.text.trim().isEmpty ? null : _managerChatWebhookController.text.trim(),
+        wabaId: _wabaIdController.text.trim().isEmpty ? null : _wabaIdController.text.trim(),
+        metaAccessToken: _accessTokenController.text.trim().isEmpty ? null : _accessTokenController.text.trim(),
+        broadcastLimit: _broadcastLimitController.text.trim().isEmpty ? null : int.tryParse(_broadcastLimitController.text.trim()),
+        productType: _selectedProductType,
+        predictionsRefreshWebhookUrl: _predictionsWebhookEditController.text.trim().isEmpty ? null : _predictionsWebhookEditController.text.trim(),
       );
     } else {
       // Create mode: auto-compute all table names from slug

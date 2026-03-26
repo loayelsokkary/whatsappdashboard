@@ -35,9 +35,11 @@ class OutreachProvider extends ChangeNotifier {
   List<WhatsAppTemplate> _templates = [];
   bool _isLoadingTemplates = false;
 
+  // Template creation
+  bool _isSubmittingTemplate = false;
+
   // General
   String? _error;
-  String? _webhookUrl;
 
   // ============================================
   // GETTERS
@@ -77,8 +79,13 @@ class OutreachProvider extends ChangeNotifier {
   bool get isLoadingTemplates => _isLoadingTemplates;
 
   String? get error => _error;
-  String? get webhookUrl => _webhookUrl;
-  bool get hasWebhook => _webhookUrl != null && _webhookUrl!.isNotEmpty;
+  bool get isSubmittingTemplate => _isSubmittingTemplate;
+  bool get hasSendWebhook => SupabaseService.outreachSendWebhook.isNotEmpty;
+  bool get hasBroadcastWebhook => SupabaseService.outreachBroadcastWebhook.isNotEmpty;
+  bool get hasMetaCredentials =>
+      SupabaseService.outreachWabaId.isNotEmpty &&
+      SupabaseService.outreachMetaAccessToken.isNotEmpty;
+  String get outreachPhone => SupabaseService.outreachPhone;
 
   SupabaseClient get _db => SupabaseService.adminClient;
 
@@ -95,14 +102,12 @@ class OutreachProvider extends ChangeNotifier {
   // INIT
   // ============================================
 
-  Future<void> loadWebhookUrl() async {
-    try {
-      final settings = await SupabaseService.instance.fetchSystemSettings();
-      _webhookUrl = settings['vivid_outreach_webhook_url'];
-      print('OUTREACH: webhook URL ${hasWebhook ? "configured" : "not configured"}');
-    } catch (e) {
-      print('OUTREACH: failed to load webhook URL: $e');
-    }
+  /// Reload outreach config from system_settings (phone, webhooks).
+  Future<void> reloadOutreachConfig() async {
+    await SupabaseService.instance.loadOutreachConfig();
+    debugPrint('OUTREACH: send webhook ${hasSendWebhook ? "configured" : "not configured"}');
+    debugPrint('OUTREACH: broadcast webhook ${hasBroadcastWebhook ? "configured" : "not configured"}');
+    notifyListeners();
   }
 
   // ============================================
@@ -115,7 +120,7 @@ class OutreachProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      print('OUTREACH: fetching contacts from vivid_outreach_contacts');
+      debugPrint('OUTREACH: fetching contacts from vivid_outreach_contacts');
       final rows = await _db
           .from('vivid_outreach_contacts')
           .select()
@@ -125,9 +130,9 @@ class OutreachProvider extends ChangeNotifier {
           .map((r) => OutreachContact.fromJson(r as Map<String, dynamic>))
           .toList();
 
-      print('OUTREACH: loaded ${_contacts.length} contacts');
+      debugPrint('OUTREACH: loaded ${_contacts.length} contacts');
     } catch (e) {
-      print('OUTREACH: contacts error: $e');
+      debugPrint('OUTREACH: contacts error: $e');
       _error = e.toString();
     }
 
@@ -138,11 +143,11 @@ class OutreachProvider extends ChangeNotifier {
   Future<String?> createContact(OutreachContact contact) async {
     try {
       await _db.from('vivid_outreach_contacts').insert(contact.toInsertJson());
-      print('OUTREACH: created contact ${contact.companyName}');
+      debugPrint('OUTREACH: created contact ${contact.companyName}');
       await fetchContacts();
       return null;
     } catch (e) {
-      print('OUTREACH: create contact error: $e');
+      debugPrint('OUTREACH: create contact error: $e');
       return e.toString();
     }
   }
@@ -151,11 +156,11 @@ class OutreachProvider extends ChangeNotifier {
     try {
       updates['updated_at'] = DateTime.now().toIso8601String();
       await _db.from('vivid_outreach_contacts').update(updates).eq('id', id);
-      print('OUTREACH: updated contact $id');
+      debugPrint('OUTREACH: updated contact $id');
       await fetchContacts();
       return null;
     } catch (e) {
-      print('OUTREACH: update contact error: $e');
+      debugPrint('OUTREACH: update contact error: $e');
       return e.toString();
     }
   }
@@ -163,13 +168,13 @@ class OutreachProvider extends ChangeNotifier {
   Future<String?> deleteContact(String id) async {
     try {
       await _db.from('vivid_outreach_contacts').delete().eq('id', id);
-      print('OUTREACH: deleted contact $id');
+      debugPrint('OUTREACH: deleted contact $id');
       _contacts.removeWhere((c) => c.id == id);
       if (_selectedContact?.id == id) _selectedContact = null;
       notifyListeners();
       return null;
     } catch (e) {
-      print('OUTREACH: delete contact error: $e');
+      debugPrint('OUTREACH: delete contact error: $e');
       return e.toString();
     }
   }
@@ -187,11 +192,11 @@ class OutreachProvider extends ChangeNotifier {
           }).toList();
 
       await _db.from('vivid_outreach_contacts').insert(insertRows);
-      print('OUTREACH: bulk imported ${insertRows.length} contacts');
+      debugPrint('OUTREACH: bulk imported ${insertRows.length} contacts');
       await fetchContacts();
       return (imported: insertRows.length, error: null);
     } catch (e) {
-      print('OUTREACH: bulk import error: $e');
+      debugPrint('OUTREACH: bulk import error: $e');
       return (imported: 0, error: e.toString());
     }
   }
@@ -229,7 +234,7 @@ class OutreachProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      print('OUTREACH: fetching messages for contact $contactId');
+      debugPrint('OUTREACH: fetching messages for contact $contactId');
       final rows = await _db
           .from('vivid_outreach_messages')
           .select()
@@ -240,9 +245,9 @@ class OutreachProvider extends ChangeNotifier {
           .map((r) => OutreachMessage.fromJson(r as Map<String, dynamic>))
           .toList();
 
-      print('OUTREACH: loaded ${_messages.length} messages');
+      debugPrint('OUTREACH: loaded ${_messages.length} messages');
     } catch (e) {
-      print('OUTREACH: messages error: $e');
+      debugPrint('OUTREACH: messages error: $e');
     }
 
     _isLoadingMessages = false;
@@ -255,11 +260,10 @@ class OutreachProvider extends ChangeNotifier {
     final contact = _selectedContact!;
     final now = DateTime.now();
 
-    // Optimistic insert to DB
     try {
       final row = {
         'contact_id': contactId,
-        'ai_phone': '', // Vivid's outreach phone — set when webhook configured
+        'ai_phone': SupabaseService.outreachPhone,
         'customer_phone': contact.phone,
         'customer_name': contact.displayName,
         'customer_message': '',
@@ -271,7 +275,7 @@ class OutreachProvider extends ChangeNotifier {
       };
 
       await _db.from('vivid_outreach_messages').insert(row);
-      print('OUTREACH: message stored to DB');
+      debugPrint('OUTREACH: message stored to DB');
 
       // Update last_contacted_at
       await _db
@@ -279,22 +283,30 @@ class OutreachProvider extends ChangeNotifier {
           .update({'last_contacted_at': now.toIso8601String()})
           .eq('id', contactId);
 
-      // Send via webhook if configured
-      if (hasWebhook) {
+      // Send via n8n webhook if configured
+      if (hasSendWebhook) {
         try {
           await http.post(
-            Uri.parse(_webhookUrl!),
-            headers: {'Content-Type': 'application/json'},
+            Uri.parse(SupabaseService.outreachSendWebhook),
+            headers: {
+              'Content-Type': 'application/json',
+              if (SupabaseService.webhookSecret.isNotEmpty)
+                'X-Vivid-Secret': SupabaseService.webhookSecret,
+            },
             body: jsonEncode({
-              'phone': contact.phone,
-              'name': contact.displayName,
-              'message': text,
+              'ai_phone': SupabaseService.outreachPhone,
+              'customer_phone': contact.phone,
+              'customer_name': contact.displayName,
+              'manager_response': text,
               'sent_by': 'manager',
+              'media_url': '',
+              'media_type': '',
+              'media_filename': '',
             }),
           );
-          print('OUTREACH: message sent via webhook');
+          debugPrint('OUTREACH: message sent via webhook');
         } catch (e) {
-          print('OUTREACH: webhook send error (message still saved): $e');
+          debugPrint('OUTREACH: webhook send error (message still saved): $e');
         }
       }
 
@@ -302,7 +314,7 @@ class OutreachProvider extends ChangeNotifier {
       await fetchMessages(contactId);
       return null;
     } catch (e) {
-      print('OUTREACH: send message error: $e');
+      debugPrint('OUTREACH: send message error: $e');
       return e.toString();
     }
   }
@@ -333,9 +345,9 @@ class OutreachProvider extends ChangeNotifier {
             },
           )
           .subscribe();
-      print('OUTREACH: subscribed to messages for $contactPhone');
+      debugPrint('OUTREACH: subscribed to messages for $contactPhone');
     } catch (e) {
-      print('OUTREACH: realtime subscribe error: $e');
+      debugPrint('OUTREACH: realtime subscribe error: $e');
     }
   }
 
@@ -355,7 +367,7 @@ class OutreachProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      print('OUTREACH: fetching broadcasts');
+      debugPrint('OUTREACH: fetching broadcasts');
       final rows = await _db
           .from('vivid_outreach_broadcasts')
           .select()
@@ -365,9 +377,9 @@ class OutreachProvider extends ChangeNotifier {
           .map((r) => OutreachBroadcast.fromJson(r as Map<String, dynamic>))
           .toList();
 
-      print('OUTREACH: loaded ${_broadcasts.length} broadcasts');
+      debugPrint('OUTREACH: loaded ${_broadcasts.length} broadcasts');
     } catch (e) {
-      print('OUTREACH: broadcasts error: $e');
+      debugPrint('OUTREACH: broadcasts error: $e');
     }
 
     _isLoadingBroadcasts = false;
@@ -402,9 +414,9 @@ class OutreachProvider extends ChangeNotifier {
               OutreachBroadcastRecipient.fromJson(r as Map<String, dynamic>))
           .toList();
 
-      print('OUTREACH: loaded ${_broadcastRecipients.length} recipients for broadcast $broadcastId');
+      debugPrint('OUTREACH: loaded ${_broadcastRecipients.length} recipients for broadcast $broadcastId');
     } catch (e) {
-      print('OUTREACH: recipients error: $e');
+      debugPrint('OUTREACH: recipients error: $e');
     }
 
     _isLoadingRecipients = false;
@@ -452,11 +464,39 @@ class OutreachProvider extends ChangeNotifier {
             .insert(recipientRows);
       }
 
-      print('OUTREACH: created broadcast "$name" with ${selectedContacts.length} recipients');
+      debugPrint('OUTREACH: created broadcast "$name" with ${selectedContacts.length} recipients');
+
+      // Send via n8n broadcast webhook if configured
+      if (hasBroadcastWebhook && templateName != null && templateName.isNotEmpty) {
+        try {
+          await http.post(
+            Uri.parse(SupabaseService.outreachBroadcastWebhook),
+            headers: {
+              'Content-Type': 'application/json',
+              if (SupabaseService.webhookSecret.isNotEmpty)
+                'X-Vivid-Secret': SupabaseService.webhookSecret,
+            },
+            body: jsonEncode({
+              'template_name': templateName,
+              'campaign_name': name,
+              'broadcast_id': broadcastId,
+              'filters': {
+                'specific_ids': selectedContacts.map((c) => c.id).toList(),
+              },
+              'variable_overrides': {},
+              'created_by': 'Vivid Admin',
+            }),
+          );
+          debugPrint('OUTREACH: broadcast sent via webhook');
+        } catch (e) {
+          debugPrint('OUTREACH: broadcast webhook error: $e');
+        }
+      }
+
       await fetchBroadcasts();
       return null;
     } catch (e) {
-      print('OUTREACH: create broadcast error: $e');
+      debugPrint('OUTREACH: create broadcast error: $e');
       return e.toString();
     }
   }
@@ -470,7 +510,7 @@ class OutreachProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      print('OUTREACH: fetching templates from vivid_outreach_whatsapp_templates');
+      debugPrint('OUTREACH: fetching templates from vivid_outreach_whatsapp_templates');
       final rows = await _db
           .from('vivid_outreach_whatsapp_templates')
           .select();
@@ -498,13 +538,215 @@ class OutreachProvider extends ChangeNotifier {
         );
       }).toList();
 
-      print('OUTREACH: loaded ${_templates.length} templates');
+      debugPrint('OUTREACH: loaded ${_templates.length} templates');
     } catch (e) {
-      print('OUTREACH: templates error: $e');
+      debugPrint('OUTREACH: templates error: $e');
     }
 
     _isLoadingTemplates = false;
     notifyListeners();
+  }
+
+  // ============================================
+  // TEMPLATE CREATION (Meta API)
+  // ============================================
+
+  static String get _metaBaseUrl =>
+      'https://graph.facebook.com/${SupabaseService.metaApiVersion}';
+
+  Map<String, String> get _metaHeaders => {
+        'Authorization': 'Bearer ${SupabaseService.outreachMetaAccessToken}',
+        'Content-Type': 'application/json',
+      };
+
+  /// Create a template on Meta's WABA for the outreach account.
+  Future<({String? error, String? templateId})> createTemplate({
+    required String name,
+    required String language,
+    required String category,
+    required List<Map<String, dynamic>> components,
+  }) async {
+    if (!hasMetaCredentials) {
+      return (error: 'Outreach Meta credentials not configured. Set WABA ID and Access Token in Settings.', templateId: null);
+    }
+
+    _isSubmittingTemplate = true;
+    notifyListeners();
+
+    try {
+      final payload = {
+        'name': name,
+        'language': language,
+        'category': category.toUpperCase(),
+        'components': components,
+      };
+
+      debugPrint('OUTREACH: creating template "$name" on Meta WABA ${SupabaseService.outreachWabaId}');
+
+      final response = await http.post(
+        Uri.parse('$_metaBaseUrl/${SupabaseService.outreachWabaId}/message_templates'),
+        headers: _metaHeaders,
+        body: jsonEncode(payload),
+      );
+
+      debugPrint('OUTREACH: createTemplate response: ${response.statusCode}');
+
+      _isSubmittingTemplate = false;
+      notifyListeners();
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+        final templateId = decoded['id'] as String?;
+        return (error: null, templateId: templateId);
+      }
+
+      final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+      final err = decoded['error'] as Map<String, dynamic>?;
+      final msg = (err?['message'] as String?) ?? 'Failed to create template (${response.statusCode})';
+      return (error: msg, templateId: null);
+    } catch (e) {
+      debugPrint('OUTREACH: createTemplate error: $e');
+      _isSubmittingTemplate = false;
+      notifyListeners();
+      return (error: e.toString(), templateId: null);
+    }
+  }
+
+  /// Upload an image to Meta's resumable upload API for template headers.
+  Future<String?> uploadImageToMeta(Uint8List imageBytes, String mimeType) async {
+    if (!hasMetaCredentials) return null;
+
+    try {
+      // Step 1: Start upload session
+      final initUrl = '$_metaBaseUrl/${SupabaseService.metaAppId}/uploads'
+          '?file_type=$mimeType&file_length=${imageBytes.length}';
+      debugPrint('OUTREACH: image upload step 1 — start session');
+
+      final initResponse = await http.post(
+        Uri.parse(initUrl),
+        headers: {'Authorization': 'Bearer ${SupabaseService.outreachMetaAccessToken}'},
+      );
+
+      if (initResponse.statusCode != 200) {
+        debugPrint('OUTREACH: upload session failed: ${initResponse.statusCode}');
+        return null;
+      }
+
+      final initBody = jsonDecode(initResponse.body) as Map<String, dynamic>;
+      final uploadId = initBody['id'] as String?;
+      if (uploadId == null) return null;
+
+      // Step 2: Upload bytes via Edge Function (CORS workaround for web)
+      final sessionUrl = '$_metaBaseUrl/$uploadId';
+      debugPrint('OUTREACH: image upload step 2 — uploading ${imageBytes.length} bytes');
+
+      if (kIsWeb) {
+        final fileBase64 = base64Encode(imageBytes);
+        final fnResponse = await SupabaseService.client.functions.invoke(
+          'proxy-meta-upload',
+          body: {
+            'sessionUrl': sessionUrl,
+            'fileBase64': fileBase64,
+            'mimeType': mimeType,
+            'accessToken': SupabaseService.outreachMetaAccessToken,
+          },
+        );
+        final fnBody = fnResponse.data is Map
+            ? fnResponse.data as Map<String, dynamic>
+            : jsonDecode(fnResponse.data.toString()) as Map<String, dynamic>;
+        return fnBody['h'] as String?;
+      } else {
+        final uploadResponse = await http.post(
+          Uri.parse(sessionUrl),
+          headers: {
+            'Authorization': 'OAuth ${SupabaseService.outreachMetaAccessToken}',
+            'file_offset': '0',
+            'Content-Type': mimeType,
+          },
+          body: imageBytes,
+        );
+        if (uploadResponse.statusCode != 200) return null;
+        final uploadBody = jsonDecode(uploadResponse.body) as Map<String, dynamic>;
+        return uploadBody['h'] as String?;
+      }
+    } catch (e) {
+      debugPrint('OUTREACH: image upload error: $e');
+      return null;
+    }
+  }
+
+  /// After creating on Meta, upsert the template into the outreach Supabase table.
+  Future<String?> syncTemplateToDb({
+    required String metaTemplateId,
+    required String templateName,
+    required String status,
+    required String language,
+    required String category,
+    required String headerType,
+    String? headerText,
+    required String bodyText,
+    List<Map<String, dynamic>>? buttons,
+    String? offerImageUrl,
+  }) async {
+    try {
+      final row = {
+        'meta_template_id': metaTemplateId,
+        'template_name': templateName,
+        'status': status,
+        'language_code': language,
+        'category': category,
+        'header_type': headerType.toLowerCase(),
+        'header_text': headerText,
+        'body_text': bodyText,
+        'buttons': buttons ?? [],
+        'offer_image_url': offerImageUrl,
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+
+      await _db
+          .from('vivid_outreach_whatsapp_templates')
+          .upsert(row, onConflict: 'meta_template_id');
+
+      debugPrint('OUTREACH: synced template "$templateName" to DB');
+      return null;
+    } catch (e) {
+      debugPrint('OUTREACH: sync template to DB error: $e');
+      return e.toString();
+    }
+  }
+
+  /// Upload an offer image to Supabase Storage for permanent URL.
+  Future<String?> uploadOfferImageToStorage(
+    Uint8List imageBytes,
+    String templateName,
+    String mimeType,
+  ) async {
+    try {
+      final safeName = templateName
+          .toLowerCase()
+          .replaceAll(' ', '_')
+          .replaceAll(RegExp(r'[^a-z0-9_\-]'), '');
+      if (safeName.isEmpty) return null;
+
+      final path = '$safeName.jpeg';
+      await SupabaseService.adminClient.storage
+          .from('Template-images')
+          .uploadBinary(
+            path,
+            imageBytes,
+            fileOptions: const FileOptions(contentType: 'image/jpeg', upsert: true),
+          );
+
+      final url = SupabaseService.adminClient.storage
+          .from('Template-images')
+          .getPublicUrl(path);
+
+      debugPrint('OUTREACH: uploaded offer image → $url');
+      return url;
+    } catch (e) {
+      debugPrint('OUTREACH: offer image upload error: $e');
+      return null;
+    }
   }
 
   // ============================================

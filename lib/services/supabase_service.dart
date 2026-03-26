@@ -47,6 +47,15 @@ class SupabaseService {
   static String metaWabaId = '';
   static String metaAppId = '1969042950344680';
 
+  // Outreach config (loaded from system_settings, NOT from ClientConfig)
+  static final Map<String, String> _outreachConfig = {};
+  static String get outreachPhone => _outreachConfig['outreach_phone'] ?? '';
+  static String get outreachSendWebhook => _outreachConfig['outreach_send_webhook'] ?? '';
+  static String get outreachBroadcastWebhook => _outreachConfig['outreach_broadcast_webhook'] ?? '';
+  static String get outreachWabaId => _outreachConfig['outreach_waba_id'] ?? '';
+  static String get outreachMetaAccessToken => _outreachConfig['outreach_meta_access_token'] ?? '';
+  static String get webhookSecret => _outreachConfig['webhook_secret'] ?? '';
+
   // ============================================
   // SINGLETON
   // ============================================
@@ -72,7 +81,7 @@ class SupabaseService {
       onEnter: applyClientMetaConfig,
       onExit: resetToDefaultMetaConfig,
     );
-    print('Supabase initialized');
+    debugPrint('Supabase initialized');
   }
 
   // ============================================
@@ -83,7 +92,7 @@ class SupabaseService {
   /// Returns AppUser if successful, null otherwise
   Future<AppUser?> login(String email, String password) async {
     try {
-      print('Attempting login for: $email');
+      debugPrint('Attempting login for: $email');
       
       // Try secure login function first (hashed passwords)
       try {
@@ -95,7 +104,7 @@ class SupabaseService {
 
         if (loginResponse != null && (loginResponse as List).isNotEmpty) {
           final userData = loginResponse[0];
-          print('User found via secure login: ${userData['name']} (${userData['role']})');
+          debugPrint('User found via secure login: ${userData['name']} (${userData['role']})');
           
           // Fetch full user data
           final userResponse = await client
@@ -108,13 +117,13 @@ class SupabaseService {
 
           // Check if user is blocked
           if (user.isBlocked) {
-            print('Login rejected: user is blocked');
+            debugPrint('Login rejected: user is blocked');
             throw Exception('ACCOUNT_BLOCKED');
           }
 
           if (user.isAdmin) {
             ClientConfig.setAdmin(user);
-            print('Admin login successful');
+            debugPrint('Admin login successful');
 
             // If admin has a client_id (e.g. client-level admin like HOB Manager),
             // load the client config so WABA ID and table routing work correctly.
@@ -131,7 +140,7 @@ class SupabaseService {
                   applyClientMetaConfig(clientData);
                 }
               } catch (e) {
-                print('Could not load client config for admin: $e');
+                debugPrint('Could not load client config for admin: $e');
               }
             }
 
@@ -171,7 +180,7 @@ class SupabaseService {
             description: '${user.name} logged in',
           );
 
-          print('Client login successful');
+          debugPrint('Client login successful');
           return user;
         }
       } catch (rpcError) {
@@ -179,7 +188,7 @@ class SupabaseService {
         if (rpcError.toString().contains('ACCOUNT_BLOCKED')) {
           rethrow;
         }
-        print('Secure login not available, trying fallback: $rpcError');
+        debugPrint('Secure login not available, trying fallback: $rpcError');
       }
       
       // Fallback: plain text password (for transition period)
@@ -191,24 +200,24 @@ class SupabaseService {
           .maybeSingle();
 
       if (userResponse == null) {
-        print('No user found with email: $email');
+        debugPrint('No user found with email: $email');
         return null;
       }
 
-      print('User found via fallback: ${userResponse['name']} (${userResponse['role']})');
+      debugPrint('User found via fallback: ${userResponse['name']} (${userResponse['role']})');
 
       final user = AppUser.fromJson(userResponse);
 
       // Check if user is blocked
       if (user.isBlocked) {
-        print('Login rejected: user is blocked');
+        debugPrint('Login rejected: user is blocked');
         throw Exception('ACCOUNT_BLOCKED');
       }
 
       if (user.isAdmin) {
         // Admin user - no client needed
         ClientConfig.setAdmin(user);
-        print('Admin logged in: ${user.name}');
+        debugPrint('Admin logged in: ${user.name}');
 
         // If admin has a client_id (e.g. client-level admin like HOB Manager),
         // load the client config so WABA ID and table routing work correctly.
@@ -225,17 +234,17 @@ class SupabaseService {
               applyClientMetaConfig(clientData);
             }
           } catch (e) {
-            print('Could not load client config for admin: $e');
+            debugPrint('Could not load client config for admin: $e');
           }
         }
       } else {
         // Client user - fetch their client config
         if (user.clientId == null) {
-          print('ERROR: Client user has no client_id');
+          debugPrint('ERROR: Client user has no client_id');
           return null;
         }
 
-        print('Fetching client with id: ${user.clientId}');
+        debugPrint('Fetching client with id: ${user.clientId}');
         
         final clientResponse = await client
             .from('clients')
@@ -244,7 +253,7 @@ class SupabaseService {
             .maybeSingle();
 
         if (clientResponse == null) {
-          print('ERROR: No client found with id: ${user.clientId}');
+          debugPrint('ERROR: No client found with id: ${user.clientId}');
           return null;
         }
 
@@ -252,8 +261,8 @@ class SupabaseService {
         ClientConfig.setClientUser(clientData, user);
         applyClientMetaConfig(clientData);
 
-        print('Logged in as ${user.name} for ${clientData.name}');
-        print('Enabled features: ${clientData.enabledFeatures}');
+        debugPrint('Logged in as ${user.name} for ${clientData.name}');
+        debugPrint('Enabled features: ${clientData.enabledFeatures}');
       }
 
       // Log the login
@@ -268,8 +277,8 @@ class SupabaseService {
 
       return user;
     } catch (e, stack) {
-      print('Login error: $e');
-      print('Stack trace: $stack');
+      debugPrint('Login error: $e');
+      debugPrint('Stack trace: $stack');
       return null;
     }
   }
@@ -337,7 +346,7 @@ class SupabaseService {
     ClientConfig.clear();
     _cachedExchanges.clear();
     _channel?.unsubscribe();
-    print('Logged out');
+    debugPrint('Logged out');
   }
 
   // ============================================
@@ -366,7 +375,7 @@ class SupabaseService {
       });
       return true;
     } catch (e) {
-      print('Error logging activity: $e');
+      debugPrint('Error logging activity: $e');
       return false;
     }
   }
@@ -431,7 +440,7 @@ class SupabaseService {
           .map((json) => ActivityLog.fromJson(json as Map<String, dynamic>))
           .toList();
     } catch (e) {
-      print('Error fetching activity logs: $e');
+      debugPrint('Error fetching activity logs: $e');
       return [];
     }
   }
@@ -450,7 +459,7 @@ class SupabaseService {
 
       return (response as List).map((json) => Client.fromJson(json)).toList();
     } catch (e) {
-      print('Fetch clients error: $e');
+      debugPrint('Fetch clients error: $e');
       return [];
     }
   }
@@ -465,7 +474,7 @@ class SupabaseService {
       
       return Client.fromJson(response!);
     } catch (e) {
-      print('Error fetching client by ID: $e');
+      debugPrint('Error fetching client by ID: $e');
       return null;
     }
   }
@@ -493,6 +502,8 @@ class SupabaseService {
     String? wabaId,
     String? metaAccessToken,
     int? broadcastLimit,
+    String? productType,
+    String? predictionsRefreshWebhookUrl,
   }) async {
     try {
       final response = await client.from('clients').insert({
@@ -517,6 +528,8 @@ class SupabaseService {
         if (wabaId != null && wabaId.isNotEmpty) 'waba_id': wabaId,
         if (metaAccessToken != null && metaAccessToken.isNotEmpty) 'meta_access_token': metaAccessToken,
         if (broadcastLimit != null) 'broadcast_limit': broadcastLimit,
+        if (productType != null) 'product_type': productType,
+        if (predictionsRefreshWebhookUrl != null && predictionsRefreshWebhookUrl.isNotEmpty) 'predictions_refresh_webhook_url': predictionsRefreshWebhookUrl,
       }).select().single();
 
       final newClient = Client.fromJson(response);
@@ -534,7 +547,7 @@ class SupabaseService {
 
       return newClient;
     } catch (e) {
-      print('Create client error: $e');
+      debugPrint('Create client error: $e');
       return null;
     }
   }
@@ -560,6 +573,11 @@ class SupabaseService {
     String? managerChatWebhookUrl,
     String? customerPredictionsTable,
     bool? hasAiConversations,
+    String? wabaId,
+    String? metaAccessToken,
+    int? broadcastLimit,
+    String? productType,
+    String? predictionsRefreshWebhookUrl,
   }) async {
     try {
       final updates = <String, dynamic>{};
@@ -581,6 +599,11 @@ class SupabaseService {
       if (remindersWebhookUrl != null) updates['reminders_webhook_url'] = remindersWebhookUrl;
       if (managerChatWebhookUrl != null) updates['manager_chat_webhook_url'] = managerChatWebhookUrl;
       if (hasAiConversations != null) updates['has_ai_conversations'] = hasAiConversations;
+      if (wabaId != null) updates['waba_id'] = wabaId;
+      if (metaAccessToken != null) updates['meta_access_token'] = metaAccessToken;
+      if (broadcastLimit != null) updates['broadcast_limit'] = broadcastLimit;
+      if (productType != null) updates['product_type'] = productType;
+      if (predictionsRefreshWebhookUrl != null) updates['predictions_refresh_webhook_url'] = predictionsRefreshWebhookUrl;
 
       await client.from('clients').update(updates).eq('id', clientId);
       
@@ -596,7 +619,7 @@ class SupabaseService {
       
       return true;
     } catch (e) {
-      print('Update client error: $e');
+      debugPrint('Update client error: $e');
       return false;
     }
   }
@@ -614,7 +637,7 @@ class SupabaseService {
       if (response == null) return null;
       return CustomerPrediction.fromJson(response);
     } catch (e) {
-      print('Error fetching prediction: $e');
+      debugPrint('Error fetching prediction: $e');
       return null;
     }
   }
@@ -675,7 +698,7 @@ class SupabaseService {
       await client.from('clients').delete().eq('id', clientId);
       return true;
     } catch (e) {
-      print('Delete client error: $e');
+      debugPrint('Delete client error: $e');
       return false;
     }
   }
@@ -695,7 +718,7 @@ class SupabaseService {
 
       return (response as List).map((json) => AppUser.fromJson(json)).toList();
     } catch (e) {
-      print('Fetch client users error: $e');
+      debugPrint('Fetch client users error: $e');
       return [];
     }
   }
@@ -710,7 +733,7 @@ class SupabaseService {
 
       return List<Map<String, dynamic>>.from(response);
     } catch (e) {
-      print('Fetch all users error: $e');
+      debugPrint('Fetch all users error: $e');
       return [];
     }
   }
@@ -734,7 +757,7 @@ class SupabaseService {
         });
         hashedPassword = hashResult as String?;
       } catch (e) {
-        print('Hash function not available, storing plain (temporary): $e');
+        debugPrint('Hash function not available, storing plain (temporary): $e');
       }
       
       final userData = <String, dynamic>{
@@ -779,7 +802,7 @@ class SupabaseService {
 
       return newUser;
     } catch (e) {
-      print('Create user error: $e');
+      debugPrint('Create user error: $e');
       return null;
     }
   }
@@ -818,7 +841,7 @@ class SupabaseService {
           updates['password_hash'] = hashResult;
           updates['password'] = password; // Keep both during transition
         } catch (e) {
-          print('Hash function not available, storing plain (temporary): $e');
+          debugPrint('Hash function not available, storing plain (temporary): $e');
           updates['password'] = password;
         }
       }
@@ -837,7 +860,7 @@ class SupabaseService {
       
       return true;
     } catch (e) {
-      print('Update user error: $e');
+      debugPrint('Update user error: $e');
       return false;
     }
   }
@@ -864,10 +887,10 @@ class SupabaseService {
         );
       }
 
-      print('User status updated to $newStatus: $userId');
+      debugPrint('User status updated to $newStatus: $userId');
       return true;
     } catch (e) {
-      print('Toggle user status error: $e');
+      debugPrint('Toggle user status error: $e');
       return false;
     }
   }
@@ -886,7 +909,7 @@ class SupabaseService {
           .maybeSingle();
       return response?['id'] as String?;
     } catch (e) {
-      print('getUserIdByEmail error: $e');
+      debugPrint('getUserIdByEmail error: $e');
       return null;
     }
   }
@@ -901,7 +924,7 @@ class SupabaseService {
       });
       return true;
     } catch (e) {
-      print('saveResetCode error: $e');
+      debugPrint('saveResetCode error: $e');
       return false;
     }
   }
@@ -916,7 +939,7 @@ class SupabaseService {
       );
       return response.statusCode == 200;
     } catch (e) {
-      print('sendResetCodeEmail error: $e');
+      debugPrint('sendResetCodeEmail error: $e');
       return false;
     }
   }
@@ -935,7 +958,7 @@ class SupabaseService {
           .maybeSingle();
       return response != null;
     } catch (e) {
-      print('verifyResetCode error: $e');
+      debugPrint('verifyResetCode error: $e');
       return false;
     }
   }
@@ -966,7 +989,7 @@ class SupabaseService {
 
       return true;
     } catch (e) {
-      print('resetPasswordByEmail error: $e');
+      debugPrint('resetPasswordByEmail error: $e');
       return false;
     }
   }
@@ -983,7 +1006,7 @@ class SupabaseService {
       final businessPhone = ClientConfig.conversationsPhone;
 
       if (businessPhone == null || businessPhone.isEmpty) {
-        print('No conversations phone configured');
+        debugPrint('No conversations phone configured');
         return [];
       }
 
@@ -1011,10 +1034,10 @@ class SupabaseService {
           .map((json) => RawExchange.fromJson(json))
           .toList();
 
-      print('Fetched ${_cachedExchanges.length} exchanges from $tableName');
+      debugPrint('Fetched ${_cachedExchanges.length} exchanges from $tableName');
       return _cachedExchanges;
     } catch (e) {
-      print('Fetch error: $e');
+      debugPrint('Fetch error: $e');
       rethrow;
     }
   }
@@ -1043,7 +1066,7 @@ class SupabaseService {
 
       return List<Map<String, dynamic>>.from(response as List);
     } catch (e) {
-      print('Search error: $e');
+      debugPrint('Search error: $e');
       return [];
     }
   }
@@ -1055,7 +1078,7 @@ class SupabaseService {
   void subscribeToExchanges() {
     // Never subscribe to real-time updates in preview mode — read-only snapshot only
     if (ClientConfig.isPreviewMode) {
-      print('Preview mode — skipping real-time subscription');
+      debugPrint('Preview mode — skipping real-time subscription');
       return;
     }
 
@@ -1063,7 +1086,7 @@ class SupabaseService {
 
     // Check if conversations is configured
     if (!ClientConfig.isConversationsConfigured) {
-      print('Conversations not configured - skipping subscription');
+      debugPrint('Conversations not configured - skipping subscription');
       return;
     }
     
@@ -1078,7 +1101,7 @@ class SupabaseService {
           schema: 'public',
           table: tableName,  // Dynamic table name!
           callback: (payload) {
-            print('New message in $tableName: ${payload.newRecord}');
+            debugPrint('New message in $tableName');
             
             final exchange = RawExchange.fromJson(payload.newRecord);
             if (exchange.aiPhone == businessPhone) {
@@ -1093,7 +1116,7 @@ class SupabaseService {
           schema: 'public',
           table: tableName,  // Dynamic table name!
           callback: (payload) {
-            print('Updated message in $tableName: ${payload.newRecord}');
+            debugPrint('Updated message in $tableName');
             
             final exchange = RawExchange.fromJson(payload.newRecord);
             if (exchange.aiPhone == businessPhone) {
@@ -1120,7 +1143,7 @@ class SupabaseService {
         )
         .subscribe();
 
-    print('Subscribed to real-time messages on $tableName');
+    debugPrint('Subscribed to real-time messages on $tableName');
   }
 
   // ============================================
@@ -1138,7 +1161,7 @@ class SupabaseService {
     try {
       final webhookUrl = ClientConfig.conversationsWebhookUrl;
       if (webhookUrl == null || webhookUrl.isEmpty) {
-        print('No conversations webhook URL configured');
+        debugPrint('No conversations webhook URL configured');
         return false;
       }
 
@@ -1156,12 +1179,15 @@ class SupabaseService {
 
       final response = await http.post(
         Uri.parse(webhookUrl),
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          if (webhookSecret.isNotEmpty) 'X-Vivid-Secret': webhookSecret,
+        },
         body: jsonEncode(payload),
       );
 
       if (response.statusCode == 200) {
-        print('Message sent via webhook');
+        debugPrint('Message sent via webhook');
         
         // Log the action
         await log(
@@ -1176,11 +1202,11 @@ class SupabaseService {
         
         return true;
       } else {
-        print('Webhook error: ${response.statusCode}');
+        debugPrint('Webhook error: ${response.statusCode}');
         return false;
       }
     } catch (e) {
-      print('Webhook error: $e');
+      debugPrint('Webhook error: $e');
       return false;
     }
   }
@@ -1242,7 +1268,7 @@ class SupabaseService {
 
       return true;
     } catch (e) {
-      print('Error updating label: $e');
+      debugPrint('Error updating label: $e');
       return false;
     }
   }
@@ -1255,7 +1281,7 @@ class SupabaseService {
     try {
       // Check if conversations is configured
       if (!ClientConfig.isConversationsConfigured) {
-        print('Conversations not configured for analytics');
+        debugPrint('Conversations not configured for analytics');
         return AnalyticsData(
           totalMessages: 0,
           aiResponses: 0,
@@ -1358,7 +1384,7 @@ class SupabaseService {
         topCustomers: topCustomers,
       );
     } catch (e) {
-      print('Analytics error: $e');
+      debugPrint('Analytics error: $e');
       rethrow;
     }
   }
@@ -1385,7 +1411,7 @@ class SupabaseService {
       }
       return response['ai_enabled'] as bool? ?? true;
     } catch (e) {
-      print('Get AI enabled error: $e');
+      debugPrint('Get AI enabled error: $e');
       return true; // Default to enabled
     }
   }
@@ -1439,10 +1465,10 @@ class SupabaseService {
         },
       );
 
-      print('AI ${enabled ? "enabled" : "disabled"} for $customerPhone');
+      debugPrint('AI ${enabled ? "enabled" : "disabled"} for $customerPhone');
       return true;
     } catch (e) {
-      print('Set AI enabled error: $e');
+      debugPrint('Set AI enabled error: $e');
       return false;
     }
   }
@@ -1484,7 +1510,7 @@ class SupabaseService {
         lastContactedAt: lastContactedAt,
       );
     } catch (e) {
-      print('fetchCustomerProfileStats error: $e');
+      debugPrint('fetchCustomerProfileStats error: $e');
       return const CustomerProfileStats(
         totalExchanges: 0, customerMessageCount: 0,
         agentMessageCount: 0, broadcastCount: 0, broadcastResponseRate: 0,
@@ -1510,7 +1536,7 @@ class SupabaseService {
       }
       return map;
     } catch (e) {
-      print('fetchSystemSettings error: $e');
+      debugPrint('fetchSystemSettings error: $e');
       return {};
     }
   }
@@ -1526,7 +1552,7 @@ class SupabaseService {
       }, onConflict: 'key');
       return true;
     } catch (e) {
-      print('updateSystemSetting error: $e');
+      debugPrint('updateSystemSetting error: $e');
       return false;
     }
   }
@@ -1545,6 +1571,29 @@ class SupabaseService {
     }
     if (settings.containsKey('meta_app_id') && settings['meta_app_id']!.isNotEmpty) {
       metaAppId = settings['meta_app_id']!;
+    }
+
+    // Also load outreach config from system_settings
+    await loadOutreachConfig();
+  }
+
+  /// Load outreach-specific config from system_settings.
+  /// Outreach does NOT use ClientConfig — Vivid is the platform operator, not a client.
+  Future<void> loadOutreachConfig() async {
+    try {
+      final response = await adminClient
+          .from('system_settings')
+          .select('key, value')
+          .inFilter('key', ['outreach_phone', 'outreach_send_webhook', 'outreach_broadcast_webhook', 'outreach_waba_id', 'outreach_meta_access_token', 'webhook_secret']);
+      _outreachConfig.clear();
+      for (final row in (response as List)) {
+        final k = row['key'] as String?;
+        final v = row['value'] as String?;
+        if (k != null && v != null) _outreachConfig[k] = v;
+      }
+      debugPrint('OUTREACH CONFIG: loaded ${_outreachConfig.length} keys');
+    } catch (e) {
+      debugPrint('OUTREACH CONFIG: load error: $e');
     }
   }
 
