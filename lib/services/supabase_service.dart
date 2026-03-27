@@ -91,6 +91,8 @@ class SupabaseService {
   /// Login with email and password (unified for admins and clients)
   /// Returns AppUser if successful, null otherwise
   Future<AppUser?> login(String email, String password) async {
+    email = email.trim().toLowerCase();
+    password = password.trim();
     try {
       debugPrint('Attempting login for: $email');
       
@@ -690,6 +692,32 @@ class SupabaseService {
     }
   }
 
+  static Future<bool> refreshPredictions({
+    required String webhookUrl,
+    required String predictionsTable,
+    required String clientId,
+    required String clientName,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse(webhookUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'predictions_table': predictionsTable,
+          'client_id': clientId,
+          'client_name': clientName,
+          'triggered_by': 'dashboard',
+          'timestamp': DateTime.now().toIso8601String(),
+        }),
+      );
+      debugPrint('[Predictions] Refresh response: ${response.statusCode}');
+      return response.statusCode >= 200 && response.statusCode < 300;
+    } catch (e) {
+      debugPrint('[Predictions] Refresh failed: $e');
+      return false;
+    }
+  }
+
   /// Delete a client
   Future<bool> deleteClient(String clientId) async {
     try {
@@ -901,6 +929,7 @@ class SupabaseService {
 
   /// Check if email exists in users table
   Future<String?> getUserIdByEmail(String email) async {
+    email = email.trim().toLowerCase();
     try {
       final response = await client
           .from('users')
@@ -916,6 +945,7 @@ class SupabaseService {
 
   /// Save a password reset code to the database
   Future<bool> saveResetCode(String email, String code) async {
+    email = email.trim().toLowerCase();
     try {
       await client.from('password_reset_codes').insert({
         'email': email,
@@ -946,6 +976,7 @@ class SupabaseService {
 
   /// Verify a reset code: must match email, code, not used, and within 10 minutes
   Future<bool> verifyResetCode(String email, String code) async {
+    email = email.trim().toLowerCase();
     try {
       final tenMinutesAgo = DateTime.now().toUtc().subtract(const Duration(minutes: 10)).toIso8601String();
       final response = await client
@@ -965,6 +996,7 @@ class SupabaseService {
 
   /// Reset password by email and mark the code as used
   Future<bool> resetPasswordByEmail(String email, String newPassword, String code) async {
+    email = email.trim().toLowerCase();
     try {
       // Hash the password if possible
       final updates = <String, dynamic>{};

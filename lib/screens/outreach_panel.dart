@@ -970,34 +970,45 @@ class _BroadcastList extends StatelessWidget {
             ),
             child: Row(
               children: [
-                Icon(Icons.campaign, size: 18, color: VividColors.cyan),
-                const SizedBox(width: 8),
                 Text('Broadcasts',
                     style: TextStyle(
                         color: vc.textPrimary,
-                        fontSize: 16,
+                        fontSize: 18,
                         fontWeight: FontWeight.w700)),
-                const SizedBox(width: 8),
+                const SizedBox(width: 10),
                 Container(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                   decoration: BoxDecoration(
-                    color: VividColors.cyan.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(10),
+                    gradient: VividColors.primaryGradient,
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text('${provider.broadcasts.length}',
                       style: TextStyle(
-                          color: VividColors.cyan,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600)),
+                          color: vc.background,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12)),
                 ),
                 const Spacer(),
-                IconButton(
-                  onPressed: () =>
+                GestureDetector(
+                  onTap: () =>
                       _showCreateBroadcastDialog(context, provider),
-                  icon: const Icon(Icons.add_circle_outline, size: 20),
-                  color: VividColors.cyan,
-                  tooltip: 'Create Broadcast',
+                  child: Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      gradient: VividColors.primaryGradient,
+                      borderRadius: BorderRadius.circular(10),
+                      boxShadow: [
+                        BoxShadow(
+                          color: VividColors.brightBlue.withValues(alpha: 0.3),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Icon(Icons.add, size: 18, color: vc.background),
+                  ),
                 ),
               ],
             ),
@@ -1036,9 +1047,12 @@ class _BroadcastList extends StatelessWidget {
       BuildContext context, OutreachProvider provider) {
     final vc = context.vividColors;
     final nameC = TextEditingController();
-    final bodyC = TextEditingController();
+    WhatsAppTemplate? selectedTemplate;
     var selectedFilter = ContactStatus.lead;
     var selectedContacts = <OutreachContact>[];
+    final availableTemplates = provider.templates
+        .where((t) => t.status.toUpperCase() == 'APPROVED')
+        .toList();
 
     showDialog(
       context: context,
@@ -1050,7 +1064,7 @@ class _BroadcastList extends StatelessWidget {
         return AlertDialog(
           backgroundColor: vc.surface,
           shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: Row(
             children: [
               Icon(Icons.campaign, size: 20, color: VividColors.cyan),
@@ -1087,12 +1101,11 @@ class _BroadcastList extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  TextField(
-                    controller: bodyC,
-                    maxLines: 4,
-                    style: TextStyle(color: vc.textPrimary, fontSize: 13),
+                  // Template selector
+                  DropdownButtonFormField<WhatsAppTemplate>(
+                    initialValue: selectedTemplate,
                     decoration: InputDecoration(
-                      labelText: 'Message Body *',
+                      labelText: 'Template *',
                       labelStyle:
                           TextStyle(color: vc.textMuted, fontSize: 12),
                       filled: true,
@@ -1104,7 +1117,78 @@ class _BroadcastList extends StatelessWidget {
                           borderRadius: BorderRadius.circular(8),
                           borderSide: BorderSide(color: vc.border)),
                     ),
+                    dropdownColor: vc.surface,
+                    style: TextStyle(color: vc.textPrimary, fontSize: 13),
+                    isExpanded: true,
+                    hint: Text('Select a template',
+                        style: TextStyle(color: vc.textMuted, fontSize: 13)),
+                    items: availableTemplates.map((t) {
+                      return DropdownMenuItem<WhatsAppTemplate>(
+                        value: t,
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(t.name,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                      color: vc.textPrimary, fontSize: 13)),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: VividColors.cyan.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(t.language.toUpperCase(),
+                                  style: TextStyle(
+                                      color: VividColors.cyan,
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w600)),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (v) =>
+                        setDialogState(() => selectedTemplate = v),
                   ),
+                  // Template body preview
+                  if (selectedTemplate != null) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: vc.background,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                            color: vc.border.withValues(alpha: 0.5)),
+                      ),
+                      child: Text(
+                        selectedTemplate!.body.isNotEmpty
+                            ? selectedTemplate!.body
+                            : '(No body text)',
+                        style: TextStyle(
+                            color: vc.textSecondary,
+                            fontSize: 12,
+                            fontStyle: selectedTemplate!.body.isEmpty
+                                ? FontStyle.italic
+                                : FontStyle.normal),
+                        maxLines: 6,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                  if (availableTemplates.isEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'No approved templates available. Sync templates first.',
+                      style: TextStyle(
+                          color: VividColors.statusWarning, fontSize: 11),
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   Text('Select Recipients',
                       style: TextStyle(
@@ -1213,24 +1297,46 @@ class _BroadcastList extends StatelessWidget {
               child:
                   Text('Cancel', style: TextStyle(color: vc.textSecondary)),
             ),
-            FilledButton(
-              onPressed: () async {
-                if (nameC.text.trim().isEmpty ||
-                    bodyC.text.trim().isEmpty ||
-                    selectedContacts.isEmpty) {
-                  return;
-                }
-                Navigator.pop(ctx);
-                await provider.createBroadcast(
-                  name: nameC.text.trim(),
-                  messageBody: bodyC.text.trim(),
-                  selectedContacts: selectedContacts,
-                );
-              },
-              style: FilledButton.styleFrom(
-                  backgroundColor: VividColors.cyan,
-                  foregroundColor: Colors.white),
-              child: const Text('Create'),
+            GestureDetector(
+              onTap: (nameC.text.trim().isEmpty ||
+                      selectedTemplate == null ||
+                      selectedContacts.isEmpty)
+                  ? null
+                  : () async {
+                      Navigator.pop(ctx);
+                      await provider.createBroadcast(
+                        name: nameC.text.trim(),
+                        templateName: selectedTemplate!.name,
+                        messageBody: selectedTemplate!.body,
+                        selectedContacts: selectedContacts,
+                      );
+                    },
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 20, vertical: 10),
+                decoration: BoxDecoration(
+                  gradient: (nameC.text.trim().isEmpty ||
+                          selectedTemplate == null ||
+                          selectedContacts.isEmpty)
+                      ? null
+                      : VividColors.primaryGradient,
+                  color: (nameC.text.trim().isEmpty ||
+                          selectedTemplate == null ||
+                          selectedContacts.isEmpty)
+                      ? vc.surfaceAlt
+                      : null,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text('Create',
+                    style: TextStyle(
+                        color: (nameC.text.trim().isEmpty ||
+                                selectedTemplate == null ||
+                                selectedContacts.isEmpty)
+                            ? vc.textMuted
+                            : Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600)),
+              ),
             ),
           ],
         );
@@ -1254,65 +1360,92 @@ class _BroadcastCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final vc = context.vividColors;
 
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? VividColors.cyan.withValues(alpha: 0.08)
-              : Colors.transparent,
-          border: Border(
-            left: BorderSide(
-              color: isSelected ? VividColors.cyan : Colors.transparent,
-              width: 3,
-            ),
-            bottom: BorderSide(color: vc.border.withValues(alpha: 0.3)),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    broadcast.displayName,
-                    style: TextStyle(
-                      color: vc.textPrimary,
-                      fontSize: 14,
-                      fontWeight:
-                          isSelected ? FontWeight.w700 : FontWeight.w600,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                _broadcastStatusBadge(vc, broadcast.status),
-              ],
-            ),
-            if (broadcast.messageBody != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                broadcast.messageBody!,
-                style: TextStyle(color: vc.textMuted, fontSize: 12),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? VividColors.brightBlue.withValues(alpha: 0.1)
+                : Colors.transparent,
+            border: Border(
+              left: BorderSide(
+                color: isSelected ? VividColors.cyan : Colors.transparent,
+                width: 3,
               ),
-            ],
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Icon(Icons.people, size: 13, color: vc.textMuted),
-                const SizedBox(width: 4),
-                Text('${broadcast.totalRecipients}',
-                    style: TextStyle(color: vc.textMuted, fontSize: 12)),
-                const Spacer(),
-                Text(_formatDate(broadcast.createdAt),
-                    style: TextStyle(color: vc.textMuted, fontSize: 11)),
-              ],
+              bottom: BorderSide(color: vc.borderSubtle, width: 1),
             ),
-          ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      broadcast.displayName,
+                      style: TextStyle(
+                        color: vc.textPrimary,
+                        fontSize: 15,
+                        fontWeight:
+                            isSelected ? FontWeight.w600 : FontWeight.w500,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  _broadcastStatusBadge(vc, broadcast.status),
+                ],
+              ),
+              if (broadcast.messageBody != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  broadcast.messageBody!,
+                  style: TextStyle(color: vc.textMuted, fontSize: 13),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(Icons.people, size: 13, color: vc.textMuted),
+                  const SizedBox(width: 4),
+                  Text('${broadcast.totalRecipients}',
+                      style: TextStyle(color: vc.textMuted, fontSize: 12)),
+                  const Spacer(),
+                  Text(_formatDate(broadcast.createdAt),
+                      style: TextStyle(color: vc.textMuted, fontSize: 11)),
+                ],
+              ),
+              // Delivery stats
+              if (broadcast.deliveredCount > 0 || broadcast.failedCount > 0) ...[
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Text('Delivered: ${broadcast.deliveredCount}',
+                        style: TextStyle(
+                            color: VividColors.statusSuccess,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500)),
+                    if (broadcast.failedCount > 0) ...[
+                      Text('  |  ',
+                          style: TextStyle(
+                              color: vc.textMuted, fontSize: 11)),
+                      Text('Failed: ${broadcast.failedCount}',
+                          style: TextStyle(
+                              color: VividColors.statusUrgent,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500)),
+                    ],
+                  ],
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );
@@ -1348,10 +1481,31 @@ class _BroadcastCard extends StatelessWidget {
   }
 }
 
-class _BroadcastDetail extends StatelessWidget {
+class _BroadcastDetail extends StatefulWidget {
   final VoidCallback? onBack;
 
   const _BroadcastDetail({this.onBack});
+
+  @override
+  State<_BroadcastDetail> createState() => _BroadcastDetailState();
+}
+
+class _BroadcastDetailState extends State<_BroadcastDetail> {
+  bool _isEditingName = false;
+  final _nameController = TextEditingController();
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveName(OutreachProvider provider, String broadcastId) async {
+    final newName = _nameController.text.trim();
+    if (newName.isEmpty) return;
+    setState(() => _isEditingName = false);
+    await provider.renameBroadcast(broadcastId, newName);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1374,10 +1528,10 @@ class _BroadcastDetail extends StatelessWidget {
             ),
             child: Row(
               children: [
-                if (onBack != null) ...[
+                if (widget.onBack != null) ...[
                   IconButton(
                     icon: const Icon(Icons.arrow_back, size: 20),
-                    onPressed: onBack,
+                    onPressed: widget.onBack,
                     color: vc.textSecondary,
                   ),
                   const SizedBox(width: 8),
@@ -1386,14 +1540,81 @@ class _BroadcastDetail extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(broadcast.displayName,
-                          style: TextStyle(
-                              color: vc.textPrimary,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700)),
+                      if (_isEditingName)
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _nameController,
+                                autofocus: true,
+                                style: TextStyle(
+                                    color: vc.textPrimary,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w700),
+                                decoration: InputDecoration(
+                                  isDense: true,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 6),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(6),
+                                    borderSide:
+                                        BorderSide(color: VividColors.cyan),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(6),
+                                    borderSide: const BorderSide(
+                                        color: VividColors.cyan),
+                                  ),
+                                ),
+                                onSubmitted: (_) =>
+                                    _saveName(provider, broadcast.id),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            IconButton(
+                              icon: const Icon(Icons.check,
+                                  size: 18, color: VividColors.statusSuccess),
+                              onPressed: () =>
+                                  _saveName(provider, broadcast.id),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                  minWidth: 28, minHeight: 28),
+                            ),
+                            IconButton(
+                              icon: Icon(Icons.close,
+                                  size: 18, color: vc.textMuted),
+                              onPressed: () =>
+                                  setState(() => _isEditingName = false),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                  minWidth: 28, minHeight: 28),
+                            ),
+                          ],
+                        )
+                      else
+                        GestureDetector(
+                          onTap: () {
+                            _nameController.text = broadcast.displayName;
+                            setState(() => _isEditingName = true);
+                          },
+                          child: Row(
+                            children: [
+                              Flexible(
+                                child: Text(broadcast.displayName,
+                                    style: TextStyle(
+                                        color: vc.textPrimary,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w700)),
+                              ),
+                              const SizedBox(width: 6),
+                              Icon(Icons.edit,
+                                  size: 14, color: vc.textMuted),
+                            ],
+                          ),
+                        ),
                       const SizedBox(height: 4),
                       Text(
-                        '${broadcast.totalRecipients} recipients • Created ${_formatFullDate(broadcast.createdAt)}',
+                        '${broadcast.totalRecipients} recipients \u2022 Created ${_formatFullDate(broadcast.createdAt)}',
                         style:
                             TextStyle(color: vc.textMuted, fontSize: 12),
                       ),

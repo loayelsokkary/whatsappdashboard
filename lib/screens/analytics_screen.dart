@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/roi_analytics_provider.dart';
+import '../providers/chatbot_analytics_provider.dart';
 import '../models/models.dart';
 import '../theme/vivid_theme.dart';
 import '../utils/analytics_exporter.dart';
@@ -118,6 +119,17 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     final start = _effectiveStart;
     final end = _effectiveEnd;
 
+    // Chatbot clients get their own lightweight analytics provider
+    if (ClientConfig.isChatbotClient) {
+      context.read<ChatbotAnalyticsProvider>().fetchAnalytics(
+            messagesTable: ClientConfig.messagesTable,
+            startDate: start,
+            endDate: end,
+            overdueThreshold: _overdueOptions[_overdueIndex].duration,
+          );
+      return;
+    }
+
     DateTime? compStart;
     DateTime? compEnd;
     if (_compareEnabled) {
@@ -150,8 +162,41 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   @override
   Widget build(BuildContext context) {
     final vc = context.vividColors;
-    final provider = context.watch<RoiAnalyticsProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    // ---- Chatbot clients use a separate analytics layout ----
+    if (ClientConfig.isChatbotClient) {
+      final chatProvider = context.watch<ChatbotAnalyticsProvider>();
+      return Scaffold(
+        backgroundColor: isDark ? vc.background : const Color(0xFFF8FAFC),
+        body: Column(
+          children: [
+            if (chatProvider.isLoading && chatProvider.data != null)
+              LinearProgressIndicator(
+                backgroundColor: isDark ? vc.surface : const Color(0xFFE2E8F0),
+                valueColor: const AlwaysStoppedAnimation<Color>(VividColors.cyan),
+                minHeight: 2,
+              ),
+            if (chatProvider.error != null && chatProvider.data != null)
+              _buildErrorBanner(chatProvider.error!),
+            Expanded(
+              child: chatProvider.isLoading && chatProvider.data == null
+                  ? _buildFirstLoad()
+                  : chatProvider.error != null && chatProvider.data == null
+                      ? _buildError(chatProvider.error!)
+                      : chatProvider.data == null
+                          ? Center(
+                              child: Text('No analytics data',
+                                  style: TextStyle(color: isDark ? vc.textMuted : const Color(0xFF64748B), fontSize: 14)))
+                          : _buildChatbotContent(chatProvider.data!),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // ---- Retention clients: existing layout ----
+    final provider = context.watch<RoiAnalyticsProvider>();
 
     return Scaffold(
       backgroundColor: isDark ? vc.background : const Color(0xFFF8FAFC),
@@ -181,6 +226,35 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildChatbotContent(ChatbotAnalyticsData data) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth > 900;
+        return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(32, 24, 32, 32),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildToolbar(null),
+              const SizedBox(height: 32),
+              _ChatbotAnalyticsView(
+                data: data,
+                isWide: isWide,
+                overdueIndex: _overdueIndex,
+                onOverdueChanged: (idx) {
+                  setState(() => _overdueIndex = idx);
+                  _loadAnalytics();
+                },
+                onReplyToConversation: widget.onNavigateToConversation,
+              ),
+              const SizedBox(height: 32),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -857,7 +931,7 @@ class _ConversationsView extends StatelessWidget {
             label: 'Organic Leads',
             value: '${m.organicLeads}',
             color: const Color(0xFF8B5CF6),
-            description: 'Leads not attributed to any broadcast campaign',
+            description: 'New conversations from customers who have never received a broadcast',
             isHighlight: m.organicLeads > 0,
             change: c != null ? _calcChange(m.organicLeads.toDouble(), c.organicLeads.toDouble()) : null,
             compareLabel: _compareLabel,
@@ -2172,6 +2246,553 @@ class _BroadcastsView extends StatelessWidget {
 }
 
 // ================================================================
+// CHATBOT ANALYTICS VIEW
+// ================================================================
+
+class _ChatbotAnalyticsView extends StatelessWidget {
+  final ChatbotAnalyticsData data;
+  final bool isWide;
+  final int overdueIndex;
+  final ValueChanged<int> onOverdueChanged;
+  final void Function(String customerPhone)? onReplyToConversation;
+
+  const _ChatbotAnalyticsView({
+    required this.data,
+    required this.isWide,
+    required this.overdueIndex,
+    required this.onOverdueChanged,
+    this.onReplyToConversation,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final vc = context.vividColors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final sectionTitleColor = isDark ? vc.textPrimary : const Color(0xFF1E293B);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ---- OVERVIEW CARDS ----
+        Text('Overview', style: TextStyle(
+            color: sectionTitleColor, fontSize: 20, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 20),
+        _cardRow(isWide, [
+          _MetricCard(
+            icon: Icons.forum_outlined,
+            label: 'Total Conversations',
+            value: '${data.totalConversations}',
+            color: VividColors.cyan,
+            description: 'Distinct customer conversations in this period',
+            isHighlight: data.totalConversations > 0,
+            onTap: data.allConversations.isNotEmpty
+                ? () => showDialog(
+                      context: context,
+                      builder: (_) => _ChatbotConvDialog(
+                        title: 'Total Conversations',
+                        icon: Icons.forum_outlined,
+                        color: VividColors.cyan,
+                        entries: data.allConversations,
+                      ),
+                    )
+                : null,
+          ),
+          _MetricCard(
+            icon: Icons.smart_toy_outlined,
+            label: 'AI Handled',
+            value: '${data.aiHandled}',
+            color: Colors.green,
+            description: 'Conversations fully resolved by the AI without human intervention',
+            isHighlight: data.aiHandled > 0,
+            onTap: data.allConversations.any((e) => e.isAiHandled)
+                ? () => showDialog(
+                      context: context,
+                      builder: (_) => _ChatbotConvDialog(
+                        title: 'AI Handled',
+                        icon: Icons.smart_toy_outlined,
+                        color: Colors.green,
+                        entries: data.allConversations.where((e) => e.isAiHandled).toList(),
+                      ),
+                    )
+                : null,
+          ),
+          _MetricCard(
+            icon: Icons.person_outlined,
+            label: 'Human Takeover',
+            value: '${data.humanTakeover}',
+            color: Colors.orange,
+            description: 'Conversations where a human agent stepped in',
+            isHighlight: data.humanTakeover > 0,
+            onTap: data.allConversations.any((e) => e.isHumanTakeover)
+                ? () => showDialog(
+                      context: context,
+                      builder: (_) => _ChatbotConvDialog(
+                        title: 'Human Takeover',
+                        icon: Icons.person_outlined,
+                        color: Colors.orange,
+                        entries: data.allConversations.where((e) => e.isHumanTakeover).toList(),
+                      ),
+                    )
+                : null,
+          ),
+          _MetricCard(
+            icon: Icons.timer_outlined,
+            label: 'Avg Response Time',
+            value: _fmtDuration(data.avgResponseTimeSeconds),
+            color: const Color(0xFF14B8A6),
+            description: 'Average time between a customer message and the first reply (AI or human)',
+            onTap: data.allConversations.any((e) => e.avgResponseSeconds != null)
+                ? () => showDialog(
+                      context: context,
+                      builder: (_) => _ChatbotConvDialog(
+                        title: 'Response Times',
+                        icon: Icons.timer_outlined,
+                        color: const Color(0xFF14B8A6),
+                        entries: (data.allConversations.where((e) => e.avgResponseSeconds != null).toList()
+                          ..sort((a, b) => (b.avgResponseSeconds ?? 0).compareTo(a.avgResponseSeconds ?? 0))),
+                        showResponseTime: true,
+                      ),
+                    )
+                : null,
+          ),
+        ]),
+        const SizedBox(height: 20),
+
+        // ---- RATE CARDS ----
+        _cardRow(isWide, [
+          _MetricCard(
+            icon: Icons.check_circle_outline,
+            label: 'AI Resolution Rate',
+            value: '${data.aiResolutionRate.toStringAsFixed(1)}%',
+            color: Colors.green,
+            description: 'Percentage of conversations fully handled by AI with no human takeover',
+            onTap: data.allConversations.any((e) => e.isAiHandled)
+                ? () => showDialog(
+                      context: context,
+                      builder: (_) => _ChatbotConvDialog(
+                        title: 'AI Resolution',
+                        icon: Icons.check_circle_outline,
+                        color: Colors.green,
+                        entries: data.allConversations.where((e) => e.isAiHandled).toList(),
+                      ),
+                    )
+                : null,
+          ),
+          _MetricCard(
+            icon: Icons.swap_horiz,
+            label: 'Handoff Rate',
+            value: '${data.handoffRate.toStringAsFixed(1)}%',
+            color: Colors.orange,
+            description: 'Percentage of conversations that required a human agent to step in',
+            onTap: data.allConversations.any((e) => e.isHumanTakeover)
+                ? () => showDialog(
+                      context: context,
+                      builder: (_) => _ChatbotConvDialog(
+                        title: 'Human Handoffs',
+                        icon: Icons.swap_horiz,
+                        color: Colors.orange,
+                        entries: data.allConversations.where((e) => e.isHumanTakeover).toList(),
+                      ),
+                    )
+                : null,
+          ),
+        ]),
+        const SizedBox(height: 32),
+
+        // ---- DAILY TRENDS ----
+        if (data.daily.isNotEmpty) ...[
+          const SizedBox(height: 32),
+          Text('Daily Trends', style: TextStyle(
+              color: sectionTitleColor, fontSize: 20, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 20),
+          _buildTrendCharts(context),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildTrendCharts(BuildContext context) {
+    final days = data.daily;
+    final chart1 = _ChatbotTrendChart(
+      title: 'Conversations per Day',
+      days: days,
+      valueExtractor: (d) => d.conversations.toDouble(),
+      barColor: VividColors.cyan,
+      formatValue: (v) => v.toInt().toString(),
+    );
+    final chart2 = _ChatbotDualTrendChart(
+      title: 'AI vs Human Replies per Day',
+      days: days,
+    );
+
+    if (isWide) {
+      return Row(children: [
+        Expanded(child: chart1),
+        const SizedBox(width: 20),
+        Expanded(child: chart2),
+      ]);
+    }
+    return Column(children: [chart1, const SizedBox(height: 20), chart2]);
+  }
+}
+
+// ---- Single-series chatbot trend chart (reuses existing painters) ----
+class _ChatbotTrendChart extends StatefulWidget {
+  final String title;
+  final List<ChatbotDailyBreakdown> days;
+  final double Function(ChatbotDailyBreakdown) valueExtractor;
+  final String Function(double) formatValue;
+  final Color barColor;
+
+  const _ChatbotTrendChart({
+    required this.title,
+    required this.days,
+    required this.valueExtractor,
+    required this.formatValue,
+    required this.barColor,
+  });
+
+  @override
+  State<_ChatbotTrendChart> createState() => _ChatbotTrendChartState();
+}
+
+class _ChatbotTrendChartState extends State<_ChatbotTrendChart> {
+  int? _hoveredIndex;
+
+  @override
+  Widget build(BuildContext context) {
+    final vc = context.vividColors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final axisLabelColor = isDark ? Colors.white54 : const Color(0xFF94A3B8);
+    final days = widget.days.length > 60
+        ? widget.days.sublist(widget.days.length - 60)
+        : widget.days;
+    final values = days.map(widget.valueExtractor).toList();
+    final maxVal = values.isEmpty ? 1.0 : values.reduce(max);
+    final allZero = values.every((v) => v == 0);
+    const chartHeight = 160.0;
+
+    if (days.isEmpty || allZero) {
+      return SizedBox(
+        height: 280,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(24),
+          decoration: _cardBoxDecoration(context),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(widget.title,
+                style: TextStyle(color: widget.barColor, fontSize: 14, fontWeight: FontWeight.w500)),
+            const Spacer(),
+            Center(child: Text('No data for this period',
+                style: TextStyle(
+                    color: isDark ? vc.textMuted.withValues(alpha: 0.5) : const Color(0xFF94A3B8),
+                    fontSize: 13))),
+            const Spacer(),
+          ]),
+        ),
+      );
+    }
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 280),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(24),
+        decoration: _cardBoxDecoration(context),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Expanded(child: Text(widget.title,
+                style: TextStyle(color: widget.barColor, fontSize: 14, fontWeight: FontWeight.w500))),
+            if (_hoveredIndex != null && _hoveredIndex! < days.length)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: widget.barColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  '${_shortDate(days[_hoveredIndex!].date)}: ${widget.formatValue(values[_hoveredIndex!])}',
+                  style: TextStyle(color: widget.barColor, fontSize: 11, fontWeight: FontWeight.w600),
+                ),
+              ),
+          ]),
+          const SizedBox(height: 20),
+          SizedBox(
+            height: chartHeight,
+            child: Row(children: [
+              SizedBox(
+                width: 40,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(widget.formatValue(maxVal), style: TextStyle(color: axisLabelColor, fontSize: 9)),
+                    Text(widget.formatValue(maxVal / 2), style: TextStyle(color: axisLabelColor, fontSize: 9)),
+                    Text('0', style: TextStyle(color: axisLabelColor, fontSize: 9)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: MouseRegion(
+                  onExit: (_) => setState(() => _hoveredIndex = null),
+                  child: LayoutBuilder(builder: (context, constraints) {
+                    final chartW = constraints.maxWidth;
+                    return Stack(children: [
+                      CustomPaint(
+                        size: Size(chartW, chartHeight),
+                        painter: _LineChartPainter(
+                          values: values,
+                          maxVal: maxVal,
+                          color: widget.barColor,
+                          fillAlpha: 0.15,
+                        ),
+                      ),
+                      Row(
+                        children: List.generate(days.length, (i) => Expanded(
+                          child: MouseRegion(
+                            onEnter: (_) => setState(() => _hoveredIndex = i),
+                            child: Tooltip(
+                              message: '${days[i].date}\n${widget.formatValue(values[i])}',
+                              child: const SizedBox(height: chartHeight),
+                            ),
+                          ),
+                        )),
+                      ),
+                      if (_hoveredIndex != null && _hoveredIndex! < values.length)
+                        Positioned(
+                          left: days.length > 1
+                              ? (_hoveredIndex! / (days.length - 1)) * (chartW - 4)
+                              : chartW / 2 - 2,
+                          bottom: maxVal > 0
+                              ? (values[_hoveredIndex!] / maxVal) * (chartHeight - 10) - 4
+                              : 0,
+                          child: Container(
+                            width: 8, height: 8,
+                            decoration: BoxDecoration(
+                              color: widget.barColor,
+                              shape: BoxShape.circle,
+                              boxShadow: [BoxShadow(
+                                  color: widget.barColor.withValues(alpha: 0.5), blurRadius: 6)],
+                            ),
+                          ),
+                        ),
+                    ]);
+                  }),
+                ),
+              ),
+            ]),
+          ),
+          const SizedBox(height: 8),
+          if (days.length >= 3)
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              Text(_shortDate(days.first.date), style: TextStyle(color: axisLabelColor, fontSize: 10)),
+              Text(_shortDate(days[days.length ~/ 2].date), style: TextStyle(color: axisLabelColor, fontSize: 10)),
+              Text(_shortDate(days.last.date), style: TextStyle(color: axisLabelColor, fontSize: 10)),
+            ]),
+        ]),
+      ),
+    );
+  }
+}
+
+// ---- Dual-series chatbot trend chart (AI green + Human orange) ----
+class _ChatbotDualTrendChart extends StatefulWidget {
+  final String title;
+  final List<ChatbotDailyBreakdown> days;
+
+  const _ChatbotDualTrendChart({required this.title, required this.days});
+
+  @override
+  State<_ChatbotDualTrendChart> createState() => _ChatbotDualTrendChartState();
+}
+
+class _ChatbotDualTrendChartState extends State<_ChatbotDualTrendChart> {
+  int? _hoveredIndex;
+
+  @override
+  Widget build(BuildContext context) {
+    final vc = context.vividColors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final axisLabelColor = isDark ? Colors.white54 : const Color(0xFF94A3B8);
+    final days = widget.days.length > 60
+        ? widget.days.sublist(widget.days.length - 60)
+        : widget.days;
+    final aiValues = days.map((d) => d.aiReplies.toDouble()).toList();
+    final humanValues = days.map((d) => d.humanReplies.toDouble()).toList();
+    final allVals = [...aiValues, ...humanValues];
+    final maxVal = allVals.isEmpty ? 1.0 : allVals.reduce(max);
+    final allZero = allVals.every((v) => v == 0);
+    const chartHeight = 160.0;
+
+    if (days.isEmpty || allZero) {
+      return SizedBox(
+        height: 280,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(24),
+          decoration: _cardBoxDecoration(context),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(widget.title,
+                style: const TextStyle(color: Colors.green, fontSize: 14, fontWeight: FontWeight.w500)),
+            const Spacer(),
+            Center(child: Text('No reply data for this period',
+                style: TextStyle(
+                    color: isDark ? vc.textMuted.withValues(alpha: 0.5) : const Color(0xFF94A3B8),
+                    fontSize: 13))),
+            const Spacer(),
+          ]),
+        ),
+      );
+    }
+
+    final hovIdx = _hoveredIndex;
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 280),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(24),
+        decoration: _cardBoxDecoration(context),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Expanded(child: Text(widget.title,
+                style: const TextStyle(color: Colors.green, fontSize: 14, fontWeight: FontWeight.w500))),
+            if (hovIdx != null && hovIdx < days.length)
+              Row(children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                      color: Colors.green.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(6)),
+                  child: Text('AI: ${aiValues[hovIdx].toInt()}',
+                      style: const TextStyle(color: Colors.green, fontSize: 11, fontWeight: FontWeight.w600)),
+                ),
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(6)),
+                  child: Text('Human: ${humanValues[hovIdx].toInt()}',
+                      style: const TextStyle(color: Colors.orange, fontSize: 11, fontWeight: FontWeight.w600)),
+                ),
+              ]),
+          ]),
+          const SizedBox(height: 20),
+          SizedBox(
+            height: chartHeight,
+            child: Row(children: [
+              SizedBox(
+                width: 40,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(maxVal.toInt().toString(), style: TextStyle(color: axisLabelColor, fontSize: 9)),
+                    Text((maxVal / 2).toInt().toString(), style: TextStyle(color: axisLabelColor, fontSize: 9)),
+                    Text('0', style: TextStyle(color: axisLabelColor, fontSize: 9)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: MouseRegion(
+                  onExit: (_) => setState(() => _hoveredIndex = null),
+                  child: LayoutBuilder(builder: (context, constraints) {
+                    final chartW = constraints.maxWidth;
+                    return Stack(children: [
+                      // AI line (green)
+                      CustomPaint(
+                        size: Size(chartW, chartHeight),
+                        painter: _LineChartPainter(
+                          values: aiValues,
+                          maxVal: maxVal,
+                          color: Colors.green,
+                          fillAlpha: 0.10,
+                        ),
+                      ),
+                      // Human line (orange)
+                      CustomPaint(
+                        size: Size(chartW, chartHeight),
+                        painter: _LineChartPainter(
+                          values: humanValues,
+                          maxVal: maxVal,
+                          color: Colors.orange,
+                          fillAlpha: 0.08,
+                        ),
+                      ),
+                      Row(
+                        children: List.generate(days.length, (i) => Expanded(
+                          child: MouseRegion(
+                            onEnter: (_) => setState(() => _hoveredIndex = i),
+                            child: Tooltip(
+                              message: '${days[i].date}\nAI: ${aiValues[i].toInt()} · Human: ${humanValues[i].toInt()}',
+                              child: const SizedBox(height: chartHeight),
+                            ),
+                          ),
+                        )),
+                      ),
+                      // Hover dots
+                      if (hovIdx != null && hovIdx < days.length) ...[
+                        if (maxVal > 0)
+                          Positioned(
+                            left: days.length > 1
+                                ? (hovIdx / (days.length - 1)) * (chartW - 4)
+                                : chartW / 2 - 2,
+                            bottom: (aiValues[hovIdx] / maxVal) * (chartHeight - 10) - 4,
+                            child: Container(
+                              width: 8, height: 8,
+                              decoration: BoxDecoration(
+                                  color: Colors.green, shape: BoxShape.circle,
+                                  boxShadow: [BoxShadow(color: Colors.green.withValues(alpha: 0.5), blurRadius: 6)]),
+                            ),
+                          ),
+                        if (maxVal > 0)
+                          Positioned(
+                            left: days.length > 1
+                                ? (hovIdx / (days.length - 1)) * (chartW - 4)
+                                : chartW / 2 - 2,
+                            bottom: (humanValues[hovIdx] / maxVal) * (chartHeight - 10) - 4,
+                            child: Container(
+                              width: 8, height: 8,
+                              decoration: BoxDecoration(
+                                  color: Colors.orange, shape: BoxShape.circle,
+                                  boxShadow: [BoxShadow(color: Colors.orange.withValues(alpha: 0.5), blurRadius: 6)]),
+                            ),
+                          ),
+                      ],
+                    ]);
+                  }),
+                ),
+              ),
+            ]),
+          ),
+          const SizedBox(height: 8),
+          if (days.length >= 3)
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              Text(_shortDate(days.first.date), style: TextStyle(color: axisLabelColor, fontSize: 10)),
+              Text(_shortDate(days[days.length ~/ 2].date), style: TextStyle(color: axisLabelColor, fontSize: 10)),
+              Text(_shortDate(days.last.date), style: TextStyle(color: axisLabelColor, fontSize: 10)),
+            ]),
+          const SizedBox(height: 12),
+          // Legend
+          Row(children: [
+            Container(width: 10, height: 3, color: Colors.green),
+            const SizedBox(width: 6),
+            Text('AI replies', style: TextStyle(color: axisLabelColor, fontSize: 11)),
+            const SizedBox(width: 16),
+            Container(width: 10, height: 3, color: Colors.orange),
+            const SizedBox(width: 6),
+            Text('Human replies', style: TextStyle(color: axisLabelColor, fontSize: 11)),
+          ]),
+        ]),
+      ),
+    );
+  }
+}
+
+// ================================================================
 // SHARED HELPERS
 // ================================================================
 
@@ -2273,6 +2894,12 @@ String _emptyStateMessage(String title) {
   return 'No data for this period';
 }
 
+String _shortDate(String date) {
+  final parts = date.split('-');
+  if (parts.length == 3) return '${parts[1]}/${parts[2]}';
+  return date;
+}
+
 String _fmtDuration(double seconds) {
   if (seconds <= 0) return '0s';
   if (seconds < 60) return '${seconds.toStringAsFixed(0)}s';
@@ -2314,6 +2941,150 @@ class _TableHeader extends StatelessWidget {
 // ================================================================
 // METRIC CARD
 // ================================================================
+
+// ================================================================
+// CHATBOT CONVERSATION DIALOG
+// ================================================================
+
+class _ChatbotConvDialog extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final Color color;
+  final List<ChatbotConversationEntry> entries;
+  final bool showResponseTime;
+
+  const _ChatbotConvDialog({
+    required this.title,
+    required this.icon,
+    required this.color,
+    required this.entries,
+    this.showResponseTime = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final vc = context.vividColors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textPrimary = isDark ? vc.textPrimary : const Color(0xFF1E293B);
+    final textMuted = isDark ? vc.textMuted : const Color(0xFF94A3B8);
+    final divColor = isDark ? vc.borderSubtle : const Color(0xFFE2E8F0);
+
+    return Dialog(
+      backgroundColor: isDark ? vc.background : Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520, maxHeight: 600),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                Icon(icon, color: color, size: 22),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(title, style: TextStyle(
+                      color: textPrimary, fontSize: 18, fontWeight: FontWeight.bold)),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text('${entries.length}', style: TextStyle(
+                      color: color, fontSize: 13, fontWeight: FontWeight.w600)),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: Icon(Icons.close, color: textMuted, size: 20),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ]),
+              const SizedBox(height: 16),
+              Expanded(
+                child: entries.isEmpty
+                    ? Center(child: Text('No conversations in this period',
+                        style: TextStyle(color: textMuted, fontSize: 13)))
+                    : ListView.separated(
+                        itemCount: entries.length,
+                        separatorBuilder: (_, __) => Divider(height: 1, color: divColor),
+                        itemBuilder: (context, i) {
+                          final e = entries[i];
+                          final displayName = e.name ?? e.phone;
+                          final initial = displayName.isNotEmpty ? displayName[0].toUpperCase() : '?';
+                          final dt = e.firstMessageAt;
+                          final dateStr =
+                              '${dt.day}/${dt.month}/${dt.year}';
+
+                          Widget trailing;
+                          if (showResponseTime && e.avgResponseSeconds != null) {
+                            trailing = _convTag(_fmtDuration(e.avgResponseSeconds!), color);
+                          } else if (e.isHumanTakeover) {
+                            trailing = _convTag(e.agentName ?? 'Human', Colors.orange);
+                          } else if (e.isAiHandled) {
+                            trailing = _convTag('AI', Colors.green);
+                          } else if (e.hasUnreplied) {
+                            trailing = _convTag('Open', VividColors.statusWarning);
+                          } else {
+                            trailing = _convTag('${e.messageCount} msgs', textMuted);
+                          }
+
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                            child: Row(children: [
+                              Container(
+                                width: 36, height: 36,
+                                decoration: BoxDecoration(
+                                  color: color.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                alignment: Alignment.center,
+                                child: Text(initial, style: TextStyle(
+                                    color: color, fontSize: 15, fontWeight: FontWeight.bold)),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(displayName,
+                                        style: TextStyle(color: textPrimary, fontSize: 13, fontWeight: FontWeight.w500),
+                                        overflow: TextOverflow.ellipsis),
+                                    Text(
+                                      e.name != null ? '${e.phone} · $dateStr' : dateStr,
+                                      style: TextStyle(color: textMuted, fontSize: 11),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              trailing,
+                            ]),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _convTag(String text, Color c) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: c.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(text,
+            style: TextStyle(color: c, fontSize: 11, fontWeight: FontWeight.w600)),
+      );
+}
 
 class _MetricCard extends StatelessWidget {
   final IconData icon;
@@ -2724,11 +3495,7 @@ class _TrendChartState extends State<_TrendChart> {
     );
   }
 
-  String _shortDate(String date) {
-    final parts = date.split('-');
-    if (parts.length == 3) return '${parts[1]}/${parts[2]}';
-    return date;
-  }
+  // _shortDate is defined as a top-level function below
 
   Widget _legendDot(Color color, String label, Color labelColor) {
     return Row(mainAxisSize: MainAxisSize.min, children: [

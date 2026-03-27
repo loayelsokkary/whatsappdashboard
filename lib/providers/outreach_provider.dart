@@ -23,6 +23,8 @@ class OutreachProvider extends ChangeNotifier {
   List<OutreachMessage> _messages = [];
   bool _isLoadingMessages = false;
   RealtimeChannel? _messagesChannel;
+  Timer? _messagesPollTimer;
+  Map<String, OutreachMessage> _lastMessageByContact = {};
 
   // Broadcasts
   List<OutreachBroadcast> _broadcasts = [];
@@ -30,6 +32,8 @@ class OutreachProvider extends ChangeNotifier {
   List<OutreachBroadcastRecipient> _broadcastRecipients = [];
   bool _isLoadingBroadcasts = false;
   bool _isLoadingRecipients = false;
+  int _recipientTotalCount = 0;
+  static const _recipientPageSize = 50;
 
   // Templates
   List<WhatsAppTemplate> _templates = [];
@@ -68,12 +72,15 @@ class OutreachProvider extends ChangeNotifier {
 
   List<OutreachMessage> get messages => _messages;
   bool get isLoadingMessages => _isLoadingMessages;
+  OutreachMessage? lastMessageFor(String contactId) => _lastMessageByContact[contactId];
 
   List<OutreachBroadcast> get broadcasts => _broadcasts;
   OutreachBroadcast? get selectedBroadcast => _selectedBroadcast;
   List<OutreachBroadcastRecipient> get broadcastRecipients => _broadcastRecipients;
   bool get isLoadingBroadcasts => _isLoadingBroadcasts;
   bool get isLoadingRecipients => _isLoadingRecipients;
+  int get recipientTotalCount => _recipientTotalCount;
+  bool get hasMoreRecipients => _broadcastRecipients.length < _recipientTotalCount;
 
   List<WhatsAppTemplate> get templates => _templates;
   bool get isLoadingTemplates => _isLoadingTemplates;
@@ -88,6 +95,20 @@ class OutreachProvider extends ChangeNotifier {
   String get outreachPhone => SupabaseService.outreachPhone;
 
   SupabaseClient get _db => SupabaseService.adminClient;
+
+  // Needs reply: contacts whose last message is inbound
+  Set<String> get needsReplyContactIds {
+    final result = <String>{};
+    for (final contact in _contacts) {
+      final lastMsg = _lastMessageByContact[contact.id];
+      if (lastMsg != null && !lastMsg.isOutbound) {
+        result.add(contact.id);
+      }
+    }
+    return result;
+  }
+
+  int get needsReplyCount => needsReplyContactIds.length;
 
   // Contact counts per status
   Map<ContactStatus, int> get contactCounts {
@@ -131,6 +152,9 @@ class OutreachProvider extends ChangeNotifier {
           .toList();
 
       debugPrint('OUTREACH: loaded ${_contacts.length} contacts');
+
+      // Fetch last message per contact for list preview
+      _fetchLastMessages();
     } catch (e) {
       debugPrint('OUTREACH: contacts error: $e');
       _error = e.toString();
@@ -211,16 +235,19 @@ class OutreachProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void selectContact(OutreachContact contact) {
+  Future<void> selectContact(OutreachContact contact) async {
     _selectedContact = contact;
+    _messages = [];
     notifyListeners();
-    fetchMessages(contact.id);
+    await fetchMessages(contact.id, phone: contact.phone);
     subscribeToMessages(contact.phone);
+    _startMessagesPoll(contact.id);
   }
 
   void clearContactSelection() {
     _selectedContact = null;
     _messages = [];
+    _stopMessagesPoll();
     unsubscribeMessages();
     notifyListeners();
   }
@@ -229,19 +256,70 @@ class OutreachProvider extends ChangeNotifier {
   // MESSAGES
   // ============================================
 
-  Future<void> fetchMessages(String contactId) async {
+  Future<void> _fetchLastMessages() async {
+    try {
+      final phones = _contacts
+          .map((c) => c.phone)
+          .where((p) => p.isNotEmpty)
+          .toSet()
+          .toList();
+      if (phones.isEmpty) return;
+
+      // Get recent messages ordered by created_at desc, then pick latest per phone
+      final rows = await _db
+          .from('vivid_outreach_messages')
+          .select()
+          .inFilter('customer_phone', phones)
+          .order('created_at', ascending: false);
+
+      final Map<String, OutreachMessage> latest = {};
+      for (final r in rows) {
+        final msg = OutreachMessage.fromJson(r);
+        final phone = msg.customerPhone;
+        if (phone.isNotEmpty && !latest.containsKey(phone)) {
+          latest[phone] = msg;
+        }
+      }
+
+      // Map by contact id
+      _lastMessageByContact = {};
+      for (final contact in _contacts) {
+        final msg = latest[contact.phone];
+        if (msg != null) {
+          _lastMessageByContact[contact.id] = msg;
+        }
+      }
+      notifyListeners();
+    } catch (e) {
+      debugPrint('OUTREACH: fetch last messages error: $e');
+    }
+  }
+
+  Future<void> fetchMessages(String contactId, {String? phone}) async {
     _isLoadingMessages = true;
     notifyListeners();
 
     try {
-      debugPrint('OUTREACH: fetching messages for contact $contactId');
-      final rows = await _db
-          .from('vivid_outreach_messages')
-          .select()
-          .eq('contact_id', contactId)
-          .order('created_at', ascending: true);
+      final contactPhone = phone ?? _selectedContact?.phone;
+      debugPrint('OUTREACH: fetching messages for contact $contactId (phone: $contactPhone)');
 
-      _messages = (rows as List)
+      // Query by customer_phone (reliable on both inbound & outbound) with contact_id fallback
+      List<dynamic> rows;
+      if (contactPhone != null && contactPhone.isNotEmpty) {
+        rows = await _db
+            .from('vivid_outreach_messages')
+            .select()
+            .eq('customer_phone', contactPhone)
+            .order('created_at', ascending: true);
+      } else {
+        rows = await _db
+            .from('vivid_outreach_messages')
+            .select()
+            .eq('contact_id', contactId)
+            .order('created_at', ascending: true);
+      }
+
+      _messages = rows
           .map((r) => OutreachMessage.fromJson(r as Map<String, dynamic>))
           .toList();
 
@@ -254,11 +332,53 @@ class OutreachProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<String?> sendMessage(String contactId, String text) async {
+  Future<String?> uploadMedia(Uint8List bytes, String filename) async {
+    try {
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final sanitized = filename
+          .replaceAll(' ', '_')
+          .replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+      final path = 'outreach/${timestamp}_$sanitized';
+
+      final ext = filename.split('.').last.toLowerCase();
+      final contentType = switch (ext) {
+        'jpg' || 'jpeg' => 'image/jpeg',
+        'png' => 'image/png',
+        'pdf' => 'application/pdf',
+        _ => 'application/octet-stream',
+      };
+
+      await SupabaseService.client.storage
+          .from('media')
+          .uploadBinary(
+            path,
+            bytes,
+            fileOptions: FileOptions(contentType: contentType),
+          );
+
+      final url = SupabaseService.client.storage
+          .from('media')
+          .getPublicUrl(path);
+
+      debugPrint('OUTREACH: uploaded media: $url');
+      return url;
+    } catch (e) {
+      debugPrint('OUTREACH: upload media error: $e');
+      return null;
+    }
+  }
+
+  Future<String?> sendMessage(
+    String contactId,
+    String text, {
+    String? mediaUrl,
+    String? mediaType,
+    String? mediaFilename,
+  }) async {
     if (_selectedContact == null) return 'No contact selected';
 
     final contact = _selectedContact!;
-    final now = DateTime.now();
+    final now = DateTime.now().toUtc();
 
     try {
       final row = {
@@ -272,9 +392,16 @@ class OutreachProvider extends ChangeNotifier {
         'sent_by': 'manager',
         'label': 'outreach',
         'created_at': now.toIso8601String(),
+        if (mediaUrl != null) 'media_url': mediaUrl,
+        if (mediaType != null) 'media_type': mediaType,
+        if (mediaFilename != null) 'media_filename': mediaFilename,
       };
 
-      await _db.from('vivid_outreach_messages').insert(row);
+      final inserted = await _db.from('vivid_outreach_messages').insert(row).select().single();
+      final newMsg = OutreachMessage.fromJson(inserted);
+      _messages.add(newMsg);
+      _lastMessageByContact[contactId] = newMsg;
+      notifyListeners();
       debugPrint('OUTREACH: message stored to DB');
 
       // Update last_contacted_at
@@ -299,9 +426,9 @@ class OutreachProvider extends ChangeNotifier {
               'customer_name': contact.displayName,
               'manager_response': text,
               'sent_by': 'manager',
-              'media_url': '',
-              'media_type': '',
-              'media_filename': '',
+              'media_url': mediaUrl ?? '',
+              'media_type': mediaType ?? '',
+              'media_filename': mediaFilename ?? '',
             }),
           );
           debugPrint('OUTREACH: message sent via webhook');
@@ -310,8 +437,6 @@ class OutreachProvider extends ChangeNotifier {
         }
       }
 
-      // Refresh messages
-      await fetchMessages(contactId);
       return null;
     } catch (e) {
       debugPrint('OUTREACH: send message error: $e');
@@ -339,6 +464,9 @@ class OutreachProvider extends ChangeNotifier {
                 final msg = OutreachMessage.fromJson(row);
                 if (!_messages.any((m) => m.id == msg.id)) {
                   _messages.add(msg);
+                  // Update last message for sidebar preview
+                  final cId = msg.contactId ?? _selectedContact?.id;
+                  if (cId != null) _lastMessageByContact[cId] = msg;
                   notifyListeners();
                 }
               }
@@ -355,6 +483,64 @@ class OutreachProvider extends ChangeNotifier {
     if (_messagesChannel != null) {
       SupabaseService.client.removeChannel(_messagesChannel!);
       _messagesChannel = null;
+    }
+  }
+
+  void _startMessagesPoll(String contactId) {
+    _stopMessagesPoll();
+    _messagesPollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (_selectedContact?.id == contactId) {
+        _pollMessages(contactId);
+      } else {
+        _stopMessagesPoll();
+      }
+    });
+  }
+
+  void _stopMessagesPoll() {
+    _messagesPollTimer?.cancel();
+    _messagesPollTimer = null;
+  }
+
+  /// Lightweight fetch that merges new messages without replacing the list.
+  Future<void> _pollMessages(String contactId) async {
+    try {
+      final contactPhone = _selectedContact?.phone;
+      List<dynamic> rows;
+      if (contactPhone != null && contactPhone.isNotEmpty) {
+        rows = await _db
+            .from('vivid_outreach_messages')
+            .select()
+            .eq('customer_phone', contactPhone)
+            .order('created_at', ascending: true);
+      } else {
+        rows = await _db
+            .from('vivid_outreach_messages')
+            .select()
+            .eq('contact_id', contactId)
+            .order('created_at', ascending: true);
+      }
+
+      final fetched = rows
+          .map((r) => OutreachMessage.fromJson(r as Map<String, dynamic>))
+          .toList();
+
+      final existingIds = _messages.map((m) => m.id).toSet();
+      var added = false;
+      for (final msg in fetched) {
+        if (!existingIds.contains(msg.id)) {
+          _messages.add(msg);
+          added = true;
+        }
+      }
+      if (added && _selectedContact != null && _messages.isNotEmpty) {
+        _lastMessageByContact[_selectedContact!.id] = _messages.last;
+        notifyListeners();
+      } else if (added) {
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('OUTREACH: poll messages error: $e');
     }
   }
 
@@ -398,29 +584,97 @@ class OutreachProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<String?> renameBroadcast(String id, String newName) async {
+    try {
+      await _db
+          .from('vivid_outreach_broadcasts')
+          .update({'name': newName})
+          .eq('id', id);
+      final idx = _broadcasts.indexWhere((b) => b.id == id);
+      if (idx >= 0) {
+        final old = _broadcasts[idx];
+        _broadcasts[idx] = OutreachBroadcast(
+          id: old.id,
+          name: newName,
+          templateName: old.templateName,
+          messageBody: old.messageBody,
+          status: old.status,
+          scheduledAt: old.scheduledAt,
+          sentAt: old.sentAt,
+          totalRecipients: old.totalRecipients,
+          deliveredCount: old.deliveredCount,
+          failedCount: old.failedCount,
+          createdAt: old.createdAt,
+        );
+        if (_selectedBroadcast?.id == id) {
+          _selectedBroadcast = _broadcasts[idx];
+        }
+        notifyListeners();
+      }
+      return null;
+    } catch (e) {
+      debugPrint('OUTREACH: rename broadcast error: $e');
+      return e.toString();
+    }
+  }
+
   Future<void> fetchBroadcastRecipients(String broadcastId) async {
     _isLoadingRecipients = true;
+    _broadcastRecipients = [];
+    _recipientTotalCount = 0;
     notifyListeners();
 
     try {
+      // Get total count
+      final countRows = await _db
+          .from('vivid_outreach_broadcast_recipients')
+          .select('id')
+          .eq('broadcast_id', broadcastId);
+      _recipientTotalCount = (countRows as List).length;
+
+      // Fetch first page
       final rows = await _db
           .from('vivid_outreach_broadcast_recipients')
           .select()
           .eq('broadcast_id', broadcastId)
-          .order('name');
+          .order('name')
+          .limit(_recipientPageSize);
 
       _broadcastRecipients = (rows as List)
           .map((r) =>
               OutreachBroadcastRecipient.fromJson(r as Map<String, dynamic>))
           .toList();
 
-      debugPrint('OUTREACH: loaded ${_broadcastRecipients.length} recipients for broadcast $broadcastId');
+      debugPrint('OUTREACH: loaded ${_broadcastRecipients.length}/$_recipientTotalCount recipients for broadcast $broadcastId');
     } catch (e) {
       debugPrint('OUTREACH: recipients error: $e');
     }
 
     _isLoadingRecipients = false;
     notifyListeners();
+  }
+
+  Future<void> loadMoreRecipients(String broadcastId) async {
+    if (!hasMoreRecipients) return;
+
+    try {
+      final rows = await _db
+          .from('vivid_outreach_broadcast_recipients')
+          .select()
+          .eq('broadcast_id', broadcastId)
+          .order('name')
+          .range(_broadcastRecipients.length, _broadcastRecipients.length + _recipientPageSize - 1);
+
+      final more = (rows as List)
+          .map((r) =>
+              OutreachBroadcastRecipient.fromJson(r as Map<String, dynamic>))
+          .toList();
+
+      _broadcastRecipients.addAll(more);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('OUTREACH: load more recipients error: $e');
+    }
   }
 
   Future<String?> createBroadcast({
@@ -545,6 +799,113 @@ class OutreachProvider extends ChangeNotifier {
 
     _isLoadingTemplates = false;
     notifyListeners();
+  }
+
+  /// Sync templates from Meta Graph API into local DB.
+  Future<String?> syncTemplatesFromMeta() async {
+    if (!hasMetaCredentials) {
+      return 'Outreach Meta credentials not configured.';
+    }
+
+    _isLoadingTemplates = true;
+    notifyListeners();
+
+    try {
+      final url = '$_metaBaseUrl/${SupabaseService.outreachWabaId}/message_templates?limit=100';
+      debugPrint('OUTREACH: syncing templates from Meta: $url');
+
+      final response = await http.get(Uri.parse(url), headers: _metaHeaders);
+      if (response.statusCode != 200) {
+        _isLoadingTemplates = false;
+        notifyListeners();
+        return 'Meta API error: ${response.statusCode}';
+      }
+
+      final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+      final data = decoded['data'] as List<dynamic>? ?? [];
+
+      for (final tpl in data) {
+        final t = tpl as Map<String, dynamic>;
+        final components = t['components'] as List<dynamic>? ?? [];
+
+        String headerType = 'none';
+        String? headerText;
+        String bodyText = '';
+        List<Map<String, dynamic>> buttons = [];
+
+        for (final comp in components) {
+          final c = comp as Map<String, dynamic>;
+          final type = (c['type'] as String? ?? '').toUpperCase();
+          if (type == 'HEADER') {
+            headerType = (c['format'] as String? ?? 'TEXT').toLowerCase();
+            headerText = c['text'] as String?;
+          } else if (type == 'BODY') {
+            bodyText = c['text'] as String? ?? '';
+          } else if (type == 'BUTTONS') {
+            final btns = c['buttons'] as List<dynamic>? ?? [];
+            buttons = btns.map((b) => b as Map<String, dynamic>).toList();
+          }
+        }
+
+        await syncTemplateToDb(
+          metaTemplateId: t['id']?.toString() ?? '',
+          templateName: t['name'] as String? ?? '',
+          status: (t['status'] as String? ?? '').toLowerCase(),
+          language: t['language'] as String? ?? '',
+          category: (t['category'] as String? ?? '').toLowerCase(),
+          headerType: headerType,
+          headerText: headerText,
+          bodyText: bodyText,
+          buttons: buttons.map((b) => {
+            'type': b['type'] ?? '',
+            'text': b['text'] ?? '',
+          }).toList(),
+        );
+      }
+
+      debugPrint('OUTREACH: synced ${data.length} templates from Meta');
+      await fetchTemplates();
+      return null;
+    } catch (e) {
+      debugPrint('OUTREACH: sync templates error: $e');
+      _isLoadingTemplates = false;
+      notifyListeners();
+      return e.toString();
+    }
+  }
+
+  /// Delete a template from Meta and local DB.
+  Future<String?> deleteTemplate(String templateName, String metaTemplateId) async {
+    if (!hasMetaCredentials) {
+      return 'Outreach Meta credentials not configured.';
+    }
+
+    try {
+      // Delete from Meta
+      final url = '$_metaBaseUrl/${SupabaseService.outreachWabaId}/message_templates?name=$templateName';
+      final response = await http.delete(Uri.parse(url), headers: _metaHeaders);
+
+      if (response.statusCode != 200 && response.statusCode != 204) {
+        final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+        final err = decoded['error'] as Map<String, dynamic>?;
+        return (err?['message'] as String?) ?? 'Delete failed (${response.statusCode})';
+      }
+
+      // Delete from local DB
+      await _db
+          .from('vivid_outreach_whatsapp_templates')
+          .delete()
+          .eq('meta_template_id', metaTemplateId);
+
+      _templates.removeWhere((t) => t.id == metaTemplateId);
+      notifyListeners();
+
+      debugPrint('OUTREACH: deleted template "$templateName"');
+      return null;
+    } catch (e) {
+      debugPrint('OUTREACH: delete template error: $e');
+      return e.toString();
+    }
   }
 
   // ============================================

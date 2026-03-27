@@ -412,24 +412,51 @@ class TemplatesProvider extends ChangeNotifier {
         return 'Safety abort: client context changed during sync';
       }
 
-      // Step 2: Set display_name for each template (full name — no prefix filtering).
-      // Each client syncs all templates from their own WABA. Cross-WABA isolation
-      // is guaranteed by CRITICAL Fix 1 (enterPreview updates metaWabaId).
+      // Step 2: Apply prefix filter for shared-WABA clients to prevent cross-client contamination.
       final slug = ClientConfig.currentClient?.slug ?? '';
       final clientPrefix = slug.isNotEmpty ? '${normalizeSlug(slug)}_' : '';
 
+      List<WhatsAppTemplate> clientTemplates = _allMetaTemplates;
+      if (ClientConfig.isSharedWaba && slug.isNotEmpty) {
+        clientTemplates = _allMetaTemplates.where((t) {
+          final name = t.name.toLowerCase();
+          return name.startsWith(clientPrefix) ||
+              name == 'hello_world' ||
+              name == 'vivddemo';
+        }).toList();
+        debugPrint('[sync] Shared WABA filter applied for "$slug": ${clientTemplates.length} of ${_allMetaTemplates.length} templates match');
+      }
+
+      if (clientTemplates.isEmpty && ClientConfig.isSharedWaba) {
+        _isSyncing = false;
+        _error = 'No templates found with prefix "$clientPrefix" on shared WABA. Create templates from the New Template screen first.';
+        notifyListeners();
+        return _error;
+      }
+
       final displayNames = <String, String>{};
-      for (final t in _allMetaTemplates) {
+      for (final t in clientTemplates) {
         displayNames[t.name] = (clientPrefix.isNotEmpty && t.name.startsWith(clientPrefix))
             ? t.name.substring(clientPrefix.length)
             : t.name;
       }
 
-      debugPrint('[sync] ${_allMetaTemplates.length} Meta templates for "$slug"');
+      debugPrint('[sync] ${clientTemplates.length} templates to sync for "$slug"');
+
+      // GATEWAY — second line of defense: skip any template that doesn't match
+      // the client prefix, in case clientTemplates filtering above is ever bypassed.
+      final isSharedWaba = ClientConfig.isSharedWaba;
 
       // Build rows sequentially, doing a per-template DB read to reliably
       // preserve human-set labels/sources/images instead of overwriting them.
-      final rows = await Future.wait(_allMetaTemplates.map((t) async {
+      final rows = (await Future.wait(clientTemplates.map((t) async {
+        if (isSharedWaba && clientPrefix.isNotEmpty) {
+          final name = t.name.toLowerCase();
+          if (!name.startsWith(clientPrefix) && name != 'hello_world' && name != 'vivddemo') {
+            debugPrint('[sync] GATEWAY BLOCKED: "${t.name}" does not match prefix "$clientPrefix" — skipping');
+            return null;
+          }
+        }
         // Individual read — guaranteed to return the correct row for this client+template.
         final existing = await SupabaseService.adminClient
             .from(tableName)
@@ -494,7 +521,7 @@ class TemplatesProvider extends ChangeNotifier {
           'updated_at': now,
           'offer_image_url': offerImageUrl,
         };
-      }));
+      }))).whereType<Map<String, dynamic>>().toList();
 
       // Use adminClient to bypass RLS on per-client templates table writes.
       // Split into insert/update to avoid needing a unique constraint on meta_template_id.
@@ -620,16 +647,19 @@ class TemplatesProvider extends ChangeNotifier {
       debugPrint('[syncSingleTemplate] Upserting ${t.name} (display: ${displayName ?? t.name}, offer_image_url: ${row['offer_image_url'] ?? 'omitted'})');
       // Use adminClient to bypass RLS on per-client templates table writes.
       // Check existence first to avoid needing a unique constraint on meta_template_id.
+      // Scope by client_id to prevent 406 when the same meta_template_id appears in multiple clients' tables.
       final existingRow = await SupabaseService.adminClient
           .from(tableName)
           .select('id')
           .eq('meta_template_id', t.id)
+          .eq('client_id', clientId)
           .maybeSingle();
       if (existingRow != null) {
         await SupabaseService.adminClient
             .from(tableName)
             .update(row)
-            .eq('meta_template_id', t.id);
+            .eq('meta_template_id', t.id)
+            .eq('client_id', clientId);
       } else {
         await SupabaseService.adminClient.from(tableName).insert(row);
       }
@@ -661,14 +691,18 @@ class TemplatesProvider extends ChangeNotifier {
       return callerProvidedUrl;
     }
 
-    // Step 2: check existing DB value — filter by template_name
+    // Step 2: check existing DB value — filter by template_name + client_id + language
+    // Must include client_id to avoid 406 when same template name exists across clients.
     final tableName = ClientConfig.templatesTable;
     if (tableName == null || tableName.isEmpty) return null;
+    final clientId = ClientConfig.currentClient?.id ?? '';
     try {
       final existing = await SupabaseService.adminClient
           .from(tableName)
           .select('offer_image_url')
           .eq('template_name', t.name)
+          .eq('client_id', clientId)
+          .eq('language_code', t.language)
           .maybeSingle();
       final existingUrl = existing?['offer_image_url'] as String?;
       if (existingUrl != null && existingUrl.contains('supabase.co/storage')) {

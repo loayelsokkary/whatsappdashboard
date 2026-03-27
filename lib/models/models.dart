@@ -901,6 +901,17 @@ class ClientConfig {
   /// Whether the current client uses AI-powered conversations
   static bool get hasAiConversations => _currentClient?.hasAiConversations ?? false;
 
+  /// Product type: 'retention' or 'chatbot'. Defaults to 'retention' so existing clients are unaffected.
+  static String get productType => _currentClient?.productType ?? 'retention';
+
+  /// Whether this client is a chatbot product (no broadcasts, no payment pipeline)
+  static bool get isChatbotClient => productType == 'chatbot';
+
+  static String? get predictionsRefreshWebhookUrl =>
+      _currentClient?.predictionsRefreshWebhookUrl;
+
+  static bool get isSharedWaba => _currentClient?.isSharedWaba ?? false;
+
   /// Check if feature is enabled AND user has permission
   static bool hasFeature(String feature) {
     if (isVividAdmin) return true;
@@ -1040,11 +1051,19 @@ class Client {
   final String? managerChatWebhookUrl;
 
   final int? broadcastLimit;
-  final String? productType;
+
+  /// Product type: 'retention' (Karisma-style broadcasts) or 'chatbot' (AI chatbot, no broadcasts)
+  final String productType;
+
+  /// Webhook URL to trigger n8n prediction recalculation (optional)
   final String? predictionsRefreshWebhookUrl;
 
   /// Whether this client uses AI-powered conversations
   final bool hasAiConversations;
+
+  /// True when this client shares a WABA with other clients (e.g. HOB + Vivid Demo on same WABA).
+  /// Enables slug-prefix filtering during Sync to AI to prevent cross-client template contamination.
+  final bool isSharedWaba;
 
   final DateTime createdAt;
 
@@ -1073,9 +1092,10 @@ class Client {
     this.remindersWebhookUrl,
     this.managerChatWebhookUrl,
     this.broadcastLimit,
-    this.productType,
+    this.productType = 'retention',
     this.predictionsRefreshWebhookUrl,
     this.hasAiConversations = true,
+    this.isSharedWaba = false,
     required this.createdAt,
   });
 
@@ -1116,9 +1136,10 @@ class Client {
       remindersWebhookUrl: json['reminders_webhook_url'] as String?,
       managerChatWebhookUrl: json['manager_chat_webhook_url'] as String?,
       broadcastLimit: json['broadcast_limit'] as int?,
-      productType: json['product_type'] as String?,
+      productType: json['product_type'] as String? ?? 'retention',
       predictionsRefreshWebhookUrl: json['predictions_refresh_webhook_url'] as String?,
       hasAiConversations: json['has_ai_conversations'] as bool? ?? true,
+      isSharedWaba: json['is_shared_waba'] as bool? ?? false,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
   }
@@ -1152,6 +1173,7 @@ class Client {
       'product_type': productType,
       'predictions_refresh_webhook_url': predictionsRefreshWebhookUrl,
       'has_ai_conversations': hasAiConversations,
+      'is_shared_waba': isSharedWaba,
       'created_at': createdAt.toIso8601String(),
     };
   }

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/models.dart';
+import '../providers/ai_settings_provider.dart';
 import '../services/supabase_service.dart';
 import '../theme/vivid_theme.dart';
 import '../utils/initials_helper.dart';
@@ -196,27 +198,43 @@ Future<SideProfileData> fetchSideProfileData(String phone) async {
   final client = SupabaseService.adminClient;
   final msgsTable = ClientConfig.messagesTableName;
   final broadcastsTable = ClientConfig.broadcastsTableName;
-  if (msgsTable == null || msgsTable.isEmpty || broadcastsTable == null || broadcastsTable.isEmpty) {
+  if (msgsTable == null || msgsTable.isEmpty) {
     return const SideProfileData(totalMessages: 0, receivedCount: 0, sentCount: 0, distinctLabels: [], broadcastTotal: 0, broadcastResponded: 0, paymentCount: 0);
   }
-  final recipientsTable =
-      broadcastsTable.replaceAll('broadcasts', 'broadcast_recipients');
 
-  // Parallel: all messages + all recipients
-  final results = await Future.wait([
-    client
+  // Chatbot clients have no broadcasts table — fetch messages only.
+  // Use a minimal column list so missing columns (label, media_url,
+  // is_voice_message) in chatbot tables don't cause a Supabase error.
+  final isChatbot = ClientConfig.isChatbotClient;
+  final msgSelect = isChatbot
+      ? 'customer_message, manager_response, sent_by, created_at'
+      : 'customer_message, manager_response, sent_by, created_at, label, media_url, is_voice_message';
+
+  List<dynamic> msgs;
+  List<dynamic> recipientRows = [];
+  if (broadcastsTable == null || broadcastsTable.isEmpty) {
+    msgs = await client
         .from(msgsTable)
-        .select('customer_message, manager_response, sent_by, created_at, label, media_url, is_voice_message')
+        .select(msgSelect)
         .eq('customer_phone', phone)
-        .order('created_at', ascending: true),
-    client
-        .from(recipientsTable)
-        .select('broadcast_id')
-        .eq('customer_phone', phone),
-  ]);
-
-  final msgs = results[0] as List<dynamic>;
-  final recipientRows = results[1] as List<dynamic>;
+        .order('created_at', ascending: true);
+  } else {
+    final recipientsTable =
+        broadcastsTable.replaceAll('broadcasts', 'broadcast_recipients');
+    final results = await Future.wait([
+      client
+          .from(msgsTable)
+          .select(msgSelect)
+          .eq('customer_phone', phone)
+          .order('created_at', ascending: true),
+      client
+          .from(recipientsTable)
+          .select('broadcast_id')
+          .eq('customer_phone', phone),
+    ]);
+    msgs = results[0] as List<dynamic>;
+    recipientRows = results[1] as List<dynamic>;
+  }
 
   // Process messages
   DateTime? lastCustomerMsg;
@@ -317,7 +335,7 @@ Future<SideProfileData> fetchSideProfileData(String phone) async {
 
   // Fetch broadcast details
   List<dynamic> broadcastRows = [];
-  if (recipientRows.isNotEmpty) {
+  if (recipientRows.isNotEmpty && broadcastsTable != null) {
     final ids = recipientRows
         .map<dynamic>((r) => r['broadcast_id'])
         .where((id) => id != null)
@@ -727,8 +745,7 @@ class _SideProfilePanelState extends State<SideProfilePanel>
   Widget _buildStatsRow() {
     final d = _data!;
     final lastTexted = _shortRelTime(d.lastCustomerMessage);
-    final campaignsSubtitle = d.broadcastTotal > 0
-        ? 'replied to ${d.broadcastResponded}' : null;
+    final isChatbot = ClientConfig.isChatbotClient;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
@@ -749,9 +766,12 @@ class _SideProfilePanelState extends State<SideProfilePanel>
             _statCell('Last Texted', lastTexted),
             Container(width: 1, color: Colors.white.withValues(alpha: 0.06)),
             _statCell('Messages', '${d.totalMessages}'),
-            Container(width: 1, color: Colors.white.withValues(alpha: 0.06)),
-            _statCell('Campaigns', '${d.broadcastTotal}',
-                subtitle: campaignsSubtitle),
+            if (!isChatbot) ...[
+              Container(width: 1, color: Colors.white.withValues(alpha: 0.06)),
+              _statCell('Campaigns', '${d.broadcastTotal}',
+                  subtitle: d.broadcastTotal > 0
+                      ? 'replied to ${d.broadcastResponded}' : null),
+            ],
           ]),
         ),
       ),
@@ -794,6 +814,16 @@ class _SideProfilePanelState extends State<SideProfilePanel>
   Widget _buildInfoGrid() {
     final d = _data!;
     final sinceStr = _formatDate(d.customerSince);
+    final isChatbot = ClientConfig.isChatbotClient;
+
+    if (isChatbot) {
+      // Chatbot: show only First Message date (single cell, full width)
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+        child: _infoCell('FIRST MESSAGE', sinceStr),
+      );
+    }
+
     final spendStr = d.paymentCount > 0
         ? '${d.paymentCount} payment${d.paymentCount == 1 ? '' : 's'}'
         : '0 payments';
@@ -1291,6 +1321,7 @@ class _SideProfilePanelState extends State<SideProfilePanel>
           style: TextStyle(color: Color(0xFF4B6584), fontSize: 13)));
     }
     final d = _data!;
+    final isChatbot = ClientConfig.isChatbotClient;
     return SingleChildScrollView(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         _buildCustomerHeader(),
@@ -1302,6 +1333,11 @@ class _SideProfilePanelState extends State<SideProfilePanel>
         _buildStatsRow(),
         _buildInfoGrid(),
         const SizedBox(height: 16),
+        // AI Status badge — chatbot clients only
+        if (isChatbot) ...[
+          _divider(),
+          _buildAiStatus(),
+        ],
         _divider(),
         _buildMessagesBar(),
         if (d.distinctLabels.isNotEmpty) ...[
@@ -1310,7 +1346,8 @@ class _SideProfilePanelState extends State<SideProfilePanel>
         ],
         _divider(),
         _buildTeamNotes(),
-        if (d.broadcastTotal > 0 && d.lastBroadcast != null) ...[
+        // Last Campaign — retention clients only
+        if (!isChatbot && d.broadcastTotal > 0 && d.lastBroadcast != null) ...[
           _divider(),
           _buildLastCampaign(),
         ],
@@ -1318,6 +1355,56 @@ class _SideProfilePanelState extends State<SideProfilePanel>
           _divider(),
           _buildLastHandledBy(),
         ],
+      ]),
+    );
+  }
+
+  // ── Section: AI Status (chatbot clients only) ──────────────────────────────
+  Widget _buildAiStatus() {
+    final aiEnabled = context.watch<AiSettingsProvider>().isAiEnabled(widget.customerPhone);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _sectionLabel('AI STATUS'),
+        Row(children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: aiEnabled
+                  ? const Color(0x1A34D399)
+                  : const Color(0x1AF97316),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Container(
+                width: 8, height: 8,
+                decoration: BoxDecoration(
+                  color: aiEnabled ? const Color(0xFF34D399) : const Color(0xFFFB923C),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                aiEnabled ? 'AI ON' : 'AI OFF',
+                style: TextStyle(
+                  color: aiEnabled ? const Color(0xFF34D399) : const Color(0xFFFB923C),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ]),
+          ),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Text(
+              aiEnabled
+                  ? 'AI is handling this conversation'
+                  : 'Human agent is handling this conversation',
+              style: const TextStyle(color: Color(0xFF4B6584), fontSize: 11),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ]),
       ]),
     );
   }

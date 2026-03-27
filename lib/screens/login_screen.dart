@@ -62,8 +62,8 @@ class _LoginScreenState extends State<LoginScreen>
   Future<void> _handleLogin() async {
     final provider = context.read<AgentProvider>();
     final success = await provider.login(
-      _emailController.text.trim(),
-      _passwordController.text,
+      _emailController.text.trim().toLowerCase(),
+      _passwordController.text.trim(),
     );
 
     if (!success && mounted) {
@@ -165,6 +165,7 @@ class _LoginScreenState extends State<LoginScreen>
                                 hint: 'Enter your email',
                                 icon: Icons.email_outlined,
                                 keyboardType: TextInputType.emailAddress,
+                                normalizeEmail: true,
                               ),
                               const SizedBox(height: 20),
 
@@ -307,6 +308,7 @@ class _LoginScreenState extends State<LoginScreen>
     required IconData icon,
     bool isPassword = false,
     TextInputType? keyboardType,
+    bool normalizeEmail = false,
   }) {
     final vc = context.vividColors;
     return Column(
@@ -331,6 +333,23 @@ class _LoginScreenState extends State<LoginScreen>
             hintText: hint,
             prefixIcon: Icon(icon, color: vc.textMuted, size: 20),
           ),
+          inputFormatters: normalizeEmail
+              ? [
+                  TextInputFormatter.withFunction((oldValue, newValue) =>
+                      newValue.copyWith(text: newValue.text.trimLeft())),
+                ]
+              : null,
+          onChanged: normalizeEmail
+              ? (val) {
+                  final normalized = val.trim().toLowerCase();
+                  if (normalized != val) {
+                    controller.value = controller.value.copyWith(
+                      text: normalized,
+                      selection: TextSelection.collapsed(offset: normalized.length),
+                    );
+                  }
+                }
+              : null,
           onSubmitted: (_) => _handleLogin(),
         ),
       ],
@@ -410,7 +429,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
   }
 
   Future<void> _handleSendCode() async {
-    final email = _emailController.text.trim();
+    final email = _emailController.text.trim().toLowerCase();
     if (email.isEmpty) {
       setState(() => _error = 'Please enter your email');
       return;
@@ -676,6 +695,19 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
             hintText: 'Enter your email',
             prefixIcon: Icon(Icons.email_outlined, color: vc.textMuted, size: 20),
           ),
+          inputFormatters: [
+            TextInputFormatter.withFunction((oldValue, newValue) =>
+                newValue.copyWith(text: newValue.text.trimLeft())),
+          ],
+          onChanged: (val) {
+            final normalized = val.trim().toLowerCase();
+            if (normalized != val) {
+              _emailController.value = _emailController.value.copyWith(
+                text: normalized,
+                selection: TextSelection.collapsed(offset: normalized.length),
+              );
+            }
+          },
           onSubmitted: (_) => _handleSendCode(),
         ),
       ],
