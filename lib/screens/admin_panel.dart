@@ -3202,6 +3202,7 @@ class _ClientOnboardingWizardState extends State<_ClientOnboardingWizard> {
   final List<Map<String, dynamic>> _pendingTriggers = [];
 
   // Step 3 — Configuration
+  bool _isSharedWaba = false;
   final _conversationsPhoneController = TextEditingController();
   final _conversationsWebhookController = TextEditingController();
   final _broadcastsPhoneController = TextEditingController();
@@ -3300,6 +3301,29 @@ class _ClientOnboardingWizardState extends State<_ClientOnboardingWizard> {
     final aiSettingsTable = '${slug}_ai_chat_settings';
     final customerPredictionsTable = _selectedFeatures.contains('predictive_intelligence') ? '${slug}_customer_predictions' : null;
 
+    // Lightweight non-blocking WABA validation
+    final wabaId = _wabaIdController.text.trim();
+    final accessToken = _accessTokenController.text.trim();
+    if (wabaId.isNotEmpty && accessToken.isNotEmpty) {
+      try {
+        final response = await http.get(
+          Uri.parse('https://graph.facebook.com/${SupabaseService.metaApiVersion}/$wabaId/message_templates?limit=1'),
+          headers: {'Authorization': 'Bearer $accessToken'},
+        );
+        if (response.statusCode != 200) {
+          debugPrint('WABA validation warning: ${response.statusCode} ${response.body}');
+          if (mounted) {
+            VividToast.show(context,
+              message: 'WABA validation failed — check WABA ID and token after creation',
+              type: ToastType.warning,
+            );
+          }
+        }
+      } catch (e) {
+        debugPrint('WABA validation error: $e');
+      }
+    }
+
     final success = await provider.createClient(
       name: _nameController.text.trim(),
       slug: slug,
@@ -3324,6 +3348,7 @@ class _ClientOnboardingWizardState extends State<_ClientOnboardingWizard> {
       broadcastLimit: int.tryParse(_broadcastLimitController.text.trim()),
       productType: _selectedProductType,
       predictionsRefreshWebhookUrl: _predictionsWebhookController.text.trim().isEmpty ? null : _predictionsWebhookController.text.trim(),
+      isSharedWaba: _isSharedWaba,
     );
 
     if (!success) {
@@ -4224,6 +4249,19 @@ class _ClientOnboardingWizardState extends State<_ClientOnboardingWizard> {
                     required: false,
                     keyboardType: TextInputType.number,
                   ),
+                  const SizedBox(height: 10),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text('Shared WABA', style: TextStyle(color: vc.textPrimary, fontSize: 13, fontWeight: FontWeight.w500)),
+                    subtitle: Text(
+                      'Enable if this client shares a WABA with other clients. '
+                      'Templates will be filtered by slug prefix (e.g. hob_*).',
+                      style: TextStyle(color: vc.textMuted, fontSize: 12),
+                    ),
+                    value: _isSharedWaba,
+                    activeColor: VividColors.cyan,
+                    onChanged: (v) => setState(() => _isSharedWaba = v),
+                  ),
                 ],
               ),
             ),
@@ -4834,6 +4872,7 @@ class _ClientDialogState extends State<_ClientDialog> {
   late TextEditingController _broadcastLimitController;
   late TextEditingController _predictionsWebhookEditController;
   String _selectedProductType = 'retention';
+  bool _isSharedWaba = false;
 
   List<String> _selectedFeatures = [];
   bool _hasAiConversations = true;
@@ -4870,6 +4909,7 @@ class _ClientDialogState extends State<_ClientDialog> {
     _broadcastLimitController = TextEditingController(text: widget.client?.broadcastLimit?.toString() ?? '');
     _predictionsWebhookEditController = TextEditingController(text: widget.client?.predictionsRefreshWebhookUrl ?? '');
     _selectedProductType = widget.client?.productType ?? 'retention';
+    _isSharedWaba = widget.client?.isSharedWaba ?? false;
 
     _selectedFeatures = List.from(widget.client?.enabledFeatures ?? []);
     _hasAiConversations = widget.client?.hasAiConversations ?? true;
@@ -5081,7 +5121,20 @@ class _ClientDialogState extends State<_ClientDialog> {
                 _buildTextField(context, _accessTokenController, 'Meta Access Token', 'Meta API access token', required: false),
                 const SizedBox(height: 12),
                 _buildTextField(context, _broadcastLimitController, 'Broadcast Limit', 'Max broadcasts per day (e.g., 1000)', required: false),
-                const SizedBox(height: 12),
+                const SizedBox(height: 4),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text('Shared WABA', style: TextStyle(color: context.vividColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w500)),
+                  subtitle: Text(
+                    'Enable if this client shares a WABA with other clients. '
+                    'Templates will be filtered by slug prefix (e.g. hob_*).',
+                    style: TextStyle(color: context.vividColors.textMuted, fontSize: 12),
+                  ),
+                  value: _isSharedWaba,
+                  activeColor: VividColors.cyan,
+                  onChanged: (v) => setState(() => _isSharedWaba = v),
+                ),
+                const SizedBox(height: 8),
                 if (_selectedFeatures.contains('predictive_intelligence') || widget.client?.predictionsRefreshWebhookUrl != null) ...[
                   _buildTextField(context, _predictionsWebhookEditController, 'Predictions Refresh Webhook', 'URL to trigger predictions refresh', required: false),
                   const SizedBox(height: 12),
@@ -5482,6 +5535,7 @@ class _ClientDialogState extends State<_ClientDialog> {
         broadcastLimit: _broadcastLimitController.text.trim().isEmpty ? null : int.tryParse(_broadcastLimitController.text.trim()),
         productType: _selectedProductType,
         predictionsRefreshWebhookUrl: _predictionsWebhookEditController.text.trim().isEmpty ? null : _predictionsWebhookEditController.text.trim(),
+        isSharedWaba: _isSharedWaba,
       );
     } else {
       // Create mode: auto-compute all table names from slug
@@ -5510,6 +5564,7 @@ class _ClientDialogState extends State<_ClientDialog> {
         remindersPhone: _remindersPhoneController.text.trim().isEmpty ? null : _remindersPhoneController.text.trim(),
         remindersWebhookUrl: _remindersWebhookController.text.trim().isEmpty ? null : _remindersWebhookController.text.trim(),
         managerChatWebhookUrl: _managerChatWebhookController.text.trim().isEmpty ? null : _managerChatWebhookController.text.trim(),
+        isSharedWaba: _isSharedWaba,
       );
     }
 
@@ -9139,7 +9194,17 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
       if (response.statusCode != 200) {
         final decoded = jsonDecode(response.body) as Map<String, dynamic>;
         final err = decoded['error'] as Map<String, dynamic>?;
-        throw Exception(err?['message'] ?? 'Failed (${response.statusCode})');
+        final errorMsg = err?['message'] as String? ?? '';
+        final errorUserTitle = err?['error_user_title'] as String? ?? '';
+        final isNotFound = errorMsg.toLowerCase().contains('invalid parameter') ||
+            errorUserTitle.toLowerCase().contains('does not exist') ||
+            errorMsg.toLowerCase().contains('does not exist') ||
+            response.statusCode == 404;
+        if (!isNotFound) {
+          throw Exception(errorMsg.isNotEmpty ? errorMsg : 'Failed (${response.statusCode})');
+        }
+        debugPrint('ADMIN_TEMPLATES: Template not found on Meta, deleting from Supabase only');
+        // Falls through to Supabase delete below
       }
 
       // Step 2: Delete from current client's Supabase table
@@ -9210,7 +9275,7 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
               'status': t.status,
               'header_type': headerType,
               'header_text': t.headerText,
-              'header_media_url': null,
+              'header_media_url': t.headerMediaUrl,
               'header_has_variable': false,
               'body_text': t.body,
               'body_variable_count': varCount,
@@ -9652,7 +9717,7 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
             crossAxisCount: cols,
             mainAxisSpacing: 14,
             crossAxisSpacing: 14,
-            childAspectRatio: 1.5,
+            childAspectRatio: 0.85,
           ),
           itemCount: items.length,
           itemBuilder: (context, i) => _buildCard(vc, items[i]),
@@ -9701,19 +9766,23 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Image header
+              // Image header — only shown when a URL is available
               if (imageUrl != null)
-                SizedBox(
-                  height: 80,
-                  width: double.infinity,
-                  child: Image.network(
-                    imageUrl,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
-                      color: vc.surfaceAlt,
-                      child: Center(
-                        child: Icon(Icons.broken_image_outlined,
-                            color: vc.textMuted, size: 24),
+                ClipRRect(
+                  borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(12)),
+                  child: SizedBox(
+                    height: 150,
+                    width: double.infinity,
+                    child: Container(
+                      color: const Color(0xFF111111),
+                      child: Image.network(
+                        imageUrl,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => Center(
+                          child: Icon(Icons.broken_image_outlined,
+                              color: vc.textMuted, size: 24),
+                        ),
                       ),
                     ),
                   ),
@@ -9728,12 +9797,7 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
                         color: isSelected
                             ? VividColors.cyan
                             : Colors.transparent,
-                        borderRadius: imageUrl == null
-                            ? const BorderRadius.only(
-                                topLeft: Radius.circular(12),
-                                bottomLeft: Radius.circular(12),
-                              )
-                            : null,
+                        borderRadius: null,
                       ),
                     ),
                     Expanded(
@@ -9756,23 +9820,30 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
-                                const SizedBox(width: 8),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 7, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color:
-                                        statusColor.withValues(alpha: 0.15),
-                                    borderRadius: BorderRadius.circular(5),
-                                    border: Border.all(
-                                        color: statusColor
-                                            .withValues(alpha: 0.3)),
-                                  ),
-                                  child: Text(statusLabel,
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  flex: 0,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color:
+                                          statusColor.withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(5),
+                                      border: Border.all(
+                                          color: statusColor
+                                              .withValues(alpha: 0.3)),
+                                    ),
+                                    child: Text(
+                                      statusLabel,
                                       style: TextStyle(
                                           color: statusColor,
                                           fontSize: 10,
-                                          fontWeight: FontWeight.w600)),
+                                          fontWeight: FontWeight.w600),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
                                 ),
                               ],
                             ),
@@ -9781,18 +9852,18 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
                               '$language · $category',
                               style:
                                   TextStyle(color: vc.textMuted, fontSize: 11),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                             const SizedBox(height: 6),
-                            Expanded(
-                              child: Text(
-                                body,
-                                style: TextStyle(
-                                    color: vc.textSecondary,
-                                    fontSize: 12,
-                                    height: 1.4),
-                                maxLines: imageUrl != null ? 2 : 3,
-                                overflow: TextOverflow.ellipsis,
-                              ),
+                            Text(
+                              body,
+                              style: TextStyle(
+                                  color: vc.textSecondary,
+                                  fontSize: 12,
+                                  height: 1.4),
+                              maxLines: imageUrl != null ? 2 : 3,
+                              overflow: TextOverflow.ellipsis,
                             ),
                             if (headerType.isNotEmpty &&
                                 headerType != 'NONE' &&

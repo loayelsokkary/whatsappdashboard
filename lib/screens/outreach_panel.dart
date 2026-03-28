@@ -2152,20 +2152,27 @@ class _OutreachTemplateCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header image
+            // Header image — only shown when a URL is available
             if (template.headerMediaUrl != null &&
                 template.headerMediaUrl!.isNotEmpty)
-              SizedBox(
-                height: 100,
-                width: double.infinity,
-                child: Image.network(
-                  template.headerMediaUrl!,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
-                    color: vc.surfaceAlt,
-                    child: Center(
-                      child: Icon(Icons.broken_image,
-                          color: vc.textMuted, size: 24),
+              ClipRRect(
+                borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(10)),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 180),
+                  child: Container(
+                    width: double.infinity,
+                    color: const Color(0xFF111111),
+                    child: Image.network(
+                      template.headerMediaUrl!,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => SizedBox(
+                        height: 80,
+                        child: Center(
+                          child: Icon(Icons.broken_image,
+                              color: vc.textMuted, size: 24),
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -2247,6 +2254,12 @@ class _OutreachTemplateCard extends StatelessWidget {
                             style: TextStyle(
                                 color: vc.textMuted, fontSize: 10)),
                       ],
+                      // Header type badge — only when no image shown
+                      if (template.headerMediaUrl == null ||
+                          template.headerMediaUrl!.isEmpty) ...[
+                        const Spacer(),
+                        _headerTypeBadge(vc, template.headerType),
+                      ],
                     ],
                   ),
                 ],
@@ -2269,6 +2282,27 @@ class _OutreachTemplateCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _headerTypeBadge(VividColorScheme vc, String? headerType) {
+    final type = (headerType ?? '').toUpperCase();
+    final (color, label) = switch (type) {
+      'IMAGE' => (VividColors.cyan, 'IMAGE'),
+      'VIDEO' => (const Color(0xFF9B59B6), 'VIDEO'),
+      'TEXT' => (vc.textMuted, 'TEXT'),
+      _ => (vc.textMuted, 'NO HEADER'),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Text(label,
+          style: TextStyle(
+              color: color, fontSize: 9, fontWeight: FontWeight.w600)),
     );
   }
 
@@ -2307,10 +2341,22 @@ class _OutreachTemplateCard extends StatelessWidget {
               Navigator.pop(ctx);
               final provider = context.read<OutreachProvider>();
               final err = await provider.deleteTemplate(template.name, template.id);
-              if (err != null && context.mounted) {
+              if (!context.mounted) return;
+              if (err != null) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(err)),
+                  SnackBar(
+                    content: Text('Delete failed: $err'),
+                    backgroundColor: VividColors.statusUrgent,
+                  ),
                 );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Template deleted'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+                await provider.fetchTemplates();
               }
             },
             style: FilledButton.styleFrom(
@@ -2393,12 +2439,17 @@ class _OutreachTemplateCard extends StatelessWidget {
                     template.headerMediaUrl!.isNotEmpty) ...[
                   ClipRRect(
                     borderRadius: BorderRadius.circular(8),
-                    child: Image.network(
-                      template.headerMediaUrl!,
-                      height: 180,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 300),
+                      child: Container(
+                        width: double.infinity,
+                        color: const Color(0xFF111111),
+                        child: Image.network(
+                          template.headerMediaUrl!,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 12),

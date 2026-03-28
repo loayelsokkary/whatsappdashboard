@@ -75,6 +75,7 @@ class AdminProvider extends ChangeNotifier {
     int? broadcastLimit,
     String? productType,
     String? predictionsRefreshWebhookUrl,
+    bool isSharedWaba = false,
   }) async {
     _error = null;
 
@@ -102,6 +103,7 @@ class AdminProvider extends ChangeNotifier {
       broadcastLimit: broadcastLimit,
       productType: productType,
       predictionsRefreshWebhookUrl: predictionsRefreshWebhookUrl,
+      isSharedWaba: isSharedWaba,
     );
 
     if (client != null) {
@@ -141,6 +143,7 @@ class AdminProvider extends ChangeNotifier {
     int? broadcastLimit,
     String? productType,
     String? predictionsRefreshWebhookUrl,
+    bool? isSharedWaba,
   }) async {
     _error = null;
 
@@ -169,6 +172,7 @@ class AdminProvider extends ChangeNotifier {
       broadcastLimit: broadcastLimit,
       productType: productType,
       predictionsRefreshWebhookUrl: predictionsRefreshWebhookUrl,
+      isSharedWaba: isSharedWaba,
     );
 
     if (success) {

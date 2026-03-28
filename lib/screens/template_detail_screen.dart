@@ -39,6 +39,7 @@ class _TemplateDetailScreenState extends State<TemplateDetailScreen> {
   List<String> _labels = [];
   List<String> _sources = [];
   String? _offerImageUrl;
+  String? _headerMediaUrl; // Meta CDN URL (temporary fallback for display)
   String? _bodyText;
 
   // Image edit state
@@ -65,7 +66,7 @@ class _TemplateDetailScreenState extends State<TemplateDetailScreen> {
       final row = await SupabaseService.adminClient
           .from(tblName)
           .select(
-              'id, body_variable_count, body_variable_labels, body_variable_sources, offer_image_url, body_text, template_name, header_type')
+              'id, body_variable_count, body_variable_labels, body_variable_sources, offer_image_url, header_media_url, body_text, template_name, header_type')
           .eq('meta_template_id', widget.template.id)
           .maybeSingle();
 
@@ -102,6 +103,7 @@ class _TemplateDetailScreenState extends State<TemplateDetailScreen> {
         _labels = labels.take(count).toList();
         _sources = sources.take(count).toList();
         _offerImageUrl = row['offer_image_url'] as String?;
+        _headerMediaUrl = row['header_media_url'] as String?;
         _bodyText = row['body_text'] as String? ?? widget.template.body;
         _isLoading = false;
       });
@@ -506,8 +508,9 @@ class _TemplateDetailScreenState extends State<TemplateDetailScreen> {
   Widget _buildImageSection(BuildContext context) {
     final vc = context.vividColors;
     final hasNewImage = _newImageBytes != null;
-    final hasExistingImage = _offerImageUrl != null &&
-        _offerImageUrl!.contains('supabase.co/storage');
+    final displayUrl = _offerImageUrl ?? _headerMediaUrl;
+    final hasExistingImage = displayUrl != null;
+    final isStorageUrl = _offerImageUrl?.contains('supabase.co/storage') == true;
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -529,7 +532,7 @@ class _TemplateDetailScreenState extends State<TemplateDetailScreen> {
                   ? Image.memory(_newImageBytes!, fit: BoxFit.contain)
                   : hasExistingImage
                       ? Image.network(
-                          _offerImageUrl!,
+                          displayUrl,
                           fit: BoxFit.contain,
                           errorBuilder: (_, __, ___) => _imagePlaceholder(context),
                           loadingBuilder: (_, child, progress) =>
@@ -553,9 +556,14 @@ class _TemplateDetailScreenState extends State<TemplateDetailScreen> {
               if (hasExistingImage && !hasNewImage)
                 Expanded(
                   child: Text(
-                    'Supabase Storage URL set',
+                    isStorageUrl
+                        ? 'Supabase Storage URL set'
+                        : 'Meta CDN URL (temporary — upload to make permanent)',
                     style: TextStyle(
-                        color: VividColors.statusSuccess, fontSize: 11),
+                        color: isStorageUrl
+                            ? VividColors.statusSuccess
+                            : VividColors.statusWarning,
+                        fontSize: 11),
                   ),
                 )
               else if (hasNewImage)
@@ -672,9 +680,9 @@ class _TemplateDetailScreenState extends State<TemplateDetailScreen> {
                       _newImageBytes != null
                           ? Image.memory(_newImageBytes!,
                               width: double.infinity, fit: BoxFit.contain)
-                          : (_offerImageUrl != null &&
-                                  _offerImageUrl!.contains('supabase.co/storage'))
-                              ? Image.network(_offerImageUrl!,
+                          : (_offerImageUrl ?? _headerMediaUrl) != null
+                              ? Image.network(
+                                  (_offerImageUrl ?? _headerMediaUrl)!,
                                   width: double.infinity,
                                   fit: BoxFit.contain,
                                   errorBuilder: (_, __, ___) => Container(
@@ -687,9 +695,12 @@ class _TemplateDetailScreenState extends State<TemplateDetailScreen> {
                               : Container(
                                   height: 100,
                                   color: const Color(0xFFDDE3EA),
-                                  child: const Icon(Icons.image_outlined,
-                                      size: 32,
-                                      color: Color(0xFF90A4AE)),
+                                  child: const Center(
+                                    child: Text('Image not available',
+                                        style: TextStyle(
+                                            color: Color(0xFF90A4AE),
+                                            fontSize: 12)),
+                                  ),
                                 ),
                     ],
                     if (widget.template.headerType.toUpperCase() == 'TEXT' &&

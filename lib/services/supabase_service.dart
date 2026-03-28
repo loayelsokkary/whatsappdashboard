@@ -506,6 +506,7 @@ class SupabaseService {
     int? broadcastLimit,
     String? productType,
     String? predictionsRefreshWebhookUrl,
+    bool isSharedWaba = false,
   }) async {
     try {
       final response = await client.from('clients').insert({
@@ -532,6 +533,7 @@ class SupabaseService {
         if (broadcastLimit != null) 'broadcast_limit': broadcastLimit,
         if (productType != null) 'product_type': productType,
         if (predictionsRefreshWebhookUrl != null && predictionsRefreshWebhookUrl.isNotEmpty) 'predictions_refresh_webhook_url': predictionsRefreshWebhookUrl,
+        'is_shared_waba': isSharedWaba,
       }).select().single();
 
       final newClient = Client.fromJson(response);
@@ -580,6 +582,7 @@ class SupabaseService {
     int? broadcastLimit,
     String? productType,
     String? predictionsRefreshWebhookUrl,
+    bool? isSharedWaba,
   }) async {
     try {
       final updates = <String, dynamic>{};
@@ -606,6 +609,7 @@ class SupabaseService {
       if (broadcastLimit != null) updates['broadcast_limit'] = broadcastLimit;
       if (productType != null) updates['product_type'] = productType;
       if (predictionsRefreshWebhookUrl != null) updates['predictions_refresh_webhook_url'] = predictionsRefreshWebhookUrl;
+      if (isSharedWaba != null) updates['is_shared_waba'] = isSharedWaba;
 
       await client.from('clients').update(updates).eq('id', clientId);
       

@@ -86,7 +86,9 @@ class TemplatesProvider extends ChangeNotifier {
           category: r['category'] as String? ?? '',
           headerType: (r['header_type'] as String? ?? '').toUpperCase(),
           headerText: r['header_text'] as String?,
-          headerMediaUrl: r['offer_image_url'] as String?,
+          headerMediaUrl: (r['offer_image_url'] as String?)?.isNotEmpty == true
+              ? r['offer_image_url'] as String
+              : r['header_media_url'] as String?,
           body: r['body_text'] as String? ?? '',
           buttons: buttons,
         );
@@ -507,8 +509,9 @@ class TemplatesProvider extends ChangeNotifier {
           'status': t.status,
           'header_type': headerType,
           'header_text': t.headerText,
-          // Never store expiring scontent.whatsapp.net URLs
-          'header_media_url': null,
+          // Store Meta's scontent URL for display (temporary — may expire)
+          // offer_image_url holds permanent Supabase Storage URL when available
+          'header_media_url': t.headerMediaUrl,
           'header_has_variable': false,
           'body_text': t.body,
           'body_variable_count': varCount,
@@ -624,8 +627,9 @@ class TemplatesProvider extends ChangeNotifier {
         'status': t.status,
         'header_type': t.headerType.toLowerCase(),
         'header_text': t.headerText,
-        // Never store expiring scontent.whatsapp.net URLs
-        'header_media_url': null,
+        // Store Meta's scontent URL for display (temporary — may expire)
+        // offer_image_url holds permanent Supabase Storage URL when available
+        'header_media_url': t.headerMediaUrl,
         'header_has_variable': false,
         'body_text': t.body,
         'body_variable_count': varCount,

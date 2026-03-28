@@ -797,7 +797,9 @@ class OutreachProvider extends ChangeNotifier {
           category: r['category'] as String? ?? '',
           headerType: (r['header_type'] as String? ?? '').toUpperCase(),
           headerText: r['header_text'] as String?,
-          headerMediaUrl: r['offer_image_url'] as String?,
+          headerMediaUrl: (r['offer_image_url'] as String?)?.isNotEmpty == true
+              ? r['offer_image_url'] as String
+              : r['header_media_url'] as String?,
           body: r['body_text'] as String? ?? '',
           buttons: buttons,
         );
@@ -841,6 +843,7 @@ class OutreachProvider extends ChangeNotifier {
 
         String headerType = 'none';
         String? headerText;
+        String? headerMediaUrl;
         String bodyText = '';
         List<Map<String, dynamic>> buttons = [];
 
@@ -850,6 +853,13 @@ class OutreachProvider extends ChangeNotifier {
           if (type == 'HEADER') {
             headerType = (c['format'] as String? ?? 'TEXT').toLowerCase();
             headerText = c['text'] as String?;
+            if (headerType == 'image' || headerType == 'video') {
+              final example = c['example'] as Map<String, dynamic>?;
+              final handles = example?['header_handle'] as List<dynamic>?;
+              if (handles != null && handles.isNotEmpty) {
+                headerMediaUrl = handles.first as String?;
+              }
+            }
           } else if (type == 'BODY') {
             bodyText = c['text'] as String? ?? '';
           } else if (type == 'BUTTONS') {
@@ -866,6 +876,7 @@ class OutreachProvider extends ChangeNotifier {
           category: (t['category'] as String? ?? '').toLowerCase(),
           headerType: headerType,
           headerText: headerText,
+          headerMediaUrl: headerMediaUrl,
           bodyText: bodyText,
           buttons: buttons.map((b) => {
             'type': b['type'] ?? '',
@@ -899,7 +910,22 @@ class OutreachProvider extends ChangeNotifier {
       if (response.statusCode != 200 && response.statusCode != 204) {
         final decoded = jsonDecode(response.body) as Map<String, dynamic>;
         final err = decoded['error'] as Map<String, dynamic>?;
-        return (err?['message'] as String?) ?? 'Delete failed (${response.statusCode})';
+        final errorMsg = err?['message'] as String? ?? '';
+        final errorUserTitle = err?['error_user_title'] as String? ?? '';
+
+        // If Meta says template doesn't exist, still delete from Supabase
+        final isNotFound = errorMsg.toLowerCase().contains('invalid parameter') ||
+            errorUserTitle.toLowerCase().contains('does not exist') ||
+            errorMsg.toLowerCase().contains('does not exist') ||
+            response.statusCode == 404;
+
+        if (!isNotFound) {
+          debugPrint('OUTREACH: Meta delete failed: $errorMsg ($errorUserTitle)');
+          return errorMsg.isNotEmpty ? errorMsg : 'Delete failed (${response.statusCode})';
+        }
+
+        // Template not found on Meta — proceed to delete from Supabase anyway
+        debugPrint('OUTREACH: Template not found on Meta, deleting from Supabase only');
       }
 
       // Delete from local DB
@@ -1056,6 +1082,7 @@ class OutreachProvider extends ChangeNotifier {
     required String category,
     required String headerType,
     String? headerText,
+    String? headerMediaUrl,
     required String bodyText,
     List<Map<String, dynamic>>? buttons,
     String? offerImageUrl,
@@ -1069,6 +1096,7 @@ class OutreachProvider extends ChangeNotifier {
         'category': category,
         'header_type': headerType.toLowerCase(),
         'header_text': headerText,
+        'header_media_url': headerMediaUrl,
         'body_text': bodyText,
         'buttons': buttons ?? [],
         'offer_image_url': offerImageUrl,
