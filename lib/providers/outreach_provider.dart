@@ -1088,6 +1088,24 @@ class OutreachProvider extends ChangeNotifier {
     String? offerImageUrl,
   }) async {
     try {
+      // Preserve any existing Supabase Storage URL — never overwrite it with null
+      // from a Meta sync (Meta never returns our storage URLs).
+      String? resolvedOfferImageUrl = offerImageUrl;
+      if (offerImageUrl == null) {
+        try {
+          final existing = await _db
+              .from('vivid_outreach_whatsapp_templates')
+              .select('offer_image_url')
+              .eq('meta_template_id', metaTemplateId)
+              .maybeSingle();
+          final existingUrl = existing?['offer_image_url'] as String?;
+          if (existingUrl != null &&
+              existingUrl.contains('supabase.co/storage/v1/object/public')) {
+            resolvedOfferImageUrl = existingUrl;
+          }
+        } catch (_) {}
+      }
+
       final row = {
         'meta_template_id': metaTemplateId,
         'template_name': templateName,
@@ -1099,7 +1117,7 @@ class OutreachProvider extends ChangeNotifier {
         'header_media_url': headerMediaUrl,
         'body_text': bodyText,
         'buttons': buttons ?? [],
-        'offer_image_url': offerImageUrl,
+        'offer_image_url': resolvedOfferImageUrl,
         'updated_at': DateTime.now().toIso8601String(),
       };
 
