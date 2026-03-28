@@ -407,7 +407,10 @@ class OutreachProvider extends ChangeNotifier {
 
       final inserted = await _db.from('vivid_outreach_messages').insert(row).select().single();
       final newMsg = OutreachMessage.fromJson(inserted);
-      _messages.add(newMsg);
+      // Dedup: realtime may have already added this message before the HTTP response arrived
+      if (!_messages.any((m) => m.id == newMsg.id)) {
+        _messages.add(newMsg);
+      }
       _lastMessageByContact[contactId] = newMsg;
       notifyListeners();
       debugPrint('OUTREACH: message stored to DB');
