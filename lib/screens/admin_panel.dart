@@ -5998,15 +5998,29 @@ class _ClientAnalyticsWrapperState extends State<_ClientAnalyticsWrapper> {
     super.dispose();
   }
 
-  void _enterPreview(Client client) {
+  Future<void> _enterPreview(Client client) async {
+    // Always re-fetch the client from Supabase to avoid stale cached credentials
+    // (e.g. waba_id or meta_access_token updated in DB after login).
+    Client freshClient = client;
+    try {
+      final row = await SupabaseService.adminClient
+          .from('clients')
+          .select()
+          .eq('id', client.id)
+          .single();
+      freshClient = Client.fromJson(row);
+    } catch (e) {
+      debugPrint('[enterPreview] Could not refresh client from DB, using cached: $e');
+    }
+
     final adminUser = ClientConfig.currentUser;
     final tempUser = adminUser != null
         ? AppUser(
             id: adminUser.id,
             email: adminUser.email,
-            name: '${adminUser.name} (viewing ${client.name})',
+            name: '${adminUser.name} (viewing ${freshClient.name})',
             role: UserRole.admin,
-            clientId: client.id,
+            clientId: freshClient.id,
             createdAt: adminUser.createdAt,
           )
         : AppUser(
@@ -6014,10 +6028,10 @@ class _ClientAnalyticsWrapperState extends State<_ClientAnalyticsWrapper> {
             email: 'admin@vivid.com',
             name: 'Admin',
             role: UserRole.admin,
-            clientId: client.id,
+            clientId: freshClient.id,
             createdAt: DateTime.now(),
           );
-    ClientConfig.enterPreview(client, tempUser);
+    ClientConfig.enterPreview(freshClient, tempUser);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (client.conversationsPhone?.isNotEmpty == true) {

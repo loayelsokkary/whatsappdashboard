@@ -10,7 +10,7 @@ import '../services/supabase_service.dart';
 /// How many hours after a broadcast a customer response is still
 /// attributed to that broadcast.  Beyond this window the lead is
 /// considered organic.
-const int _kAttributionWindowHours = 72;
+const int _kAttributionWindowHours = 168; // 7 days
 
 class RoiAnalyticsProvider extends ChangeNotifier {
   /// Use adminClient to bypass RLS on per-client dynamic tables
@@ -973,13 +973,9 @@ class RoiAnalyticsProvider extends ChangeNotifier {
           if (createdAt == null) continue;
           if (sentAt != null && createdAt.isBefore(sentAt)) continue;
 
-          // Last-touch attribution: only credit this campaign if it was the
-          // most recently sent broadcast to this phone before the response.
-          final lastCampaign = _lastCampaignBefore(
-              phone, createdAt, phoneCampaigns, campaignSentAt);
-          if (lastCampaign != cId) continue;
-
-          // 72-hour cap: ignore responses that arrive more than 72h after send.
+          // Time-box attribution: credit this campaign for ALL replies from its
+          // recipients that arrive within 72h of this campaign's send time.
+          // This prevents newer campaigns from stealing responses from older ones.
           if (sentAt != null &&
               createdAt.difference(sentAt).inHours > _kAttributionWindowHours) {
             continue;

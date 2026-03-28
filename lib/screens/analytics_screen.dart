@@ -85,7 +85,7 @@ class AnalyticsScreen extends StatefulWidget {
 }
 
 class _AnalyticsScreenState extends State<AnalyticsScreen> {
-  DateRangeFilter _dateFilter = DateRangeFilter.last30Days;
+  DateRangeFilter _dateFilter = DateRangeFilter.allTime;
   DateTime? _customStart;
   DateTime? _customEnd;
   bool _compareEnabled = false;
