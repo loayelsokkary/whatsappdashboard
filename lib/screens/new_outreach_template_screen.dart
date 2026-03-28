@@ -904,7 +904,7 @@ class _NewOutreachTemplateScreenState extends State<NewOutreachTemplateScreen> {
       required void Function(T?) onChanged}) {
     final vc = context.vividColors;
     return DropdownButtonFormField<T>(
-      initialValue: value, items: items, onChanged: onChanged,
+      value: value, items: items, onChanged: onChanged,
       style: _inputTextStyle(context), dropdownColor: vc.surfaceAlt,
       decoration: _inputDecoration(context, null),
       icon: Icon(Icons.keyboard_arrow_down_rounded, color: vc.textMuted, size: 18),

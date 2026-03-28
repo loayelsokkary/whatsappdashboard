@@ -3704,7 +3704,7 @@ class _ClientOnboardingWizardState extends State<_ClientOnboardingWizard> {
             Text('Product Type', style: TextStyle(color: vc.textPrimary, fontSize: 13, fontWeight: FontWeight.w500)),
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
-              initialValue: _selectedProductType,
+              value: _selectedProductType,
               decoration: InputDecoration(
                 prefixIcon: Icon(Icons.category, color: vc.textMuted, size: 18),
                 helperText: 'Retention for clinics & salons. Chatbot for AI-driven conversation businesses.',
@@ -5051,7 +5051,7 @@ class _ClientDialogState extends State<_ClientDialog> {
                 _buildSectionHeader(context, Icons.settings, 'Meta & Limits'),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
-                  initialValue: _selectedProductType,
+                  value: _selectedProductType,
                   decoration: InputDecoration(
                     labelText: 'Product Type',
                     labelStyle: TextStyle(color: vc.textMuted),

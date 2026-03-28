@@ -1112,7 +1112,7 @@ class _BroadcastList extends StatelessWidget {
                   const SizedBox(height: 12),
                   // Template selector
                   DropdownButtonFormField<WhatsAppTemplate>(
-                    initialValue: selectedTemplate,
+                    value: selectedTemplate,
                     decoration: InputDecoration(
                       labelText: 'Template *',
                       labelStyle:
