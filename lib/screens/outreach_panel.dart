@@ -1047,9 +1047,11 @@ class _BroadcastList extends StatelessWidget {
       BuildContext context, OutreachProvider provider) {
     final vc = context.vividColors;
     final nameC = TextEditingController();
+    final recipientSearchC = TextEditingController();
     WhatsAppTemplate? selectedTemplate;
     var selectedFilter = ContactStatus.lead;
     var selectedContacts = <OutreachContact>[];
+    var recipientSearch = '';
     final availableTemplates = provider.templates
         .where((t) => t.status.toUpperCase() == 'APPROVED')
         .toList();
@@ -1057,9 +1059,16 @@ class _BroadcastList extends StatelessWidget {
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(builder: (ctx, setDialogState) {
-        final filtered = provider.allContacts
+        var filtered = provider.allContacts
             .where((c) => c.status == selectedFilter)
             .toList();
+        if (recipientSearch.isNotEmpty) {
+          final q = recipientSearch.toLowerCase();
+          filtered = filtered.where((c) =>
+              c.displayName.toLowerCase().contains(q) ||
+              c.companyName.toLowerCase().contains(q) ||
+              c.phone.contains(q)).toList();
+        }
 
         return AlertDialog(
           backgroundColor: vc.surface,
@@ -1229,6 +1238,30 @@ class _BroadcastList extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 8),
+                  // Recipient search
+                  TextField(
+                    controller: recipientSearchC,
+                    style: TextStyle(color: vc.textPrimary, fontSize: 12),
+                    decoration: InputDecoration(
+                      hintText: 'Search recipients...',
+                      hintStyle: TextStyle(color: vc.textMuted, fontSize: 12),
+                      prefixIcon: Icon(Icons.search, size: 16, color: vc.textMuted),
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                      filled: true,
+                      fillColor: vc.background,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: vc.border),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: vc.border),
+                      ),
+                    ),
+                    onChanged: (v) => setDialogState(() => recipientSearch = v),
+                  ),
+                  const SizedBox(height: 8),
                   // Select all / contact checkboxes
                   Row(
                     children: [
@@ -1282,11 +1315,42 @@ class _BroadcastList extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Text('${selectedContacts.length} contacts selected',
-                      style: TextStyle(
-                          color: VividColors.cyan,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600)),
+                  // Prominent selected count
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: selectedContacts.isNotEmpty
+                          ? VividColors.cyan.withValues(alpha: 0.1)
+                          : vc.background,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: selectedContacts.isNotEmpty
+                            ? VividColors.cyan.withValues(alpha: 0.3)
+                            : vc.border,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.people,
+                            size: 16,
+                            color: selectedContacts.isNotEmpty
+                                ? VividColors.cyan
+                                : vc.textMuted),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${selectedContacts.length} contacts selected',
+                          style: TextStyle(
+                            color: selectedContacts.isNotEmpty
+                                ? VividColors.cyan
+                                : vc.textMuted,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -1654,18 +1718,26 @@ class _BroadcastDetailState extends State<_BroadcastDetail> {
           // Delivery stats
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 8,
               children: [
+                _StatChip(
+                    label: 'Total',
+                    count: broadcast.totalRecipients,
+                    color: VividColors.brightBlue),
+                _StatChip(
+                    label: 'Sent',
+                    count: broadcast.totalRecipients - broadcast.failedCount,
+                    color: VividColors.cyan),
                 _StatChip(
                     label: 'Delivered',
                     count: broadcast.deliveredCount,
                     color: VividColors.statusSuccess),
-                const SizedBox(width: 12),
                 _StatChip(
                     label: 'Failed',
                     count: broadcast.failedCount,
                     color: VividColors.statusUrgent),
-                const SizedBox(width: 12),
                 if (broadcast.totalRecipients > 0)
                   _StatChip(
                     label: 'Rate',
@@ -1683,14 +1755,20 @@ class _BroadcastDetailState extends State<_BroadcastDetail> {
           // Recipients header
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Text('Recipients (${provider.broadcastRecipients.length})',
-                style: TextStyle(
-                    color: vc.textPrimary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600)),
+            child: Row(
+              children: [
+                Text(
+                  'Recipients (${provider.broadcastRecipients.length} of ${provider.recipientTotalCount})',
+                  style: TextStyle(
+                      color: vc.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 8),
-          // Recipients list
+          // Recipients list with load more
           Expanded(
             child: provider.isLoadingRecipients
                 ? const Center(
@@ -1698,8 +1776,31 @@ class _BroadcastDetailState extends State<_BroadcastDetail> {
                         strokeWidth: 2, color: VividColors.cyan))
                 : ListView.builder(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
-                    itemCount: provider.broadcastRecipients.length,
+                    itemCount: provider.broadcastRecipients.length +
+                        (provider.hasMoreRecipients ? 1 : 0),
                     itemBuilder: (context, index) {
+                      if (index == provider.broadcastRecipients.length) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Center(
+                            child: OutlinedButton.icon(
+                              onPressed: () =>
+                                  provider.loadMoreRecipients(broadcast.id),
+                              icon: const Icon(Icons.expand_more, size: 16),
+                              label: Text(
+                                'Load more (${provider.broadcastRecipients.length} of ${provider.recipientTotalCount})',
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: VividColors.cyan,
+                                side: const BorderSide(color: VividColors.cyan),
+                                textStyle: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500),
+                              ),
+                            ),
+                          ),
+                        );
+                      }
                       final r = provider.broadcastRecipients[index];
                       return _RecipientTile(recipient: r);
                     },
@@ -1768,7 +1869,6 @@ class _RecipientTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final vc = context.vividColors;
-    final isDelivered = recipient.isDelivered;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
@@ -1816,39 +1916,36 @@ class _RecipientTile extends StatelessWidget {
             ),
           ),
           // Status
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: (isDelivered
-                      ? VividColors.statusSuccess
-                      : VividColors.statusUrgent)
-                  .withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(5),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  isDelivered ? Icons.check_circle : Icons.error,
-                  size: 12,
-                  color: isDelivered
-                      ? VividColors.statusSuccess
-                      : VividColors.statusUrgent,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  isDelivered ? 'Delivered' : (recipient.status ?? 'Pending'),
-                  style: TextStyle(
-                    color: isDelivered
-                        ? VividColors.statusSuccess
-                        : VividColors.statusUrgent,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
+          _buildRecipientStatusBadge(recipient),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecipientStatusBadge(OutreachBroadcastRecipient r) {
+    final (color, icon, label) = switch (r.status) {
+      'delivered' => (VividColors.statusSuccess, Icons.check_circle, 'Delivered'),
+      'read' => (VividColors.statusSuccess, Icons.done_all, 'Read'),
+      'sent' => (VividColors.cyan, Icons.check, 'Sent'),
+      'failed' => (VividColors.statusUrgent, Icons.error, 'Failed'),
+      'sending' => (VividColors.cyan, Icons.sync, 'Sending'),
+      _ => (VividColors.statusWarning, Icons.schedule, 'Pending'),
+    };
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(5),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 4),
+          Text(label,
+              style: TextStyle(
+                  color: color, fontSize: 10, fontWeight: FontWeight.w600)),
         ],
       ),
     );
@@ -1881,6 +1978,19 @@ class _TemplatesSection extends StatelessWidget {
                       color: vc.textPrimary,
                       fontSize: 16,
                       fontWeight: FontWeight.w700)),
+              const SizedBox(width: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                decoration: BoxDecoration(
+                  gradient: VividColors.primaryGradient,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text('${provider.templates.length}',
+                    style: TextStyle(
+                        color: vc.background,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12)),
+              ),
               const Spacer(),
               FilledButton.icon(
                 onPressed: () => Navigator.push(
@@ -1903,14 +2013,37 @@ class _TemplatesSection extends StatelessWidget {
               OutlinedButton.icon(
                 onPressed: provider.isLoadingTemplates
                     ? null
-                    : () => provider.fetchTemplates(),
+                    : () async {
+                        final err = await provider.syncTemplatesFromMeta();
+                        if (err != null && context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(err)),
+                          );
+                        }
+                      },
                 icon: provider.isLoadingTemplates
                     ? SizedBox(
                         width: 14,
                         height: 14,
                         child: CircularProgressIndicator(
                             strokeWidth: 2, color: vc.textMuted))
-                    : const Icon(Icons.sync_rounded, size: 16),
+                    : const Icon(Icons.cloud_sync, size: 16),
+                label: const Text('Sync from Meta'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: vc.textSecondary,
+                  side: BorderSide(color: vc.border),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  textStyle: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w500),
+                ),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: provider.isLoadingTemplates
+                    ? null
+                    : () => provider.fetchTemplates(),
+                icon: const Icon(Icons.sync_rounded, size: 16),
                 label: const Text('Refresh'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: vc.textSecondary,
@@ -1968,7 +2101,7 @@ class _TemplatesSection extends StatelessWidget {
                           crossAxisCount: crossCount,
                           crossAxisSpacing: 16,
                           mainAxisSpacing: 16,
-                          childAspectRatio: 1.1,
+                          childAspectRatio: 0.85,
                         ),
                         itemCount: provider.templates.length,
                         itemBuilder: (context, index) {
@@ -1999,84 +2132,369 @@ class _OutreachTemplateCard extends StatelessWidget {
       _ => (Colors.grey, template.status),
     };
 
-    return Container(
-      decoration: BoxDecoration(
-        color: vc.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: vc.border.withValues(alpha: 0.5)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header
-          Container(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        template.name,
-                        style: TextStyle(
-                          color: vc.textPrimary,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          fontFamily: 'monospace',
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+    // Variable count for validation dot
+    final varCount = RegExp(r'\{\{\d+\}\}').allMatches(template.body).length;
+    final validationColor = varCount == 0
+        ? VividColors.statusSuccess
+        : varCount <= 3
+            ? VividColors.statusWarning
+            : VividColors.statusUrgent;
+
+    return GestureDetector(
+      onTap: () => _showTemplateDetail(context, vc),
+      child: Container(
+        decoration: BoxDecoration(
+          color: vc.surface,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: vc.border.withValues(alpha: 0.5)),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header image
+            if (template.headerMediaUrl != null &&
+                template.headerMediaUrl!.isNotEmpty)
+              SizedBox(
+                height: 100,
+                width: double.infinity,
+                child: Image.network(
+                  template.headerMediaUrl!,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    color: vc.surfaceAlt,
+                    child: Center(
+                      child: Icon(Icons.broken_image,
+                          color: vc.textMuted, size: 24),
                     ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 7, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: statusColor.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(5),
-                        border: Border.all(
-                            color: statusColor.withValues(alpha: 0.3)),
+                  ),
+                ),
+              ),
+            // Name + status + delete
+            Container(
+              padding: const EdgeInsets.fromLTRB(14, 12, 8, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      // Validation dot
+                      Container(
+                        width: 8,
+                        height: 8,
+                        margin: const EdgeInsets.only(right: 6),
+                        decoration: BoxDecoration(
+                          color: validationColor,
+                          shape: BoxShape.circle,
+                        ),
                       ),
-                      child: Text(statusLabel,
+                      Expanded(
+                        child: Text(
+                          template.name,
                           style: TextStyle(
-                              color: statusColor,
+                            color: vc.textPrimary,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            fontFamily: 'monospace',
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 7, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: statusColor.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(5),
+                          border: Border.all(
+                              color: statusColor.withValues(alpha: 0.3)),
+                        ),
+                        child: Text(statusLabel,
+                            style: TextStyle(
+                                color: statusColor,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600)),
+                      ),
+                      _buildDeleteButton(context, vc),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Text(template.language.toUpperCase(),
+                          style: TextStyle(
+                              color: vc.textMuted,
                               fontSize: 10,
                               fontWeight: FontWeight.w600)),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    Text(template.language.toUpperCase(),
-                        style: TextStyle(
-                            color: vc.textMuted,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600)),
-                    const SizedBox(width: 8),
-                    Text(template.category,
-                        style:
-                            TextStyle(color: vc.textMuted, fontSize: 10)),
-                  ],
-                ),
-              ],
+                      const SizedBox(width: 8),
+                      Text(template.category,
+                          style:
+                              TextStyle(color: vc.textMuted, fontSize: 10)),
+                      if (varCount > 0) ...[
+                        const SizedBox(width: 8),
+                        Text('$varCount vars',
+                            style: TextStyle(
+                                color: validationColor,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w500)),
+                      ],
+                      if (template.buttons.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        Icon(Icons.smart_button, size: 12, color: vc.textMuted),
+                        const SizedBox(width: 2),
+                        Text('${template.buttons.length}',
+                            style: TextStyle(
+                                color: vc.textMuted, fontSize: 10)),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
             ),
+            // Body preview
+            Expanded(
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
+                child: Text(
+                  template.body,
+                  style: TextStyle(
+                      color: vc.textSecondary, fontSize: 12, height: 1.4),
+                  maxLines: 5,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDeleteButton(BuildContext context, VividColorScheme vc) {
+    return IconButton(
+      icon: Icon(Icons.delete_outline, size: 16, color: vc.textMuted),
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+      tooltip: 'Delete template',
+      onPressed: () => _confirmDelete(context, vc),
+    );
+  }
+
+  void _confirmDelete(BuildContext context, VividColorScheme vc) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: vc.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: Text('Delete Template?',
+            style: TextStyle(
+                color: vc.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w700)),
+        content: Text(
+          'This will delete "${template.name}" from Meta and the local database. This action cannot be undone.',
+          style: TextStyle(color: vc.textSecondary, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancel', style: TextStyle(color: vc.textSecondary)),
           ),
-          // Body preview
-          Expanded(
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+          FilledButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final provider = context.read<OutreachProvider>();
+              final err = await provider.deleteTemplate(template.name, template.id);
+              if (err != null && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(err)),
+                );
+              }
+            },
+            style: FilledButton.styleFrom(
+              backgroundColor: VividColors.statusUrgent,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showTemplateDetail(BuildContext context, VividColorScheme vc) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: vc.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Expanded(
               child: Text(
-                template.body,
+                template.name,
                 style: TextStyle(
-                    color: vc.textSecondary, fontSize: 12, height: 1.4),
-                maxLines: 6,
+                  color: vc.textPrimary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'monospace',
+                ),
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
             ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: (template.status.toUpperCase() == 'APPROVED'
+                        ? VividColors.statusSuccess
+                        : template.status.toUpperCase() == 'REJECTED'
+                            ? VividColors.statusUrgent
+                            : VividColors.statusWarning)
+                    .withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(template.status,
+                  style: TextStyle(
+                    color: template.status.toUpperCase() == 'APPROVED'
+                        ? VividColors.statusSuccess
+                        : template.status.toUpperCase() == 'REJECTED'
+                            ? VividColors.statusUrgent
+                            : VividColors.statusWarning,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                  )),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 480,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Meta info
+                Row(
+                  children: [
+                    Text('Language: ${template.language.toUpperCase()}',
+                        style: TextStyle(color: vc.textMuted, fontSize: 11)),
+                    const SizedBox(width: 12),
+                    Text('Category: ${template.category}',
+                        style: TextStyle(color: vc.textMuted, fontSize: 11)),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                // Header image
+                if (template.headerMediaUrl != null &&
+                    template.headerMediaUrl!.isNotEmpty) ...[
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.network(
+                      template.headerMediaUrl!,
+                      height: 180,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                // Header text
+                if (template.headerText != null &&
+                    template.headerText!.isNotEmpty) ...[
+                  Text('Header',
+                      style: TextStyle(
+                          color: vc.textSecondary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  Text(template.headerText!,
+                      style: TextStyle(
+                          color: vc.textPrimary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 12),
+                ],
+                // Body
+                Text('Body',
+                    style: TextStyle(
+                        color: vc.textSecondary,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: vc.background,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: vc.border),
+                  ),
+                  child: SelectableText(
+                    template.body.isNotEmpty
+                        ? template.body
+                        : '(No body text)',
+                    style: TextStyle(
+                      color: vc.textPrimary,
+                      fontSize: 13,
+                      height: 1.5,
+                      fontStyle: template.body.isEmpty
+                          ? FontStyle.italic
+                          : FontStyle.normal,
+                    ),
+                  ),
+                ),
+                // Buttons
+                if (template.buttons.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text('Buttons',
+                      style: TextStyle(
+                          color: vc.textSecondary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 6),
+                  ...template.buttons.map((btn) => Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(bottom: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: VividColors.cyan.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                              color: VividColors.cyan.withValues(alpha: 0.2)),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.smart_button,
+                                size: 14, color: VividColors.cyan),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(btn.text,
+                                  style: TextStyle(
+                                      color: VividColors.cyan,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500)),
+                            ),
+                            Text(btn.type,
+                                style: TextStyle(
+                                    color: vc.textMuted, fontSize: 10)),
+                          ],
+                        ),
+                      )),
+                ],
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Close', style: TextStyle(color: vc.textSecondary)),
           ),
         ],
       ),

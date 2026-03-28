@@ -61,6 +61,14 @@ class OutreachProvider extends ChangeNotifier {
           (c.contactName?.toLowerCase().contains(q) ?? false) ||
           c.phone.contains(q)).toList();
     }
+    // Sort by last message time (most recent first)
+    list = List.of(list)..sort((a, b) {
+      final aMsg = _lastMessageByContact[a.id];
+      final bMsg = _lastMessageByContact[b.id];
+      final aTime = aMsg?.createdAt ?? a.lastContactedAt ?? a.createdAt;
+      final bTime = bMsg?.createdAt ?? b.lastContactedAt ?? b.createdAt;
+      return bTime.compareTo(aTime);
+    });
     return list;
   }
 

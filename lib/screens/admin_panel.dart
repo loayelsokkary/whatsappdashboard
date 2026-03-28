@@ -12,6 +12,7 @@ import '../providers/conversations_provider.dart';
 import '../providers/broadcasts_provider.dart';
 import '../services/supabase_service.dart';
 import '../providers/agent_provider.dart';
+import '../providers/theme_provider.dart';
 import '../models/models.dart';
 import '../theme/vivid_theme.dart';
 import '../widgets/vivid_company_analytics_view.dart';
@@ -324,94 +325,156 @@ class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateM
 
   Widget _buildSidebar(VividColorScheme vc) {
     final agent = context.watch<AgentProvider>().agent;
-    return Container(
-      width: 220,
+    final themeProvider = context.watch<ThemeProvider>();
+    final expanded = themeProvider.sidebarExpanded;
+    final sidebarWidth = expanded ? 220.0 : 64.0;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeInOut,
+      width: sidebarWidth,
       decoration: BoxDecoration(
         color: const Color(0xFF0A1628),
-        border: Border(right: BorderSide(color: Colors.white.withOpacity(0.08))),
+        border: Border(right: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
       ),
       child: Column(
         children: [
-          // Logo + title
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-            decoration: BoxDecoration(
-              border: const Border(
-                bottom: BorderSide(color: Color(0x14FFFFFF)),
+          // Logo + title + collapse toggle
+          if (expanded) ...[
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 16, 8, 12),
+              decoration: const BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: Color(0x14FFFFFF)),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Image.asset(
+                          'assets/images/vivid_logo_full.png',
+                          width: 160,
+                          fit: BoxFit.fitWidth,
+                          alignment: Alignment.centerLeft,
+                        ),
+                      ),
+                      InkWell(
+                        onTap: () => themeProvider.toggleSidebar(),
+                        borderRadius: BorderRadius.circular(6),
+                        child: const Padding(
+                          padding: EdgeInsets.all(6),
+                          child: Icon(Icons.chevron_left, color: VividColors.textMuted, size: 20),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  const Text('Admin Dashboard',
+                      style: TextStyle(color: Color(0x66FFFFFF), fontSize: 10, letterSpacing: 0.8)),
+                ],
               ),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Image.asset(
-                  'assets/images/vivid_logo_full.png',
-                  width: 160,
-                  fit: BoxFit.fitWidth,
-                  alignment: Alignment.centerLeft,
+          ] else ...[
+            const SizedBox(height: 10),
+            Center(
+              child: InkWell(
+                onTap: () => themeProvider.toggleSidebar(),
+                borderRadius: BorderRadius.circular(6),
+                child: const Padding(
+                  padding: EdgeInsets.all(6),
+                  child: Icon(Icons.menu, color: VividColors.textMuted, size: 20),
                 ),
-                const SizedBox(height: 4),
-                const Text('Admin Dashboard',
-                    style: TextStyle(color: Color(0x66FFFFFF), fontSize: 10, letterSpacing: 0.8)),
-              ],
+              ),
             ),
-          ),
+            const SizedBox(height: 10),
+            Center(child: VividWidgets.icon(size: 36)),
+            const SizedBox(height: 10),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: Divider(color: Color(0x1AFFFFFF), height: 1, thickness: 1),
+            ),
+          ],
           const SizedBox(height: 8),
           // Nav items
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
+              padding: EdgeInsets.symmetric(horizontal: expanded ? 8 : 4),
               child: Column(
                 children: [
-                  _sidebarItem(0, Icons.dashboard, 'Home'),
-                  _sidebarItem(1, Icons.business, 'Clients'),
-                  _sidebarItem(2, Icons.people, 'Users'),
-                  _sidebarItem(3, Icons.description, 'Templates'),
-                  _sidebarItem(4, Icons.insights, 'Client Analytics'),
-                  _sidebarItem(5, Icons.auto_graph, 'Vivid Analytics'),
-                  _sidebarItem(6, Icons.account_balance_wallet, 'Financials'),
-                  _sidebarItem(7, Icons.history, 'Activity Logs'),
-                  _sidebarItem(8, Icons.rocket_launch, 'Outreach'),
-                  _sidebarItem(9, Icons.settings, 'Settings'),
+                  _sidebarItem(0, Icons.dashboard, 'Home', expanded),
+                  _sidebarItem(1, Icons.business, 'Clients', expanded),
+                  _sidebarItem(2, Icons.people, 'Users', expanded),
+                  _sidebarItem(3, Icons.description, 'Templates', expanded),
+                  _sidebarItem(4, Icons.insights, 'Client Analytics', expanded),
+                  _sidebarItem(5, Icons.auto_graph, 'Vivid Analytics', expanded),
+                  _sidebarItem(6, Icons.account_balance_wallet, 'Financials', expanded),
+                  _sidebarItem(7, Icons.history, 'Activity Logs', expanded),
+                  _sidebarItem(8, Icons.rocket_launch, 'Outreach', expanded),
+                  _sidebarItem(9, Icons.settings, 'Settings', expanded),
                 ],
               ),
             ),
           ),
           // Preview + user info + logout
-          Divider(color: Colors.white.withOpacity(0.08), height: 1),
+          Divider(color: Colors.white.withValues(alpha: 0.08), height: 1),
           Padding(
-            padding: const EdgeInsets.all(12),
+            padding: EdgeInsets.all(expanded ? 12 : 8),
             child: Column(
               children: [
-                _buildPreviewButton(false),
+                if (expanded) _buildPreviewButton(false),
                 if (agent != null) ...[
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 14,
-                        backgroundColor: VividColors.brightBlue.withOpacity(0.2),
-                        child: Text(
-                          agent.initials,
-                          style: const TextStyle(color: VividColors.cyan, fontSize: 11, fontWeight: FontWeight.w600),
+                  if (expanded) const SizedBox(height: 10),
+                  expanded
+                      ? Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 14,
+                              backgroundColor: VividColors.brightBlue.withValues(alpha: 0.2),
+                              child: Text(
+                                agent.initials,
+                                style: const TextStyle(color: VividColors.cyan, fontSize: 11, fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                agent.name,
+                                style: const TextStyle(color: Color(0x99FFFFFF), fontSize: 12),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: () => context.read<AgentProvider>().logout(),
+                              icon: const Icon(Icons.logout, color: Colors.white38, size: 18),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              tooltip: 'Logout',
+                            ),
+                          ],
+                        )
+                      : Column(
+                          children: [
+                            CircleAvatar(
+                              radius: 16,
+                              backgroundColor: VividColors.brightBlue.withValues(alpha: 0.2),
+                              child: Text(
+                                agent.initials,
+                                style: const TextStyle(color: VividColors.cyan, fontSize: 11, fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            IconButton(
+                              onPressed: () => context.read<AgentProvider>().logout(),
+                              icon: const Icon(Icons.logout, color: Colors.white38, size: 18),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              tooltip: 'Logout',
+                            ),
+                          ],
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          agent.name,
-                          style: const TextStyle(color: Color(0x99FFFFFF), fontSize: 12),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: () => context.read<AgentProvider>().logout(),
-                        icon: const Icon(Icons.logout, color: Colors.white38, size: 18),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        tooltip: 'Logout',
-                      ),
-                    ],
-                  ),
                 ],
               ],
             ),
@@ -490,41 +553,55 @@ class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateM
 
   // ── Sidebar item ─────────────────────────────────────
 
-  Widget _sidebarItem(int index, IconData icon, String label) {
+  Widget _sidebarItem(int index, IconData icon, String label, [bool expanded = true]) {
     final isSelected = _tabController.index == index;
     const teal = Color(0xFF22D3EE);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 1),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
-        child: InkWell(
+    return Tooltip(
+      message: expanded ? '' : label,
+      preferBelow: false,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 1),
+        child: Material(
+          color: Colors.transparent,
           borderRadius: BorderRadius.circular(8),
-          onTap: () {
-            _tabController.animateTo(index);
-            Scaffold.maybeOf(context)?.closeDrawer();
-            setState(() {});
-          },
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
-              color: isSelected ? teal.withValues(alpha: 0.08) : Colors.transparent,
-              border: isSelected
-                  ? const Border(left: BorderSide(color: teal, width: 2))
-                  : null,
-            ),
-            child: Row(
-              children: [
-                Icon(icon, size: 18,
-                    color: isSelected ? teal : Colors.white.withValues(alpha: 0.45)),
-                const SizedBox(width: 12),
-                Text(label, style: TextStyle(
-                  fontSize: 13,
-                  color: isSelected ? Colors.white : Colors.white.withValues(alpha: 0.45),
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                )),
-              ],
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () {
+              _tabController.animateTo(index);
+              Scaffold.maybeOf(context)?.closeDrawer();
+              setState(() {});
+            },
+            child: Container(
+              padding: EdgeInsets.symmetric(
+                horizontal: expanded ? 12 : 0,
+                vertical: expanded ? 12 : 14,
+              ),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                color: isSelected ? teal.withValues(alpha: 0.08) : Colors.transparent,
+                border: isSelected
+                    ? const Border(left: BorderSide(color: teal, width: 2))
+                    : null,
+              ),
+              child: expanded
+                  ? Row(
+                      children: [
+                        Icon(icon, size: 18,
+                            color: isSelected ? teal : Colors.white.withValues(alpha: 0.45)),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(label, style: TextStyle(
+                            fontSize: 13,
+                            color: isSelected ? Colors.white : Colors.white.withValues(alpha: 0.45),
+                            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                          )),
+                        ),
+                      ],
+                    )
+                  : Center(
+                      child: Icon(icon, size: 22,
+                          color: isSelected ? teal : Colors.white.withValues(alpha: 0.45)),
+                    ),
             ),
           ),
         ),
