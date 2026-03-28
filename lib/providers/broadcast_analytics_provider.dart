@@ -111,7 +111,7 @@ class BroadcastAnalyticsProvider extends ChangeNotifier {
       final now = DateTime.now();
       final todayStart = DateTime(now.year, now.month, now.day);
 
-      print('📊 Fetching analytics from: $_broadcastsTable');
+      debugPrint('📊 Fetching analytics from: $_broadcastsTable');
 
       // Fetch all broadcasts from client-specific table
       final broadcastsResponse = await _client
@@ -122,7 +122,7 @@ class BroadcastAnalyticsProvider extends ChangeNotifier {
       final broadcasts = broadcastsResponse as List;
       final totalCampaigns = broadcasts.length;
 
-      print('📊 Fetching recipients from: $_recipientsTable');
+      debugPrint('📊 Fetching recipients from: $_recipientsTable');
 
       // Fetch all recipients (paginated — Supabase default limit is 1000)
       List<Map<String, dynamic>> recipients = [];
@@ -168,8 +168,8 @@ class BroadcastAnalyticsProvider extends ChangeNotifier {
       final deliveryRate = totalRecipients > 0
           ? totalDelivered / totalRecipients * 100
           : 0.0;
-      final readRate = totalRecipients > 0
-          ? totalRead / totalRecipients * 100
+      final readRate = totalDelivered > 0
+          ? totalRead / totalDelivered * 100
           : 0.0;
 
       // Get campaign performance
@@ -246,11 +246,11 @@ class BroadcastAnalyticsProvider extends ChangeNotifier {
         last7Days: last7Days,
       );
 
-      print('📊 Analytics loaded successfully');
+      debugPrint('📊 Analytics loaded successfully');
 
     } catch (e) {
       _error = 'Failed to load analytics: $e';
-      print('Broadcast analytics error: $e');
+      debugPrint('Broadcast analytics error: $e');
     }
 
     _isLoading = false;

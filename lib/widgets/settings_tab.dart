@@ -155,6 +155,8 @@ class _SettingsTabState extends State<SettingsTab> {
               SizedBox(height: isMobile ? 16 : 24),
               _buildMetaApiSection(vc, isMobile),
               SizedBox(height: isMobile ? 16 : 24),
+              _buildOutreachConfigSection(vc, isMobile),
+              SizedBox(height: isMobile ? 16 : 24),
               _buildClientConfigOverview(vc, isMobile),
               SizedBox(height: isMobile ? 16 : 24),
               _buildDatabaseTablesSection(vc, isMobile),
@@ -378,6 +380,119 @@ class _SettingsTabState extends State<SettingsTab> {
         fillColor: vc.surfaceAlt,
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       ),
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // SECTION: Outreach Configuration
+  // ═══════════════════════════════════════════════════════
+
+  Widget _buildOutreachConfigSection(VividColorScheme vc, bool isMobile) {
+    return _sectionContainer(
+      vc,
+      icon: Icons.rocket_launch,
+      title: 'Outreach Configuration',
+      trailing: TextButton.icon(
+        onPressed: () => _showOutreachConfigDialog(vc),
+        icon: const Icon(Icons.edit, size: 16, color: VividColors.cyan),
+        label: const Text('Edit', style: TextStyle(color: VividColors.cyan, fontSize: 13)),
+      ),
+      child: _isLoadingSettings
+          ? const _LoadingIndicator()
+          : Column(
+              children: [
+                _settingRow(vc, 'Phone', _effectiveValue('outreach_phone', SupabaseService.outreachPhone)),
+                _settingRow(vc, 'WABA ID', _effectiveValue('outreach_waba_id', SupabaseService.outreachWabaId)),
+                _settingRow(vc, 'Meta Access Token', _maskToken(_effectiveValue('outreach_meta_access_token', SupabaseService.outreachMetaAccessToken))),
+                _settingRow(vc, 'Send Webhook', _effectiveValue('outreach_send_webhook', SupabaseService.outreachSendWebhook)),
+                _settingRow(vc, 'Broadcast Webhook', _effectiveValue('outreach_broadcast_webhook', SupabaseService.outreachBroadcastWebhook)),
+              ],
+            ),
+    );
+  }
+
+  void _showOutreachConfigDialog(VividColorScheme vc) {
+    final phoneCtrl = TextEditingController(text: _effectiveValue('outreach_phone', SupabaseService.outreachPhone));
+    final wabaCtrl = TextEditingController(text: _effectiveValue('outreach_waba_id', SupabaseService.outreachWabaId));
+    final tokenCtrl = TextEditingController(text: _effectiveValue('outreach_meta_access_token', SupabaseService.outreachMetaAccessToken));
+    final sendCtrl = TextEditingController(text: _effectiveValue('outreach_send_webhook', SupabaseService.outreachSendWebhook));
+    final broadcastCtrl = TextEditingController(text: _effectiveValue('outreach_broadcast_webhook', SupabaseService.outreachBroadcastWebhook));
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        final vc = ctx.vividColors;
+        bool isSaving = false;
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            final screenWidth = MediaQuery.of(ctx).size.width;
+            final isMobileDialog = screenWidth < 600;
+            return AlertDialog(
+              backgroundColor: vc.surface,
+              insetPadding: isMobileDialog
+                  ? const EdgeInsets.symmetric(horizontal: 12, vertical: 24)
+                  : const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
+              title: Row(
+                children: [
+                  const Icon(Icons.rocket_launch, color: VividColors.cyan, size: 20),
+                  const SizedBox(width: 8),
+                  Flexible(child: Text('Outreach Configuration', style: TextStyle(color: vc.textPrimary, fontSize: 16))),
+                ],
+              ),
+              content: SizedBox(
+                width: isMobileDialog ? screenWidth : 500,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _dialogField(vc, phoneCtrl, 'Outreach Phone', 'e.g., 97334653659'),
+                    const SizedBox(height: 12),
+                    _dialogField(vc, wabaCtrl, 'WABA ID', 'Meta WhatsApp Business Account ID'),
+                    const SizedBox(height: 12),
+                    _dialogField(vc, tokenCtrl, 'Meta Access Token', 'Permanent access token for outreach WABA'),
+                    const SizedBox(height: 12),
+                    _dialogField(vc, sendCtrl, 'Send Webhook URL', 'n8n webhook for sending messages'),
+                    const SizedBox(height: 12),
+                    _dialogField(vc, broadcastCtrl, 'Broadcast Webhook URL', 'n8n webhook for broadcast campaigns'),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text('Cancel', style: TextStyle(color: vc.textMuted)),
+                ),
+                ElevatedButton(
+                  onPressed: isSaving
+                      ? null
+                      : () async {
+                          setDialogState(() => isSaving = true);
+                          final svc = SupabaseService.instance;
+                          await svc.updateSystemSetting('outreach_phone', phoneCtrl.text.trim());
+                          await svc.updateSystemSetting('outreach_waba_id', wabaCtrl.text.trim());
+                          await svc.updateSystemSetting('outreach_meta_access_token', tokenCtrl.text.trim());
+                          await svc.updateSystemSetting('outreach_send_webhook', sendCtrl.text.trim());
+                          await svc.updateSystemSetting('outreach_broadcast_webhook', broadcastCtrl.text.trim());
+                          // Reload outreach config immediately
+                          await svc.loadOutreachConfig();
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          _loadSettings();
+                          if (mounted) {
+                            VividToast.show(context,
+                              message: 'Outreach configuration saved',
+                              type: ToastType.success,
+                            );
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(backgroundColor: VividColors.brightBlue),
+                  child: isSaving
+                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 

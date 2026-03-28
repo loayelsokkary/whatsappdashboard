@@ -73,6 +73,8 @@ class AdminProvider extends ChangeNotifier {
     String? wabaId,
     String? metaAccessToken,
     int? broadcastLimit,
+    String? productType,
+    String? predictionsRefreshWebhookUrl,
   }) async {
     _error = null;
 
@@ -98,6 +100,8 @@ class AdminProvider extends ChangeNotifier {
       wabaId: wabaId,
       metaAccessToken: metaAccessToken,
       broadcastLimit: broadcastLimit,
+      productType: productType,
+      predictionsRefreshWebhookUrl: predictionsRefreshWebhookUrl,
     );
 
     if (client != null) {
@@ -132,6 +136,11 @@ class AdminProvider extends ChangeNotifier {
     String? remindersPhone,
     String? remindersWebhookUrl,
     String? managerChatWebhookUrl,
+    String? wabaId,
+    String? metaAccessToken,
+    int? broadcastLimit,
+    String? productType,
+    String? predictionsRefreshWebhookUrl,
   }) async {
     _error = null;
 
@@ -155,6 +164,11 @@ class AdminProvider extends ChangeNotifier {
       remindersPhone: remindersPhone,
       remindersWebhookUrl: remindersWebhookUrl,
       managerChatWebhookUrl: managerChatWebhookUrl,
+      wabaId: wabaId,
+      metaAccessToken: metaAccessToken,
+      broadcastLimit: broadcastLimit,
+      productType: productType,
+      predictionsRefreshWebhookUrl: predictionsRefreshWebhookUrl,
     );
 
     if (success) {

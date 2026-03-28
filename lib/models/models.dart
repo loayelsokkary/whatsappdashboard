@@ -1052,14 +1052,14 @@ class Client {
 
   final int? broadcastLimit;
 
-  /// Whether this client uses AI-powered conversations
-  final bool hasAiConversations;
-
   /// Product type: 'retention' (Karisma-style broadcasts) or 'chatbot' (AI chatbot, no broadcasts)
   final String productType;
 
   /// Webhook URL to trigger n8n prediction recalculation (optional)
   final String? predictionsRefreshWebhookUrl;
+
+  /// Whether this client uses AI-powered conversations
+  final bool hasAiConversations;
 
   /// True when this client shares a WABA with other clients (e.g. HOB + Vivid Demo on same WABA).
   /// Enables slug-prefix filtering during Sync to AI to prevent cross-client template contamination.
@@ -1092,9 +1092,9 @@ class Client {
     this.remindersWebhookUrl,
     this.managerChatWebhookUrl,
     this.broadcastLimit,
-    this.hasAiConversations = true,
     this.productType = 'retention',
     this.predictionsRefreshWebhookUrl,
+    this.hasAiConversations = true,
     this.isSharedWaba = false,
     required this.createdAt,
   });
@@ -1136,9 +1136,9 @@ class Client {
       remindersWebhookUrl: json['reminders_webhook_url'] as String?,
       managerChatWebhookUrl: json['manager_chat_webhook_url'] as String?,
       broadcastLimit: json['broadcast_limit'] as int?,
-      hasAiConversations: json['has_ai_conversations'] as bool? ?? true,
       productType: json['product_type'] as String? ?? 'retention',
       predictionsRefreshWebhookUrl: json['predictions_refresh_webhook_url'] as String?,
+      hasAiConversations: json['has_ai_conversations'] as bool? ?? true,
       isSharedWaba: json['is_shared_waba'] as bool? ?? false,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
@@ -1170,8 +1170,10 @@ class Client {
       'reminders_webhook_url': remindersWebhookUrl,
       'manager_chat_webhook_url': managerChatWebhookUrl,
       'broadcast_limit': broadcastLimit,
-      'has_ai_conversations': hasAiConversations,
       'product_type': productType,
+      'predictions_refresh_webhook_url': predictionsRefreshWebhookUrl,
+      'has_ai_conversations': hasAiConversations,
+      'is_shared_waba': isSharedWaba,
       'created_at': createdAt.toIso8601String(),
     };
   }
