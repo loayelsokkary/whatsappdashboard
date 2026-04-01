@@ -864,7 +864,7 @@ class TemplatesProvider extends ChangeNotifier {
 
       final initResponse = await http.post(
         Uri.parse(initUrl),
-        headers: {'Authorization': 'Bearer ${SupabaseService.metaAccessToken}'},
+        headers: {'Authorization': 'Bearer $_clientAccessToken'},
       );
 
       debugPrint('[uploadImage] Step 1 response: ${initResponse.statusCode} — ${initResponse.body}');
@@ -900,6 +900,7 @@ class TemplatesProvider extends ChangeNotifier {
             'sessionUrl': sessionUrl,
             'fileBase64': fileBase64,
             'mimeType': mimeType,
+            'accessToken': _clientAccessToken,
           },
         );
         debugPrint('[uploadImage] Edge Function response: ${fnResponse.data}');
