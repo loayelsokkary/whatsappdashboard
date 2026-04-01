@@ -858,30 +858,53 @@ class TemplatesProvider extends ChangeNotifier {
 
     try {
       // Step 1: Start upload session
-      final initUrl = 'https://graph.facebook.com/${SupabaseService.metaApiVersion}/${SupabaseService.metaAppId}/uploads'
-          '?file_type=$mimeType&file_length=${imageBytes.length}';
-      debugPrint('[uploadImage] Step 1 — POST $initUrl');
-
-      final initResponse = await http.post(
-        Uri.parse(initUrl),
-        headers: {'Authorization': 'Bearer $_clientAccessToken'},
-      );
-
-      debugPrint('[uploadImage] Step 1 response: ${initResponse.statusCode} — ${initResponse.body}');
-
-      if (initResponse.statusCode != 200) {
-        _isSubmitting = false;
-        notifyListeners();
-        return null;
-      }
-
-      final initBody = jsonDecode(initResponse.body) as Map<String, dynamic>;
-      final uploadId = initBody['id'] as String?;
-      if (uploadId == null) {
-        debugPrint('[uploadImage] ERROR: no upload session id in response: ${initResponse.body}');
-        _isSubmitting = false;
-        notifyListeners();
-        return null;
+      // On web, CORS blocks direct calls to graph.facebook.com — proxy through Edge Function
+      String? uploadId;
+      if (kIsWeb) {
+        debugPrint('[uploadImage] Step 1 — via Edge Function (CORS proxy)');
+        final fn1Response = await SupabaseService.client.functions.invoke(
+          'proxy-meta-upload',
+          body: {
+            'action': 'create_session',
+            'appId': SupabaseService.metaAppId,
+            'apiVersion': SupabaseService.metaApiVersion,
+            'fileType': mimeType,
+            'fileLength': imageBytes.length.toString(),
+            'accessToken': _clientAccessToken,
+          },
+        );
+        final fn1Body = fn1Response.data is Map
+            ? fn1Response.data as Map<String, dynamic>
+            : jsonDecode(fn1Response.data.toString()) as Map<String, dynamic>;
+        uploadId = fn1Body['id'] as String?;
+        if (uploadId == null) {
+          debugPrint('[uploadImage] Step 1 failed via Edge Function: $fn1Body');
+          _isSubmitting = false;
+          notifyListeners();
+          return null;
+        }
+      } else {
+        final initUrl = 'https://graph.facebook.com/${SupabaseService.metaApiVersion}/${SupabaseService.metaAppId}/uploads'
+            '?file_type=$mimeType&file_length=${imageBytes.length}';
+        debugPrint('[uploadImage] Step 1 — POST $initUrl');
+        final initResponse = await http.post(
+          Uri.parse(initUrl),
+          headers: {'Authorization': 'Bearer $_clientAccessToken'},
+        );
+        debugPrint('[uploadImage] Step 1 response: ${initResponse.statusCode} — ${initResponse.body}');
+        if (initResponse.statusCode != 200) {
+          _isSubmitting = false;
+          notifyListeners();
+          return null;
+        }
+        final initBody = jsonDecode(initResponse.body) as Map<String, dynamic>;
+        uploadId = initBody['id'] as String?;
+        if (uploadId == null) {
+          debugPrint('[uploadImage] ERROR: no upload session id in response: ${initResponse.body}');
+          _isSubmitting = false;
+          notifyListeners();
+          return null;
+        }
       }
 
       final sessionUrl =
