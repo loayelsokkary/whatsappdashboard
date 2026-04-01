@@ -1380,6 +1380,7 @@ class _ComposeBroadcastDialogState extends State<ComposeBroadcastDialog> {
         scheduledBht,
         editBroadcastId: widget.editBroadcast?.id,
         templateName: _selectedTemplate?.name,
+        targetSheet: _selectedTemplate?.targetSheet,
       );
       if (!mounted) return;
       if (success) {
@@ -1392,7 +1393,7 @@ class _ComposeBroadcastDialogState extends State<ComposeBroadcastDialog> {
         );
       }
     } else {
-      success = await provider.sendBroadcast(text, templateName: _selectedTemplate?.name);
+      success = await provider.sendBroadcast(text, templateName: _selectedTemplate?.name, targetSheet: _selectedTemplate?.targetSheet);
       if (!mounted) return;
       if (success) {
         Navigator.of(context).pop();

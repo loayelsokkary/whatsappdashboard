@@ -1258,6 +1258,7 @@ class WhatsAppTemplate {
   final String? footer;
   final List<TemplateButton> buttons;
   final List<dynamic> componentsJson;
+  final String? targetSheet;
 
   /// Returns display_name if set, otherwise falls back to raw template name.
   String get label => displayName?.isNotEmpty == true ? displayName! : name;
@@ -1276,6 +1277,7 @@ class WhatsAppTemplate {
     this.footer,
     required this.buttons,
     this.componentsJson = const [],
+    this.targetSheet,
   });
 
   factory WhatsAppTemplate.fromJson(Map<String, dynamic> json) {
@@ -1326,6 +1328,7 @@ class WhatsAppTemplate {
       footer: footer,
       buttons: buttons,
       componentsJson: componentsJson,
+      targetSheet: json['target_sheet'] as String?,
     );
   }
 }

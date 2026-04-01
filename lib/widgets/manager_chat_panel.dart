@@ -1249,7 +1249,7 @@ class _PredictionInsightsPanelState extends State<_PredictionInsightsPanel> {
                             final messenger = ScaffoldMessenger.of(context);
                             final provider = context.read<BroadcastsProvider>();
                             setModalState(() => sending = true);
-                            final success = await provider.sendBroadcast(instruction);
+                            final success = await provider.sendBroadcast(instruction, templateName: selectedTemplate);
                             setModalState(() => sending = false);
                             if (context.mounted) Navigator.pop(ctx);
                             if (context.mounted) {

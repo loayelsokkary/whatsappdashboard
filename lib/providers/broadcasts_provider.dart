@@ -558,7 +558,7 @@ class BroadcastsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> sendBroadcast(String instruction, {String? templateName}) async {
+  Future<bool> sendBroadcast(String instruction, {String? templateName, String? targetSheet}) async {
     if (instruction.trim().isEmpty) {
       _sendError = 'Please enter a broadcast instruction';
       notifyListeners();
@@ -607,6 +607,8 @@ class BroadcastsProvider extends ChangeNotifier {
         'timestamp': DateTime.now().toIso8601String(),
         if (templateName != null && templateName.isNotEmpty)
           'template_name': templateName,
+        if (targetSheet != null && targetSheet.isNotEmpty)
+          'target_sheet': targetSheet,
       };
 
       final response = await http.post(
@@ -665,6 +667,7 @@ class BroadcastsProvider extends ChangeNotifier {
     DateTime scheduledAtBht, {
     String? editBroadcastId,
     String? templateName,
+    String? targetSheet,
   }) async {
     if (instruction.trim().isEmpty) {
       _sendError = 'Please enter a broadcast instruction';
@@ -710,6 +713,8 @@ class BroadcastsProvider extends ChangeNotifier {
         'timestamp': scheduledAtUtc.toIso8601String(),
         if (templateName != null && templateName.isNotEmpty)
           'template_name': templateName,
+        if (targetSheet != null && targetSheet.isNotEmpty)
+          'target_sheet': targetSheet,
       };
 
       final campaignName = instruction.trim().length > 60
