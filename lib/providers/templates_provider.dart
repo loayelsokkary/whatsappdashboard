@@ -926,11 +926,26 @@ class TemplatesProvider extends ChangeNotifier {
             'accessToken': _clientAccessToken,
           },
         );
-        debugPrint('[uploadImage] Edge Function response: ${fnResponse.data}');
-        handle = (fnResponse.data as Map<String, dynamic>?)?['handle'] as String?;
-        if (handle == null) {
-          final err = (fnResponse.data as Map<String, dynamic>?)?['error'];
-          debugPrint('[uploadImage] ERROR from Edge Function: $err');
+        debugPrint('[uploadImage] Edge Function raw type: ${fnResponse.data.runtimeType}');
+        debugPrint('[uploadImage] Edge Function raw response: ${fnResponse.data}');
+        Map<String, dynamic> fnBody;
+        if (fnResponse.data is Map<String, dynamic>) {
+          fnBody = fnResponse.data as Map<String, dynamic>;
+        } else if (fnResponse.data is Map) {
+          fnBody = Map<String, dynamic>.from(fnResponse.data as Map);
+        } else if (fnResponse.data is String) {
+          fnBody = jsonDecode(fnResponse.data as String) as Map<String, dynamic>;
+        } else {
+          debugPrint('[uploadImage] ERROR: unexpected response type ${fnResponse.data.runtimeType}');
+          _isSubmitting = false;
+          notifyListeners();
+          return null;
+        }
+        handle = fnBody['h']?.toString();
+        if (handle == null || handle.isEmpty) {
+          debugPrint('[uploadImage] ERROR: no handle in response. Full body: $fnBody');
+        } else {
+          debugPrint('[uploadImage] Extracted handle: $handle');
         }
       } else {
         // Native platforms — direct upload works fine

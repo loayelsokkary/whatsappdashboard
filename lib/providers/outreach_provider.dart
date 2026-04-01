@@ -1227,10 +1227,20 @@ class OutreachProvider extends ChangeNotifier {
             'accessToken': SupabaseService.outreachMetaAccessToken,
           },
         );
-        final fnBody = fnResponse.data is Map
-            ? fnResponse.data as Map<String, dynamic>
-            : jsonDecode(fnResponse.data.toString()) as Map<String, dynamic>;
-        return fnBody['h'] as String?;
+        Map<String, dynamic> fnBody;
+        if (fnResponse.data is Map<String, dynamic>) {
+          fnBody = fnResponse.data as Map<String, dynamic>;
+        } else if (fnResponse.data is Map) {
+          fnBody = Map<String, dynamic>.from(fnResponse.data as Map);
+        } else if (fnResponse.data is String) {
+          fnBody = jsonDecode(fnResponse.data as String) as Map<String, dynamic>;
+        } else {
+          debugPrint('OUTREACH: unexpected upload response type: ${fnResponse.data.runtimeType}');
+          return null;
+        }
+        final handle = fnBody['h']?.toString();
+        debugPrint('OUTREACH: upload handle: $handle');
+        return (handle != null && handle.isNotEmpty) ? handle : null;
       } else {
         final uploadResponse = await http.post(
           Uri.parse(sessionUrl),
