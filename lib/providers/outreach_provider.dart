@@ -23,6 +23,7 @@ class OutreachProvider extends ChangeNotifier {
   List<OutreachMessage> _messages = [];
   bool _isLoadingMessages = false;
   RealtimeChannel? _messagesChannel;
+  RealtimeChannel? _globalMessagesChannel;
   Timer? _messagesPollTimer;
   Map<String, OutreachMessage> _lastMessageByContact = {};
 
@@ -161,8 +162,14 @@ class OutreachProvider extends ChangeNotifier {
 
       debugPrint('OUTREACH: loaded ${_contacts.length} contacts');
 
+      // Auto-create contacts for unknown inbound numbers
+      await _syncUnknownContacts();
+
       // Fetch last message per contact for list preview
       _fetchLastMessages();
+
+      // Listen for new inbound messages globally
+      subscribeToAllMessages();
     } catch (e) {
       debugPrint('OUTREACH: contacts error: $e');
       _error = e.toString();
@@ -170,6 +177,56 @@ class OutreachProvider extends ChangeNotifier {
 
     _isLoadingContacts = false;
     notifyListeners();
+  }
+
+  /// Finds messages from phone numbers not in contacts and auto-creates contacts for them.
+  Future<void> _syncUnknownContacts() async {
+    try {
+      final knownPhones = _contacts.map((c) => c.phone).toSet();
+
+      // Get distinct customer_phone values from messages
+      final rows = await _db
+          .from('vivid_outreach_messages')
+          .select('customer_phone, customer_name')
+          .order('created_at', ascending: false);
+
+      // Find phones not already in contacts (keep first occurrence = most recent name)
+      final Map<String, String?> unknownPhones = {};
+      for (final r in rows) {
+        final phone = r['customer_phone']?.toString() ?? '';
+        if (phone.isNotEmpty &&
+            !knownPhones.contains(phone) &&
+            !unknownPhones.containsKey(phone)) {
+          unknownPhones[phone] = r['customer_name'] as String?;
+        }
+      }
+
+      if (unknownPhones.isEmpty) return;
+
+      debugPrint('OUTREACH: creating ${unknownPhones.length} contacts from unknown numbers');
+
+      final inserts = unknownPhones.entries.map((e) => {
+        'company_name': e.value?.isNotEmpty == true ? e.value! : e.key,
+        'contact_name': e.value,
+        'phone': e.key,
+        'status': 'lead',
+      }).toList();
+
+      await _db.from('vivid_outreach_contacts').insert(inserts);
+
+      // Re-fetch contacts to include the new ones
+      final newRows = await _db
+          .from('vivid_outreach_contacts')
+          .select()
+          .order('created_at', ascending: false);
+      _contacts = (newRows as List)
+          .map((r) => OutreachContact.fromJson(r as Map<String, dynamic>))
+          .toList();
+
+      debugPrint('OUTREACH: contacts after sync: ${_contacts.length}');
+    } catch (e) {
+      debugPrint('OUTREACH: sync unknown contacts error: $e');
+    }
   }
 
   Future<String?> createContact(OutreachContact contact) async {
@@ -469,17 +526,30 @@ class OutreachProvider extends ChangeNotifier {
               column: 'customer_phone',
               value: contactPhone,
             ),
-            callback: (payload) {
+            callback: (payload) async {
               final row = payload.newRecord;
-              if (row.isNotEmpty) {
-                final msg = OutreachMessage.fromJson(row);
+              if (row.isEmpty) return;
+              final id = row['id']?.toString();
+              if (id == null || id.isEmpty) return;
+              if (_messages.any((m) => m.id == id)) return;
+
+              // Re-fetch via admin client — realtime payload may have empty
+              // fields due to RLS on the anon key.
+              try {
+                final fullRow = await _db
+                    .from('vivid_outreach_messages')
+                    .select()
+                    .eq('id', id)
+                    .single();
+                final msg = OutreachMessage.fromJson(fullRow);
                 if (!_messages.any((m) => m.id == msg.id)) {
                   _messages.add(msg);
-                  // Update last message for sidebar preview
                   final cId = msg.contactId ?? _selectedContact?.id;
                   if (cId != null) _lastMessageByContact[cId] = msg;
                   notifyListeners();
                 }
+              } catch (e) {
+                debugPrint('OUTREACH: realtime re-fetch error: $e');
               }
             },
           )
@@ -494,6 +564,92 @@ class OutreachProvider extends ChangeNotifier {
     if (_messagesChannel != null) {
       SupabaseService.client.removeChannel(_messagesChannel!);
       _messagesChannel = null;
+    }
+  }
+
+  /// Global listener for ALL inbound outreach messages.
+  /// Auto-creates contacts for unknown phone numbers.
+  void subscribeToAllMessages() {
+    if (_globalMessagesChannel != null) {
+      SupabaseService.client.removeChannel(_globalMessagesChannel!);
+    }
+    try {
+      _globalMessagesChannel = SupabaseService.client
+          .channel('outreach_messages_global')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.insert,
+            schema: 'public',
+            table: 'vivid_outreach_messages',
+            callback: (payload) async {
+              final row = payload.newRecord;
+              if (row.isEmpty) return;
+              final id = row['id']?.toString();
+              if (id == null || id.isEmpty) return;
+
+              // Re-fetch via admin client — realtime payload may have empty
+              // fields due to RLS on the anon key.
+              OutreachMessage msg;
+              try {
+                final fullRow = await _db
+                    .from('vivid_outreach_messages')
+                    .select()
+                    .eq('id', id)
+                    .single();
+                msg = OutreachMessage.fromJson(fullRow);
+              } catch (e) {
+                debugPrint('OUTREACH: global realtime re-fetch error: $e');
+                return;
+              }
+
+              final phone = msg.customerPhone;
+              if (phone.isEmpty) return;
+
+              // Check if contact exists
+              var contact =
+                  _contacts.where((c) => c.phone == phone).firstOrNull;
+
+              if (contact == null) {
+                // Auto-create contact for unknown number
+                try {
+                  final name = msg.customerName?.isNotEmpty == true
+                      ? msg.customerName!
+                      : phone;
+                  final inserted = await _db
+                      .from('vivid_outreach_contacts')
+                      .insert({
+                        'company_name': name,
+                        'contact_name': msg.customerName,
+                        'phone': phone,
+                        'status': 'lead',
+                      })
+                      .select()
+                      .single();
+                  contact = OutreachContact.fromJson(inserted);
+                  _contacts.insert(0, contact);
+                  debugPrint(
+                      'OUTREACH: auto-created contact for unknown number $phone');
+                } catch (e) {
+                  debugPrint('OUTREACH: auto-create contact error: $e');
+                  return;
+                }
+              }
+
+              // Update last message for sidebar preview
+              _lastMessageByContact[contact.id] = msg;
+              notifyListeners();
+            },
+          )
+          .subscribe();
+      debugPrint('OUTREACH: subscribed to global messages');
+    } catch (e) {
+      debugPrint('OUTREACH: global subscribe error: $e');
+    }
+  }
+
+  void unsubscribeAllMessages() {
+    if (_globalMessagesChannel != null) {
+      SupabaseService.client.removeChannel(_globalMessagesChannel!);
+      _globalMessagesChannel = null;
     }
   }
 
@@ -1172,8 +1328,11 @@ class OutreachProvider extends ChangeNotifier {
   // ============================================
 
   @override
+  @override
   void dispose() {
     unsubscribeMessages();
+    unsubscribeAllMessages();
+    _stopMessagesPoll();
     super.dispose();
   }
 }

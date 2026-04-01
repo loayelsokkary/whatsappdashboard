@@ -377,6 +377,102 @@ class UserQuerySummary {
   });
 }
 
+// ─── Vivid Insights result types ─────────────────────────────────────────────
+
+/// Card 1: Optimal Broadcast Timing
+class OptimalTimingResult {
+  /// heatmap[dayOfWeek 0=Mon][hour 0-23] = message count
+  final List<List<int>> heatmap;
+  final int totalMessages;
+  final int peakHour;    // 0-23
+  final int peakDay;     // 0=Mon … 6=Sun
+  final bool hasEnoughData; // needs >= 50 messages
+
+  const OptimalTimingResult({
+    required this.heatmap,
+    required this.totalMessages,
+    required this.peakHour,
+    required this.peakDay,
+    required this.hasEnoughData,
+  });
+}
+
+/// Card 2: Broadcast ROI
+class BroadcastROIResult {
+  final int totalCampaigns;
+  final double avgResponseRate;   // 0-100
+  final double totalRevenueBhd;   // sum of offer_amount
+  final double costPerResponse;   // avg recipients per 1 respondent
+  /// responseRatePerCampaign: list in chronological order (0-100 each)
+  final List<double> campaignResponseRates;
+  final List<String> campaignNames;
+
+  const BroadcastROIResult({
+    required this.totalCampaigns,
+    required this.avgResponseRate,
+    required this.totalRevenueBhd,
+    required this.costPerResponse,
+    required this.campaignResponseRates,
+    required this.campaignNames,
+  });
+}
+
+/// Card 3: Response Time Signal
+class ResponseTimeResult {
+  final Duration median;
+  final Duration average;
+  final int slowConversations;  // > 4 hours
+  final int totalPaired;
+  /// weekly[i] = avg minutes for week i (most recent = last element), 8 weeks
+  final List<double> weeklyAvgMinutes;
+  /// agentStats[name] = (avgMinutes, messageCount)
+  final Map<String, (double, int)> agentStats;
+
+  const ResponseTimeResult({
+    required this.median,
+    required this.average,
+    required this.slowConversations,
+    required this.totalPaired,
+    required this.weeklyAvgMinutes,
+    required this.agentStats,
+  });
+}
+
+/// Card 4: Customer Return Rate
+class CustomerReturnRateResult {
+  final int atRiskTotal;
+  final int returned;
+  final int pending;   // not yet overdue
+  final double saveRate;         // 0-100
+  final double avgDaysSaved;
+
+  const CustomerReturnRateResult({
+    required this.atRiskTotal,
+    required this.returned,
+    required this.pending,
+    required this.saveRate,
+    required this.avgDaysSaved,
+  });
+}
+
+/// Card 5: Conversation Engagement
+class ConversationEngagementResult {
+  final double avgMessagesPerSession;
+  final double deepConversationPct;   // sessions with 3+ exchanges
+  final double broadcastInitiatedPct;
+  final int totalSessions;
+  /// depthBuckets: [1-msg, 2-msg, 3-5, 6-10, 10+] counts
+  final List<int> depthBuckets;
+
+  const ConversationEngagementResult({
+    required this.avgMessagesPerSession,
+    required this.deepConversationPct,
+    required this.broadcastInitiatedPct,
+    required this.totalSessions,
+    required this.depthBuckets,
+  });
+}
+
 /// Provider for admin-level analytics per client
 class AdminAnalyticsProvider extends ChangeNotifier {
   bool _isLoading = false;
@@ -1614,7 +1710,7 @@ class AdminAnalyticsProvider extends ChangeNotifier {
         final bcastRecipCount = recips.length;
         totalRecipients += bcastRecipCount;
 
-        int bDelivered = 0, bFailed = 0;
+        int bDelivered = 0;
         for (final r in recips) {
           final status = (r['status'] as String? ?? '').toLowerCase();
           final phone = r['customer_phone'] as String? ?? '';
@@ -1628,7 +1724,6 @@ class AdminAnalyticsProvider extends ChangeNotifier {
           else if (status == 'sent') { sent++; bDelivered++; }
           else if (status == 'failed') {
             failed++;
-            bFailed++;
             if (phone.isNotEmpty) phoneFailed[phone] = (phoneFailed[phone] ?? 0) + 1;
           }
         }
@@ -1876,6 +1971,511 @@ class AdminAnalyticsProvider extends ChangeNotifier {
     } catch (e) {
       print('ANALYTICS: predictive metrics error for ${client.name}: $e');
       return null;
+    }
+  }
+
+  // ─── VIVID INSIGHTS FETCH METHODS ────────────────────────────────────────
+
+  /// Card 1: Optimal Broadcast Timing
+  Future<OptimalTimingResult> fetchOptimalTiming(Client client) async {
+    final table = _getMessagesTable(client);
+    // Last 90 days to keep query fast
+    final since = DateTime.now().subtract(const Duration(days: 90));
+    try {
+      final rows = await _fetchAllRows(
+        table,
+        'created_at',
+        start: since,
+        end: DateTime.now(),
+      );
+      // heatmap[day 0-6][hour 0-23]
+      final heatmap = List.generate(7, (_) => List.filled(24, 0));
+      for (final r in rows) {
+        final ts = DateTime.tryParse(r['created_at']?.toString() ?? '');
+        if (ts == null) continue;
+        final bht = ts.toUtc().add(const Duration(hours: 3));
+        final dow = bht.weekday - 1; // 0=Mon
+        final hour = bht.hour;
+        heatmap[dow][hour]++;
+      }
+      int peakDay = 0, peakHour = 0, peakVal = 0;
+      for (int d = 0; d < 7; d++) {
+        for (int h = 0; h < 24; h++) {
+          if (heatmap[d][h] > peakVal) {
+            peakVal = heatmap[d][h];
+            peakDay = d;
+            peakHour = h;
+          }
+        }
+      }
+      return OptimalTimingResult(
+        heatmap: heatmap,
+        totalMessages: rows.length,
+        peakHour: peakHour,
+        peakDay: peakDay,
+        hasEnoughData: rows.length >= 50,
+      );
+    } catch (e) {
+      debugPrint('fetchOptimalTiming error: $e');
+      return OptimalTimingResult(
+        heatmap: List.generate(7, (_) => List.filled(24, 0)),
+        totalMessages: 0,
+        peakHour: 9,
+        peakDay: 0,
+        hasEnoughData: false,
+      );
+    }
+  }
+
+  /// Card 2: Broadcast ROI
+  Future<BroadcastROIResult> fetchBroadcastROI(Client client) async {
+    final bcastTable = _getBroadcastsTable(client);
+    final recipTable = _getRecipientsTable(client);
+    final msgTable = _getMessagesTable(client);
+    try {
+      final broadcasts = await _fetchAllRows(
+        bcastTable,
+        'id,campaign_name,sent_at,total_recipients,offer_amount',
+        orderBy: 'sent_at',
+      );
+      if (broadcasts.isEmpty) {
+        return const BroadcastROIResult(
+          totalCampaigns: 0,
+          avgResponseRate: 0,
+          totalRevenueBhd: 0,
+          costPerResponse: 0,
+          campaignResponseRates: [],
+          campaignNames: [],
+        );
+      }
+
+      // Build a set of all recipient phones per broadcast (if table available)
+      Map<String, Set<String>> recipientPhones = {};
+      if (recipTable != null) {
+        try {
+          final recips = await _fetchAllRows(
+            recipTable,
+            'broadcast_id,customer_phone',
+          );
+          for (final r in recips) {
+            final bid = r['broadcast_id']?.toString() ?? '';
+            final phone = r['customer_phone']?.toString() ?? '';
+            if (bid.isEmpty || phone.isEmpty) continue;
+            recipientPhones.putIfAbsent(bid, () => {}).add(phone);
+          }
+        } catch (_) {}
+      }
+
+      // Fetch inbound messages for response matching (last 180 days)
+      final since = DateTime.now().subtract(const Duration(days: 180));
+      List<dynamic> inboundMsgs = [];
+      try {
+        inboundMsgs = await _fetchAllRows(
+          msgTable,
+          'customer_phone,created_at',
+          start: since,
+          end: DateTime.now(),
+        );
+      } catch (_) {}
+
+      double totalRevenue = 0;
+      double totalResponseRate = 0;
+      final campaignRates = <double>[];
+      final campaignNames = <String>[];
+
+      for (final b in broadcasts) {
+        final bid = b['id']?.toString() ?? '';
+        final sentAtStr = b['sent_at']?.toString() ?? '';
+        final sentAt = DateTime.tryParse(sentAtStr);
+        final recipients = (b['total_recipients'] as num?)?.toInt() ?? 0;
+        final offerAmt = (b['offer_amount'] as num?)?.toDouble() ?? 0;
+        final name = b['campaign_name'] as String? ?? 'Campaign';
+
+        if (sentAt == null || recipients == 0) {
+          campaignRates.add(0);
+          campaignNames.add(name);
+          continue;
+        }
+
+        final window = sentAt.add(const Duration(hours: 72));
+        final recipPhones = recipientPhones[bid] ?? {};
+
+        // Count unique recipient phones that messaged back within 72h
+        final respondents = inboundMsgs.where((m) {
+          final phone = m['customer_phone']?.toString() ?? '';
+          if (phone.isEmpty) return false;
+          if (recipPhones.isNotEmpty && !recipPhones.contains(phone)) return false;
+          final ts = DateTime.tryParse(m['created_at']?.toString() ?? '');
+          if (ts == null) return false;
+          return ts.isAfter(sentAt) && ts.isBefore(window);
+        }).map((m) => m['customer_phone']?.toString() ?? '').toSet().length;
+
+        final rate = (respondents / recipients * 100).clamp(0, 100).toDouble();
+        campaignRates.add(rate);
+        campaignNames.add(name);
+        totalResponseRate += rate;
+        if (respondents > 0) totalRevenue += offerAmt;
+      }
+
+      final avgRate = broadcasts.isEmpty ? 0.0 : totalResponseRate / broadcasts.length;
+      final totalRespondents = campaignRates.fold(0.0, (a, b) => a + b) / 100 *
+          broadcasts.fold<int>(0, (a, b) => a + ((b['total_recipients'] as num?)?.toInt() ?? 0));
+      final totalRecipients = broadcasts.fold<int>(
+          0, (a, b) => a + ((b['total_recipients'] as num?)?.toInt() ?? 0));
+      final costPerResp = totalRespondents > 0
+          ? totalRecipients / totalRespondents
+          : 0.0;
+
+      return BroadcastROIResult(
+        totalCampaigns: broadcasts.length,
+        avgResponseRate: avgRate,
+        totalRevenueBhd: totalRevenue,
+        costPerResponse: costPerResp,
+        campaignResponseRates: campaignRates,
+        campaignNames: campaignNames,
+      );
+    } catch (e) {
+      debugPrint('fetchBroadcastROI error: $e');
+      return const BroadcastROIResult(
+        totalCampaigns: 0,
+        avgResponseRate: 0,
+        totalRevenueBhd: 0,
+        costPerResponse: 0,
+        campaignResponseRates: [],
+        campaignNames: [],
+      );
+    }
+  }
+
+  /// Card 3: Response Time Signal
+  Future<ResponseTimeResult> fetchResponseTime(Client client) async {
+    final table = _getMessagesTable(client);
+    // Last 90 days
+    final since = DateTime.now().subtract(const Duration(days: 90));
+    try {
+      final rows = await _fetchAllRows(
+        table,
+        'customer_phone,customer_message,ai_response,manager_response,sent_by,created_at',
+        start: since,
+        end: DateTime.now(),
+        orderBy: 'created_at',
+      );
+
+      // Group by phone
+      final byPhone = <String, List<Map<String, dynamic>>>{};
+      for (final r in rows) {
+        final phone = r['customer_phone']?.toString() ?? '';
+        if (phone.isEmpty) continue;
+        byPhone.putIfAbsent(phone, () => []).add(Map<String, dynamic>.from(r as Map));
+      }
+
+      final responseDurations = <Duration>[];
+      // agentStats[name] = [totalMinutes, count]
+      final agentRaw = <String, List<double>>{};
+      // weekly buckets: 8 weeks, most recent = index 7
+      final now = DateTime.now();
+      final weekBuckets = List.generate(8, (_) => <double>[]);
+
+      for (final msgs in byPhone.values) {
+        msgs.sort((a, b) {
+          final ta = DateTime.tryParse(a['created_at']?.toString() ?? '');
+          final tb = DateTime.tryParse(b['created_at']?.toString() ?? '');
+          if (ta == null || tb == null) return 0;
+          return ta.compareTo(tb);
+        });
+
+        for (int i = 0; i < msgs.length; i++) {
+          final r = msgs[i];
+          final custMsg = r['customer_message']?.toString() ?? '';
+          if (custMsg.isEmpty) continue;
+          final inboundTs = DateTime.tryParse(r['created_at']?.toString() ?? '');
+          if (inboundTs == null) continue;
+
+          // Find next outbound to same phone after this inbound
+          for (int j = i + 1; j < msgs.length; j++) {
+            final next = msgs[j];
+            final aiResp = next['ai_response']?.toString() ?? '';
+            final manResp = next['manager_response']?.toString() ?? '';
+            if (aiResp.isEmpty && manResp.isEmpty) continue;
+            final outboundTs = DateTime.tryParse(next['created_at']?.toString() ?? '');
+            if (outboundTs == null) break;
+            final delta = outboundTs.difference(inboundTs);
+            if (delta.isNegative || delta.inHours >= 24) break;
+            responseDurations.add(delta);
+
+            // Weekly bucket
+            final weeksAgo = now.difference(outboundTs).inDays ~/ 7;
+            if (weeksAgo < 8) weekBuckets[7 - weeksAgo].add(delta.inMinutes.toDouble());
+
+            // Agent breakdown
+            final agent = next['sent_by']?.toString();
+            if (agent != null && agent.isNotEmpty && agent != 'ai') {
+              agentRaw.putIfAbsent(agent, () => []).add(delta.inMinutes.toDouble());
+            }
+            break;
+          }
+        }
+      }
+
+      if (responseDurations.isEmpty) {
+        return ResponseTimeResult(
+          median: Duration.zero,
+          average: Duration.zero,
+          slowConversations: 0,
+          totalPaired: 0,
+          weeklyAvgMinutes: List.filled(8, 0),
+          agentStats: {},
+        );
+      }
+
+      responseDurations.sort((a, b) => a.compareTo(b));
+      final median = responseDurations[responseDurations.length ~/ 2];
+      final avgMins = responseDurations.fold(0.0, (a, b) => a + b.inSeconds) /
+          responseDurations.length /
+          60;
+      final slow = responseDurations.where((d) => d.inHours >= 4).length;
+
+      final weeklyAvg = weekBuckets.map((b) {
+        if (b.isEmpty) return 0.0;
+        return b.reduce((a, c) => a + c) / b.length;
+      }).toList();
+
+      final agentStats = <String, (double, int)>{};
+      for (final e in agentRaw.entries) {
+        final avg = e.value.reduce((a, b) => a + b) / e.value.length;
+        agentStats[e.key] = (avg, e.value.length);
+      }
+
+      return ResponseTimeResult(
+        median: median,
+        average: Duration(seconds: (avgMins * 60).round()),
+        slowConversations: slow,
+        totalPaired: responseDurations.length,
+        weeklyAvgMinutes: weeklyAvg,
+        agentStats: agentStats,
+      );
+    } catch (e) {
+      debugPrint('fetchResponseTime error: $e');
+      return ResponseTimeResult(
+        median: Duration.zero,
+        average: Duration.zero,
+        slowConversations: 0,
+        totalPaired: 0,
+        weeklyAvgMinutes: List.filled(8, 0),
+        agentStats: {},
+      );
+    }
+  }
+
+  /// Card 4: Customer Return Rate
+  Future<CustomerReturnRateResult> fetchCustomerReturnRate(Client client) async {
+    final predTable = client.customerPredictionsTable;
+    final msgTable = _getMessagesTable(client);
+    if (predTable == null) {
+      return const CustomerReturnRateResult(
+        atRiskTotal: 0, returned: 0, pending: 0, saveRate: 0, avgDaysSaved: 0,
+      );
+    }
+    try {
+      final predictions = await _fetchAllRows(
+        predTable,
+        'phone,predicted_next_visit,days_until_predicted,category',
+      );
+      final atRisk = predictions.where((r) {
+        final cat = r['category']?.toString() ?? '';
+        return cat == 'At Risk' || cat == 'Lapsed';
+      }).toList();
+
+      if (atRisk.isEmpty) {
+        return const CustomerReturnRateResult(
+          atRiskTotal: 0, returned: 0, pending: 0, saveRate: 0, avgDaysSaved: 0,
+        );
+      }
+
+      // Get all inbound messages (phones that sent something)
+      final msgs = await _fetchAllRows(
+        msgTable,
+        'customer_phone,created_at',
+      );
+      final phoneLastMsg = <String, DateTime>{};
+      for (final m in msgs) {
+        final phone = m['customer_phone']?.toString() ?? '';
+        final ts = DateTime.tryParse(m['created_at']?.toString() ?? '');
+        if (phone.isEmpty || ts == null) continue;
+        if (!phoneLastMsg.containsKey(phone) || ts.isAfter(phoneLastMsg[phone]!)) {
+          phoneLastMsg[phone] = ts;
+        }
+      }
+
+      final now = DateTime.now();
+      int returned = 0, pending = 0;
+      double totalDaysSaved = 0;
+      int savedCount = 0;
+
+      for (final r in atRisk) {
+        final phone = r['phone']?.toString() ?? '';
+        final predictedStr = r['predicted_next_visit']?.toString();
+        final predicted = predictedStr != null ? DateTime.tryParse(predictedStr) : null;
+
+        if (predicted == null) continue;
+
+        // Not yet overdue
+        if (predicted.isAfter(now)) {
+          pending++;
+          continue;
+        }
+
+        // Check if they messaged after the predicted date
+        final lastMsg = phoneLastMsg[phone];
+        if (lastMsg != null && lastMsg.isAfter(predicted)) {
+          returned++;
+          totalDaysSaved += lastMsg.difference(predicted).inDays.toDouble();
+          savedCount++;
+        }
+      }
+
+      final saveRate = atRisk.isNotEmpty
+          ? (returned / atRisk.length * 100).clamp(0, 100).toDouble()
+          : 0.0;
+
+      return CustomerReturnRateResult(
+        atRiskTotal: atRisk.length,
+        returned: returned,
+        pending: pending,
+        saveRate: saveRate,
+        avgDaysSaved: savedCount > 0 ? totalDaysSaved / savedCount : 0,
+      );
+    } catch (e) {
+      debugPrint('fetchCustomerReturnRate error: $e');
+      return const CustomerReturnRateResult(
+        atRiskTotal: 0, returned: 0, pending: 0, saveRate: 0, avgDaysSaved: 0,
+      );
+    }
+  }
+
+  /// Card 5: Conversation Engagement
+  Future<ConversationEngagementResult> fetchConversationEngagement(
+      Client client) async {
+    final msgTable = _getMessagesTable(client);
+    final since = DateTime.now().subtract(const Duration(days: 90));
+    try {
+      final rows = await _fetchAllRows(
+        msgTable,
+        'customer_phone,customer_message,ai_response,manager_response,created_at',
+        start: since,
+        end: DateTime.now(),
+        orderBy: 'created_at',
+      );
+
+      // Group by phone, then split into sessions (2h gap)
+      final byPhone = <String, List<DateTime>>{};
+      for (final r in rows) {
+        final phone = r['customer_phone']?.toString() ?? '';
+        final ts = DateTime.tryParse(r['created_at']?.toString() ?? '');
+        if (phone.isEmpty || ts == null) continue;
+        byPhone.putIfAbsent(phone, () => []).add(ts);
+      }
+
+      // Broadcast sent_at times for initiated detection (48h window)
+      final bcastSentTimes = <DateTime>[];
+      if (client.broadcastsTable != null) {
+        try {
+          final bcasts = await _fetchAllRows(
+            _getBroadcastsTable(client),
+            'sent_at',
+            start: since,
+            end: DateTime.now(),
+          );
+          for (final b in bcasts) {
+            final ts = DateTime.tryParse(b['sent_at']?.toString() ?? '');
+            if (ts != null) bcastSentTimes.add(ts);
+          }
+        } catch (_) {}
+      }
+
+      bool isAfterBroadcast(DateTime sessionStart) {
+        for (final bs in bcastSentTimes) {
+          final diff = sessionStart.difference(bs);
+          if (diff.inHours >= 0 && diff.inHours <= 48) return true;
+        }
+        return false;
+      }
+
+      int totalSessions = 0;
+      int deepSessions = 0;
+      int broadcastInitiated = 0;
+      double totalMsgsInSessions = 0;
+      final depthBuckets = [0, 0, 0, 0, 0]; // 1, 2, 3-5, 6-10, 10+
+
+      for (final timestamps in byPhone.values) {
+        timestamps.sort();
+        // Split into sessions
+        DateTime? sessionStart;
+        int sessionMsgCount = 0;
+
+        for (int i = 0; i < timestamps.length; i++) {
+          final ts = timestamps[i];
+          if (sessionStart == null) {
+            sessionStart = ts;
+            sessionMsgCount = 1;
+          } else {
+            final gap = ts.difference(timestamps[i - 1]);
+            if (gap.inHours >= 2) {
+              // Close session
+              totalSessions++;
+              totalMsgsInSessions += sessionMsgCount;
+              if (sessionMsgCount >= 3) deepSessions++;
+              if (isAfterBroadcast(sessionStart)) broadcastInitiated++;
+              // depth bucket
+              if (sessionMsgCount == 1) { depthBuckets[0]++; }
+              else if (sessionMsgCount == 2) { depthBuckets[1]++; }
+              else if (sessionMsgCount <= 5) { depthBuckets[2]++; }
+              else if (sessionMsgCount <= 10) { depthBuckets[3]++; }
+              else { depthBuckets[4]++; }
+              // Start new
+              sessionStart = ts;
+              sessionMsgCount = 1;
+            } else {
+              sessionMsgCount++;
+            }
+          }
+        }
+        // Close last session
+        if (sessionStart != null) {
+          totalSessions++;
+          totalMsgsInSessions += sessionMsgCount;
+          if (sessionMsgCount >= 3) deepSessions++;
+          if (isAfterBroadcast(sessionStart)) broadcastInitiated++;
+          if (sessionMsgCount == 1) depthBuckets[0]++;
+          else if (sessionMsgCount == 2) depthBuckets[1]++;
+          else if (sessionMsgCount <= 5) depthBuckets[2]++;
+          else if (sessionMsgCount <= 10) depthBuckets[3]++;
+          else depthBuckets[4]++;
+        }
+      }
+
+      return ConversationEngagementResult(
+        avgMessagesPerSession: totalSessions > 0
+            ? totalMsgsInSessions / totalSessions
+            : 0,
+        deepConversationPct: totalSessions > 0
+            ? (deepSessions / totalSessions * 100).clamp(0, 100).toDouble()
+            : 0,
+        broadcastInitiatedPct: totalSessions > 0
+            ? (broadcastInitiated / totalSessions * 100).clamp(0, 100).toDouble()
+            : 0,
+        totalSessions: totalSessions,
+        depthBuckets: depthBuckets,
+      );
+    } catch (e) {
+      debugPrint('fetchConversationEngagement error: $e');
+      return const ConversationEngagementResult(
+        avgMessagesPerSession: 0,
+        deepConversationPct: 0,
+        broadcastInitiatedPct: 0,
+        totalSessions: 0,
+        depthBuckets: [0, 0, 0, 0, 0],
+      );
     }
   }
 

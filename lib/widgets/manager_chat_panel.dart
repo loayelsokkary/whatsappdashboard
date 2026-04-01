@@ -9,6 +9,7 @@ import '../theme/vivid_theme.dart';
 import '../utils/date_formatter.dart';
 import '../services/impersonate_service.dart';
 import '../services/supabase_service.dart';
+import 'broadcasts_panel.dart' show ComposeBroadcastDialog;
 
 /// Manager Chatbot Panel with ChatGPT-style session history sidebar
 class ManagerChatPanel extends StatefulWidget {
@@ -421,7 +422,44 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
+              Tooltip(
+                message: 'Schedule a broadcast',
+                child: GestureDetector(
+                  onTap: isSending
+                      ? null
+                      : () => showDialog(
+                            context: context,
+                            builder: (_) => const ComposeBroadcastDialog(
+                              initiallyScheduled: true,
+                            ),
+                          ),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      color: isSending
+                          ? vc.surfaceAlt
+                          : Colors.amber.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(23),
+                      border: Border.all(
+                        color: isSending
+                            ? vc.border
+                            : Colors.amber.withValues(alpha: 0.4),
+                      ),
+                    ),
+                    child: Center(
+                      child: Icon(
+                        Icons.schedule,
+                        color: isSending ? vc.textMuted : Colors.amber.shade600,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
               GestureDetector(
                 onTap: isSending ? null : _sendMessage,
                 child: AnimatedContainer(
@@ -893,48 +931,90 @@ class _MessageBubble extends StatelessWidget {
                           fontSize: 10,
                         ),
                       ),
-                      // Broadcast action button — only appears on AI messages with [BROADCAST: ...] marker
+                      // Broadcast action buttons — only appears on AI messages with [BROADCAST: ...] marker
                       if (!isUser && item.broadcastInstruction != null) ...[
                         const SizedBox(height: 10),
-                        GestureDetector(
-                          onTap: () async {
-                            final instruction = item.broadcastInstruction!;
-                            final provider = context.read<BroadcastsProvider>();
-                            final messenger = ScaffoldMessenger.of(context);
-                            final success = await provider.sendBroadcast(instruction);
-                            messenger.showSnackBar(SnackBar(
-                              content: Text(success
-                                  ? 'Broadcast sent successfully'
-                                  : 'Broadcast failed — check webhook configuration or monthly limit'),
-                              backgroundColor: success
-                                  ? const Color(0xFF38A169)
-                                  : const Color(0xFFE53E3E),
-                              duration: Duration(seconds: success ? 3 : 4),
-                            ));
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                            decoration: BoxDecoration(
-                              color: VividColors.cyan.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: VividColors.cyan.withValues(alpha: 0.4)),
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.send_rounded, size: 13, color: VividColors.cyan),
-                                SizedBox(width: 6),
-                                Text(
-                                  'Confirm & Send Broadcast',
-                                  style: TextStyle(
-                                    color: VividColors.cyan,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          children: [
+                            // Send Now
+                            GestureDetector(
+                              onTap: () async {
+                                final instruction = item.broadcastInstruction!;
+                                final provider = context.read<BroadcastsProvider>();
+                                final messenger = ScaffoldMessenger.of(context);
+                                final success = await provider.sendBroadcast(instruction);
+                                messenger.showSnackBar(SnackBar(
+                                  content: Text(success
+                                      ? 'Broadcast sent successfully'
+                                      : 'Broadcast failed — check webhook configuration or monthly limit'),
+                                  backgroundColor: success
+                                      ? const Color(0xFF38A169)
+                                      : const Color(0xFFE53E3E),
+                                  duration: Duration(seconds: success ? 3 : 4),
+                                ));
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                                decoration: BoxDecoration(
+                                  color: VividColors.cyan.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: VividColors.cyan.withValues(alpha: 0.4)),
                                 ),
-                              ],
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.send_rounded, size: 13, color: VividColors.cyan),
+                                    SizedBox(width: 6),
+                                    Text(
+                                      'Confirm & Send',
+                                      style: TextStyle(
+                                        color: VividColors.cyan,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
-                          ),
+                            // Schedule for Later
+                            GestureDetector(
+                              onTap: () {
+                                showDialog(
+                                  context: context,
+                                  builder: (_) => ComposeBroadcastDialog(
+                                    initialInstruction: item.broadcastInstruction,
+                                    initiallyScheduled: true,
+                                  ),
+                                );
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.schedule, size: 13, color: Colors.amber.shade600),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Schedule for Later',
+                                      style: TextStyle(
+                                        color: Colors.amber.shade600,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ],

@@ -140,6 +140,8 @@ class OutreachMessage {
   final String? aiResponse;
   final String? managerResponse;
   final String? sentBy;
+  final String? direction;
+  final String? content;
   final String? label;
   final String? mediaUrl;
   final String? mediaType;
@@ -156,6 +158,8 @@ class OutreachMessage {
     this.aiResponse,
     this.managerResponse,
     this.sentBy,
+    this.direction,
+    this.content,
     this.label,
     this.mediaUrl,
     this.mediaType,
@@ -174,6 +178,8 @@ class OutreachMessage {
       aiResponse: json['ai_response'] as String?,
       managerResponse: json['manager_response'] as String?,
       sentBy: json['sent_by'] as String?,
+      direction: json['direction'] as String?,
+      content: json['content'] as String?,
       label: json['label'] as String?,
       mediaUrl: json['media_url'] as String?,
       mediaType: json['media_type'] as String?,
@@ -184,17 +190,22 @@ class OutreachMessage {
     );
   }
 
-  /// The text to display in the bubble — outbound shows manager/ai response,
-  /// inbound shows customer message.
+  /// The text to display in the bubble — checks all possible text fields:
+  /// manager_response, ai_response, content (used by broadcasts/templates),
+  /// then customer_message as fallback.
   String get displayText {
     if (managerResponse != null && managerResponse!.isNotEmpty) {
       return managerResponse!;
     }
     if (aiResponse != null && aiResponse!.isNotEmpty) return aiResponse!;
+    if (content != null && content!.isNotEmpty) return content!;
     return customerMessage;
   }
 
-  bool get isOutbound => sentBy == 'manager' || sentBy == 'ai';
+  bool get isOutbound =>
+      sentBy == 'manager' ||
+      sentBy == 'ai' ||
+      direction == 'outbound';
 }
 
 // ============================================
