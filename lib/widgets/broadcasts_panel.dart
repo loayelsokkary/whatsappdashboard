@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/broadcasts_provider.dart';
 import '../models/models.dart';
+import '../providers/broadcasts_provider.dart';
+import '../providers/templates_provider.dart';
 import '../theme/vivid_theme.dart';
 import '../utils/initials_helper.dart';
 import '../utils/toast_service.dart';
@@ -194,6 +195,29 @@ class _BroadcastsList extends StatelessWidget {
                             broadcast: broadcast,
                             isSelected: isSelected,
                             onTap: () => provider.selectBroadcast(broadcast),
+                            onEdit: broadcast.status == 'scheduled'
+                                ? () => _showComposeBroadcastDialog(context, editBroadcast: broadcast)
+                                : null,
+                            onCancel: broadcast.status == 'scheduled'
+                                ? () async {
+                                    try {
+                                      await provider.cancelScheduledBroadcast(broadcast.id);
+                                      if (context.mounted) {
+                                        VividToast.show(context,
+                                          message: 'Broadcast cancelled',
+                                          type: ToastType.success,
+                                        );
+                                      }
+                                    } catch (_) {
+                                      if (context.mounted) {
+                                        VividToast.show(context,
+                                          message: 'Failed to cancel broadcast',
+                                          type: ToastType.error,
+                                        );
+                                      }
+                                    }
+                                  }
+                                : null,
                           );
                         },
                       ),
@@ -203,10 +227,10 @@ class _BroadcastsList extends StatelessWidget {
     );
   }
 
-  void _showComposeBroadcastDialog(BuildContext context) {
+  void _showComposeBroadcastDialog(BuildContext context, {Broadcast? editBroadcast}) {
     showDialog(
       context: context,
-      builder: (context) => const _ComposeBroadcastDialog(),
+      builder: (context) => ComposeBroadcastDialog(editBroadcast: editBroadcast),
     );
   }
 
@@ -335,16 +359,23 @@ class _BroadcastCard extends StatelessWidget {
   final Broadcast broadcast;
   final bool isSelected;
   final VoidCallback onTap;
+  final VoidCallback? onCancel;
+  final VoidCallback? onEdit;
 
   const _BroadcastCard({
     required this.broadcast,
     required this.isSelected,
     required this.onTap,
+    this.onCancel,
+    this.onEdit,
   });
 
   @override
   Widget build(BuildContext context) {
     final vc = context.vividColors;
+    final status = broadcast.status ?? 'sent';
+    final isScheduled = status == 'scheduled';
+
     return InkWell(
       onTap: onTap,
       child: Container(
@@ -358,65 +389,107 @@ class _BroadcastCard extends StatelessWidget {
               color: isSelected ? VividColors.cyan : Colors.transparent,
               width: 3,
             ),
-            bottom: BorderSide(
-              color: vc.borderSubtle,
-            ),
+            bottom: BorderSide(color: vc.borderSubtle),
           ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              broadcast.campaignName ?? 'Unnamed Campaign',
-              style: TextStyle(
-                color: vc.textPrimary,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                fontSize: 15,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    broadcast.campaignName ?? 'Unnamed Campaign',
+                    style: TextStyle(
+                      color: vc.textPrimary,
+                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                      fontSize: 15,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _StatusBadge(status: status),
+              ],
             ),
             const SizedBox(height: 8),
             if (broadcast.messageContent != null)
               Text(
                 broadcast.messageContent!,
-                style: TextStyle(
-                  color: vc.textMuted,
-                  fontSize: 13,
-                ),
+                style: TextStyle(color: vc.textMuted, fontSize: 13),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
             const SizedBox(height: 12),
             Row(
               children: [
-                Icon(
-                  Icons.people,
-                  size: 14,
-                  color: vc.textMuted,
-                ),
+                Icon(Icons.people, size: 14, color: vc.textMuted),
                 const SizedBox(width: 4),
                 Text(
                   '${broadcast.totalRecipients} recipients',
-                  style: TextStyle(
-                    color: vc.textMuted,
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: vc.textMuted, fontSize: 12),
                 ),
                 const Spacer(),
-                Text(
-                  _formatDate(broadcast.sentAt),
-                  style: TextStyle(
-                    color: vc.textMuted,
-                    fontSize: 12,
+                if (isScheduled && broadcast.scheduledAt != null) ...[
+                  Icon(Icons.schedule, size: 13, color: Colors.amber.shade600),
+                  const SizedBox(width: 4),
+                  Text(
+                    _formatScheduledDate(broadcast.scheduledAt!),
+                    style: TextStyle(
+                      color: Colors.amber.shade600,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
-                ),
+                ] else
+                  Text(
+                    _formatDate(broadcast.sentAt),
+                    style: TextStyle(color: vc.textMuted, fontSize: 12),
+                  ),
               ],
             ),
+            if (isScheduled) ...[
+              const SizedBox(height: 10),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  _CardActionButton(
+                    label: 'Edit',
+                    icon: Icons.edit_outlined,
+                    color: VividColors.cyan,
+                    onTap: onEdit,
+                  ),
+                  const SizedBox(width: 8),
+                  _CardActionButton(
+                    label: 'Cancel',
+                    icon: Icons.cancel_outlined,
+                    color: Colors.red.shade400,
+                    onTap: onCancel,
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
     );
+  }
+
+  String _formatScheduledDate(DateTime dt) {
+    final bh = dt.toUtc().add(const Duration(hours: 3));
+    final nowBh = DateTime.now().toUtc().add(const Duration(hours: 3));
+    final today = DateTime(nowBh.year, nowBh.month, nowBh.day);
+    final targetDay = DateTime(bh.year, bh.month, bh.day);
+
+    final hour = bh.hour > 12 ? bh.hour - 12 : (bh.hour == 0 ? 12 : bh.hour);
+    final minute = bh.minute.toString().padLeft(2, '0');
+    final ampm = bh.hour >= 12 ? 'PM' : 'AM';
+    final time = '$hour:$minute $ampm';
+
+    if (targetDay == today) return 'Today $time';
+    if (targetDay == today.add(const Duration(days: 1))) return 'Tomorrow $time';
+    return '${_monthName(bh.month)} ${bh.day}, $time';
   }
 
   String _formatDate(DateTime dt) {
@@ -430,15 +503,10 @@ class _BroadcastCard extends StatelessWidget {
     final ampm = bh.hour >= 12 ? 'PM' : 'AM';
     final time = '$hour:$minute $ampm';
 
-    if (messageDay == today) {
-      return time;
-    } else if (messageDay == today.subtract(const Duration(days: 1))) {
-      return 'Yesterday';
-    } else if (today.difference(messageDay).inDays < 7) {
-      return _dayName(bh.weekday);
-    } else {
-      return '${_monthName(bh.month)} ${bh.day}';
-    }
+    if (messageDay == today) return time;
+    if (messageDay == today.subtract(const Duration(days: 1))) return 'Yesterday';
+    if (today.difference(messageDay).inDays < 7) return _dayName(bh.weekday);
+    return '${_monthName(bh.month)} ${bh.day}';
   }
 
   static String _dayName(int weekday) {
@@ -449,6 +517,99 @@ class _BroadcastCard extends StatelessWidget {
   static String _monthName(int month) {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return months[month - 1];
+  }
+}
+
+class _StatusBadge extends StatelessWidget {
+  final String status;
+
+  const _StatusBadge({required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    final (label, color, icon) = switch (status) {
+      'scheduled'  => ('Scheduled', Colors.amber.shade600, Icons.schedule),
+      'sending'    => ('Sending', VividColors.brightBlue, Icons.send),
+      'sent'       => ('Sent', Colors.green, Icons.check_circle_outline),
+      'failed'     => ('Failed', Colors.red, Icons.error_outline),
+      'cancelled'  => ('Cancelled', Colors.grey, Icons.cancel_outlined),
+      'draft'      => ('Draft', Colors.grey, Icons.edit_outlined),
+      _            => ('Sent', Colors.green, Icons.check_circle_outline),
+    };
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (status == 'sending')
+            SizedBox(
+              width: 10,
+              height: 10,
+              child: CircularProgressIndicator(strokeWidth: 1.5, color: color),
+            )
+          else
+            Icon(icon, size: 11, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CardActionButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+  final VoidCallback? onTap;
+
+  const _CardActionButton({
+    required this.label,
+    required this.icon,
+    required this.color,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 12, color: color),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -1021,7 +1182,7 @@ class _RecipientTile extends StatelessWidget {
         children: [
           CircleAvatar(
             radius: 18,
-            backgroundColor: VividColors.brightBlue.withOpacity(0.2),
+            backgroundColor: VividColors.brightBlue.withValues(alpha: 0.2),
             child: Builder(builder: (context) {
               final initials = _getInitials(recipient.displayName);
               return Text(
@@ -1062,7 +1223,7 @@ class _RecipientTile extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: statusColor.withOpacity(0.15),
+              color: statusColor.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
@@ -1093,21 +1254,70 @@ class _RecipientTile extends StatelessWidget {
   String _getInitials(String name) => getInitials(name);
 }
 
-class _ComposeBroadcastDialog extends StatefulWidget {
-  const _ComposeBroadcastDialog();
+/// Public dialog for composing or scheduling a broadcast.
+/// Used both from [BroadcastsPanel] and from the Vivid AI chat.
+class ComposeBroadcastDialog extends StatefulWidget {
+  final Broadcast? editBroadcast;
+  final String? initialInstruction;
+  final bool initiallyScheduled;
+
+  const ComposeBroadcastDialog({
+    super.key,
+    this.editBroadcast,
+    this.initialInstruction,
+    this.initiallyScheduled = false,
+  });
 
   @override
-  State<_ComposeBroadcastDialog> createState() => _ComposeBroadcastDialogState();
+  State<ComposeBroadcastDialog> createState() => _ComposeBroadcastDialogState();
 }
 
-class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
-  final TextEditingController _controller = TextEditingController();
+class _ComposeBroadcastDialogState extends State<ComposeBroadcastDialog> {
+  late final TextEditingController _controller;
   final FocusNode _focusNode = FocusNode();
+  bool _isScheduled = false;
+  late DateTime _scheduledDate;
+  late TimeOfDay _scheduledTime;
+  WhatsAppTemplate? _selectedTemplate;
+
+  bool get _isEditing => widget.editBroadcast != null;
 
   @override
   void initState() {
     super.initState();
+
+    final edit = widget.editBroadcast;
+    final existingInstruction = edit?.webhookPayload?['instruction'] as String?
+        ?? widget.initialInstruction
+        ?? '';
+    _controller = TextEditingController(text: existingInstruction);
+
+    // Default scheduled time: tomorrow at 9:00 AM BHT
+    final nowBht = DateTime.now().toUtc().add(const Duration(hours: 3));
+    final tomorrow = DateTime(nowBht.year, nowBht.month, nowBht.day + 1);
+
+    if (edit?.scheduledAt != null) {
+      final bht = edit!.scheduledAt!.toUtc().add(const Duration(hours: 3));
+      _isScheduled = true;
+      _scheduledDate = DateTime(bht.year, bht.month, bht.day);
+      _scheduledTime = TimeOfDay(hour: bht.hour, minute: bht.minute);
+    } else {
+      _isScheduled = widget.initiallyScheduled;
+      _scheduledDate = tomorrow;
+      _scheduledTime = const TimeOfDay(hour: 9, minute: 0);
+    }
+
     Future.microtask(() => _focusNode.requestFocus());
+
+    // Ensure templates are loaded so the picker is populated even if the
+    // user has never visited the Templates screen in this session.
+    Future.microtask(() {
+      if (!mounted) return;
+      final tProvider = context.read<TemplatesProvider>();
+      if (tProvider.templates.isEmpty && !tProvider.isLoading) {
+        tProvider.fetchTemplates();
+      }
+    });
   }
 
   @override
@@ -1117,23 +1327,93 @@ class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
     super.dispose();
   }
 
-  void _send() async {
-    final text = _controller.text.trim();
-    if (text.isEmpty) return;
+  Future<void> _pickDate() async {
+    final nowBht = DateTime.now().toUtc().add(const Duration(hours: 3));
+    final today = DateTime(nowBht.year, nowBht.month, nowBht.day);
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _scheduledDate.isBefore(today) ? today : _scheduledDate,
+      firstDate: today,
+      lastDate: DateTime(today.year + 2),
+    );
+    if (picked != null) setState(() => _scheduledDate = picked);
+  }
+
+  Future<void> _pickTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _scheduledTime,
+    );
+    if (picked != null) setState(() => _scheduledTime = picked);
+  }
+
+  Future<void> _confirm() async {
+    final typed = _controller.text.trim();
+    // If no instruction typed but a template is selected, use the template
+    // label as the instruction so n8n knows what to do.
+    // If neither is provided, show an error instead of silently doing nothing.
+    final text = typed.isNotEmpty
+        ? typed
+        : (_selectedTemplate != null ? _selectedTemplate!.label : '');
+    if (text.isEmpty) {
+      VividToast.show(context,
+        message: 'Please type an instruction or select a template',
+        type: ToastType.error,
+      );
+      return;
+    }
 
     final provider = context.read<BroadcastsProvider>();
-    final success = await provider.sendBroadcast(text);
+    bool success;
 
-    if (!mounted) return;
-
-    if (success) {
-      Navigator.of(context).pop();
-      VividToast.show(context,
-        message: 'Broadcast sent! Processing recipients...',
-        type: ToastType.success,
+    if (_isScheduled) {
+      // Combine date + time (treated as BHT — provider converts to UTC)
+      final scheduledBht = DateTime(
+        _scheduledDate.year,
+        _scheduledDate.month,
+        _scheduledDate.day,
+        _scheduledTime.hour,
+        _scheduledTime.minute,
       );
+      success = await provider.scheduleBroadcast(
+        text,
+        scheduledBht,
+        editBroadcastId: widget.editBroadcast?.id,
+        templateName: _selectedTemplate?.name,
+      );
+      if (!mounted) return;
+      if (success) {
+        Navigator.of(context).pop();
+        final formattedTime = _scheduledTime.format(context);
+        final formattedDate = _formatPickedDate(scheduledBht);
+        VividToast.show(context,
+          message: 'Broadcast scheduled for $formattedDate at $formattedTime',
+          type: ToastType.success,
+        );
+      }
+    } else {
+      success = await provider.sendBroadcast(text, templateName: _selectedTemplate?.name);
+      if (!mounted) return;
+      if (success) {
+        Navigator.of(context).pop();
+        VividToast.show(context,
+          message: 'Broadcast sent! Processing recipients...',
+          type: ToastType.success,
+        );
+      }
     }
-    // On failure, dialog stays open and provider.sendError is shown inline
+  }
+
+  String _formatPickedDate(DateTime dt) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    final nowBht = DateTime.now().toUtc().add(const Duration(hours: 3));
+    final today = DateTime(nowBht.year, nowBht.month, nowBht.day);
+    final tomorrow = today.add(const Duration(days: 1));
+    final target = DateTime(dt.year, dt.month, dt.day);
+    if (target == today) return 'Today';
+    if (target == tomorrow) return 'Tomorrow';
+    return '${months[dt.month - 1]} ${dt.day}';
   }
 
   @override
@@ -1154,7 +1434,7 @@ class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
           border: Border.all(color: vc.popupBorder),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.3),
+              color: Colors.black.withValues(alpha: 0.3),
               blurRadius: 20,
               offset: const Offset(0, 10),
             ),
@@ -1164,6 +1444,7 @@ class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Header
             Row(
               children: [
                 Container(
@@ -1180,7 +1461,7 @@ class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'New Broadcast',
+                        _isEditing ? 'Edit Scheduled Broadcast' : 'New Broadcast',
                         style: TextStyle(
                           color: vc.textPrimary,
                           fontSize: 18,
@@ -1190,10 +1471,7 @@ class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
                       const SizedBox(height: 2),
                       Text(
                         'Describe who should receive the message',
-                        style: TextStyle(
-                          color: vc.textMuted,
-                          fontSize: 12,
-                        ),
+                        style: TextStyle(color: vc.textMuted, fontSize: 12),
                       ),
                     ],
                   ),
@@ -1205,16 +1483,18 @@ class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
               ],
             ),
             const SizedBox(height: 20),
+
+            // Hint
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: vc.surfaceAlt.withOpacity(0.5),
+                color: vc.surfaceAlt.withValues(alpha: 0.5),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: VividColors.cyan.withOpacity(0.2)),
+                border: Border.all(color: VividColors.cyan.withValues(alpha: 0.2)),
               ),
               child: Row(
                 children: [
-                  Icon(Icons.lightbulb_outline, color: VividColors.cyan, size: 18),
+                  const Icon(Icons.lightbulb_outline, color: VividColors.cyan, size: 18),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
@@ -1230,6 +1510,8 @@ class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
               ),
             ),
             const SizedBox(height: 16),
+
+            // Instruction input
             Container(
               decoration: BoxDecoration(
                 color: vc.background,
@@ -1246,18 +1528,232 @@ class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
                   hintText: 'Type your broadcast instruction...',
                   hintStyle: TextStyle(color: vc.textMuted),
                   border: InputBorder.none,
-                  contentPadding: EdgeInsets.all(16),
+                  contentPadding: const EdgeInsets.all(16),
                 ),
               ),
             ),
+            const SizedBox(height: 12),
+
+            // Template picker — tappable list matching outreach style
+            Consumer<TemplatesProvider>(
+              builder: (context, tProvider, _) {
+                final templates = tProvider.templates
+                    .where((t) => t.status.toUpperCase() == 'APPROVED')
+                    .toList();
+                if (templates.isEmpty) return const SizedBox.shrink();
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text('Template',
+                            style: TextStyle(
+                                color: vc.textMuted,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500)),
+                        const SizedBox(width: 6),
+                        Text('(optional)',
+                            style: TextStyle(
+                                color: vc.textMuted.withValues(alpha: 0.6),
+                                fontSize: 11)),
+                        if (_selectedTemplate != null) ...[
+                          const Spacer(),
+                          GestureDetector(
+                            onTap: () => setState(() => _selectedTemplate = null),
+                            child: const Text('Clear',
+                                style: TextStyle(
+                                    color: VividColors.cyan,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500)),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: vc.background,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: vc.border),
+                      ),
+                      constraints: const BoxConstraints(maxHeight: 200),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        padding: EdgeInsets.zero,
+                        itemCount: templates.length,
+                        separatorBuilder: (_, __) =>
+                            Divider(height: 1, color: vc.border),
+                        itemBuilder: (context, i) {
+                          final t = templates[i];
+                          final isSelected = _selectedTemplate?.id == t.id;
+                          final isFirst = i == 0;
+                          final isLast = i == templates.length - 1;
+                          final radius = BorderRadius.vertical(
+                            top: isFirst ? const Radius.circular(10) : Radius.zero,
+                            bottom: isLast ? const Radius.circular(10) : Radius.zero,
+                          );
+                          return InkWell(
+                            borderRadius: radius,
+                            onTap: () => setState(
+                                () => _selectedTemplate = isSelected ? null : t),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 13),
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? VividColors.cyan.withValues(alpha: 0.08)
+                                    : Colors.transparent,
+                                borderRadius: radius,
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      t.label,
+                                      style: TextStyle(
+                                        color: isSelected
+                                            ? VividColors.cyan
+                                            : vc.textPrimary,
+                                        fontSize: 13,
+                                        fontWeight: isSelected
+                                            ? FontWeight.w600
+                                            : FontWeight.w400,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: VividColors.cyan.withValues(
+                                          alpha: isSelected ? 0.25 : 0.12),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      t.language.toUpperCase(),
+                                      style: const TextStyle(
+                                          color: VividColors.cyan,
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.w600),
+                                    ),
+                                  ),
+                                  if (isSelected) ...[
+                                    const SizedBox(width: 8),
+                                    const Icon(Icons.check_circle,
+                                        size: 16, color: VividColors.cyan),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    if (_selectedTemplate != null &&
+                        _selectedTemplate!.body.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: vc.background,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                              color: VividColors.cyan.withValues(alpha: 0.2)),
+                        ),
+                        child: Text(
+                          _selectedTemplate!.body,
+                          style: TextStyle(
+                              color: vc.textSecondary,
+                              fontSize: 12,
+                              height: 1.5),
+                          maxLines: 5,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ],
+                );
+              },
+            ),
+            const SizedBox(height: 12),
+
+            // When to send toggle
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: vc.surfaceAlt,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: vc.border),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _ToggleOption(
+                      label: 'Send Now',
+                      icon: Icons.send,
+                      selected: !_isScheduled,
+                      onTap: () => setState(() => _isScheduled = false),
+                    ),
+                  ),
+                  Expanded(
+                    child: _ToggleOption(
+                      label: 'Schedule for Later',
+                      icon: Icons.schedule,
+                      selected: _isScheduled,
+                      onTap: () => setState(() => _isScheduled = true),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Schedule pickers
+            if (_isScheduled) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _DateTimePickerButton(
+                      label: _formatPickedDate(_scheduledDate),
+                      icon: Icons.calendar_today,
+                      onTap: _pickDate,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _DateTimePickerButton(
+                      label: _scheduledTime.format(context),
+                      icon: Icons.access_time,
+                      onTap: _pickTime,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(Icons.info_outline, size: 12, color: vc.textMuted),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Times are in Bahrain time (GMT+3)',
+                    style: TextStyle(color: vc.textMuted, fontSize: 11),
+                  ),
+                ],
+              ),
+            ],
+
+            // Error
             if (provider.sendError != null) ...[
               const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.1),
+                  color: Colors.red.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.red.withOpacity(0.3)),
+                  border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
                 ),
                 child: Row(
                   children: [
@@ -1274,19 +1770,18 @@ class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
               ),
             ],
             const SizedBox(height: 20),
+
+            // Action buttons
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 TextButton(
                   onPressed: provider.isSending ? null : () => Navigator.of(context).pop(),
-                  child: Text(
-                    'Cancel',
-                    style: TextStyle(color: vc.textMuted),
-                  ),
+                  child: Text('Cancel', style: TextStyle(color: vc.textMuted)),
                 ),
                 const SizedBox(width: 12),
                 GestureDetector(
-                  onTap: provider.isSending ? null : _send,
+                  onTap: provider.isSending ? null : _confirm,
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 150),
                     padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
@@ -1294,13 +1789,15 @@ class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
                       gradient: provider.isSending ? null : VividColors.primaryGradient,
                       color: provider.isSending ? vc.surfaceAlt : null,
                       borderRadius: BorderRadius.circular(12),
-                      boxShadow: provider.isSending ? null : [
-                        BoxShadow(
-                          color: VividColors.brightBlue.withOpacity(0.3),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
+                      boxShadow: provider.isSending
+                          ? null
+                          : [
+                              BoxShadow(
+                                color: VividColors.brightBlue.withValues(alpha: 0.3),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -1316,18 +1813,24 @@ class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            'Sending...',
+                            _isScheduled ? 'Scheduling...' : 'Sending...',
                             style: TextStyle(
                               color: vc.textMuted,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
                         ] else ...[
-                          const Icon(Icons.send, color: Colors.white, size: 18),
+                          Icon(
+                            _isScheduled ? Icons.schedule : Icons.send,
+                            color: Colors.white,
+                            size: 18,
+                          ),
                           const SizedBox(width: 8),
-                          const Text(
-                            'Send Broadcast',
-                            style: TextStyle(
+                          Text(
+                            _isScheduled
+                                ? (_isEditing ? 'Update Schedule' : 'Schedule Broadcast')
+                                : 'Send Broadcast',
+                            style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w600,
                             ),
@@ -1338,6 +1841,101 @@ class _ComposeBroadcastDialogState extends State<_ComposeBroadcastDialog> {
                   ),
                 ),
               ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ToggleOption extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ToggleOption({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final vc = context.vividColors;
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? VividColors.brightBlue.withValues(alpha: 0.15) : Colors.transparent,
+          borderRadius: BorderRadius.circular(9),
+          border: selected
+              ? Border.all(color: VividColors.cyan.withValues(alpha: 0.4))
+              : Border.all(color: Colors.transparent),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 14,
+              color: selected ? VividColors.cyan : vc.textMuted,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? VividColors.cyan : vc.textMuted,
+                fontSize: 12,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DateTimePickerButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _DateTimePickerButton({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final vc = context.vividColors;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: vc.surfaceAlt,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: vc.border),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 14, color: VividColors.cyan),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: vc.textPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ],
         ),

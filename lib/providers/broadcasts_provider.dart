@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -16,6 +17,8 @@ class Broadcast {
   final DateTime sentAt;
   final int totalRecipients;
   final String? status;
+  final DateTime? scheduledAt;
+  final Map<String, dynamic>? webhookPayload;
 
   const Broadcast({
     required this.id,
@@ -26,6 +29,8 @@ class Broadcast {
     required this.sentAt,
     required this.totalRecipients,
     this.status,
+    this.scheduledAt,
+    this.webhookPayload,
   });
 
   factory Broadcast.fromJson(Map<String, dynamic> json) {
@@ -40,6 +45,12 @@ class Broadcast {
           ? json['total_recipients'] as int
           : int.tryParse(json['total_recipients']?.toString() ?? '') ?? 0,
       status: json['status'] as String?,
+      scheduledAt: json['scheduled_at'] != null
+          ? DateTime.parse(json['scheduled_at'] as String)
+          : null,
+      webhookPayload: json['webhook_payload'] is Map
+          ? Map<String, dynamic>.from(json['webhook_payload'] as Map)
+          : null,
     );
   }
 
@@ -52,6 +63,8 @@ class Broadcast {
     DateTime? sentAt,
     int? totalRecipients,
     String? status,
+    DateTime? scheduledAt,
+    Map<String, dynamic>? webhookPayload,
   }) {
     return Broadcast(
       id: id ?? this.id,
@@ -62,6 +75,8 @@ class Broadcast {
       sentAt: sentAt ?? this.sentAt,
       totalRecipients: totalRecipients ?? this.totalRecipients,
       status: status ?? this.status,
+      scheduledAt: scheduledAt ?? this.scheduledAt,
+      webhookPayload: webhookPayload ?? this.webhookPayload,
     );
   }
 }
@@ -118,6 +133,7 @@ class BroadcastsProvider extends ChangeNotifier {
   
   RealtimeChannel? _broadcastsChannel;
   RealtimeChannel? _recipientsChannel;
+  Timer? _sendingPollTimer;
 
   List<Broadcast> get broadcasts => _broadcasts;
   List<BroadcastRecipient> get recipients => _recipients;
@@ -166,11 +182,61 @@ class BroadcastsProvider extends ChangeNotifier {
     _subscribeToBroadcasts();
   }
 
+  void _startSendingPoller() {
+    _sendingPollTimer?.cancel();
+    _sendingPollTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+      final sendingIds = _broadcasts
+          .where((b) => b.status == 'sending')
+          .map((b) => b.id)
+          .toList();
+      if (sendingIds.isEmpty) {
+        _stopSendingPoller();
+        return;
+      }
+      try {
+        final rows = await SupabaseService.adminClient
+            .from(_broadcastsTable)
+            .select('id, status, total_recipients, campaign_name')
+            .inFilter('id', sendingIds);
+        bool changed = false;
+        for (final row in (rows as List)) {
+          final id = row['id']?.toString();
+          final newStatus = row['status'] as String?;
+          final idx = _broadcasts.indexWhere((b) => b.id == id);
+          if (idx != -1 && _broadcasts[idx].status != newStatus) {
+            _broadcasts[idx] = _broadcasts[idx].copyWith(
+              status: newStatus,
+              totalRecipients: row['total_recipients'] is int
+                  ? row['total_recipients'] as int
+                  : int.tryParse(row['total_recipients']?.toString() ?? '') ?? _broadcasts[idx].totalRecipients,
+            );
+            if (_selectedBroadcast?.id == id) {
+              _selectedBroadcast = _broadcasts[idx];
+            }
+            changed = true;
+          }
+        }
+        if (changed) notifyListeners();
+        // Stop once no more sending broadcasts
+        if (_broadcasts.every((b) => b.status != 'sending')) {
+          _stopSendingPoller();
+        }
+      } catch (e) {
+        debugPrint('Sending poller error: $e');
+      }
+    });
+  }
+
+  void _stopSendingPoller() {
+    _sendingPollTimer?.cancel();
+    _sendingPollTimer = null;
+  }
+
   void _subscribeToBroadcasts() {
     _broadcastsChannel?.unsubscribe();
     
     _broadcastsChannel = SupabaseService.client
-        .channel('broadcasts_${_broadcastsTable}')
+        .channel('broadcasts_$_broadcastsTable')
         .onPostgresChanges(
           event: PostgresChangeEvent.insert,
           schema: 'public',
@@ -197,11 +263,10 @@ class BroadcastsProvider extends ChangeNotifier {
   void _handleNewBroadcast(Map<String, dynamic> data) {
     try {
       final broadcast = Broadcast.fromJson(data);
-      
-      // Remove duplicate if exists, then add
       _broadcasts.removeWhere((b) => b.id == broadcast.id);
       _broadcasts.insert(0, broadcast);
       notifyListeners();
+      if (broadcast.status == 'sending') _startSendingPoller();
     } catch (e) {
       debugPrint('Error handling new broadcast: $e');
     }
@@ -210,16 +275,14 @@ class BroadcastsProvider extends ChangeNotifier {
   void _handleBroadcastUpdate(Map<String, dynamic> data) {
     try {
       final broadcast = Broadcast.fromJson(data);
-      
       final index = _broadcasts.indexWhere((b) => b.id == broadcast.id);
       if (index != -1) {
         _broadcasts[index] = broadcast;
-        
         if (_selectedBroadcast?.id == broadcast.id) {
           _selectedBroadcast = broadcast;
         }
-        
         notifyListeners();
+        if (broadcast.status == 'sending') _startSendingPoller();
       }
     } catch (e) {
       debugPrint('Error handling broadcast update: $e');
@@ -298,6 +361,10 @@ class BroadcastsProvider extends ChangeNotifier {
       notifyListeners();
 
       _subscribeToBroadcasts();
+
+      if (_broadcasts.any((b) => b.status == 'sending')) {
+        _startSendingPoller();
+      }
     } catch (e) {
       debugPrint('Fetch broadcasts error: $e');
       _error = 'Failed to load broadcasts';
@@ -491,7 +558,7 @@ class BroadcastsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> sendBroadcast(String instruction) async {
+  Future<bool> sendBroadcast(String instruction, {String? templateName}) async {
     if (instruction.trim().isEmpty) {
       _sendError = 'Please enter a broadcast instruction';
       notifyListeners();
@@ -538,6 +605,8 @@ class BroadcastsProvider extends ChangeNotifier {
         'client_name': client?.name,
         'user_name': ClientConfig.currentUserName,
         'timestamp': DateTime.now().toIso8601String(),
+        if (templateName != null && templateName.isNotEmpty)
+          'template_name': templateName,
       };
 
       final response = await http.post(
@@ -591,6 +660,131 @@ class BroadcastsProvider extends ChangeNotifier {
     }
   }
 
+  Future<bool> scheduleBroadcast(
+    String instruction,
+    DateTime scheduledAtBht, {
+    String? editBroadcastId,
+    String? templateName,
+  }) async {
+    if (instruction.trim().isEmpty) {
+      _sendError = 'Please enter a broadcast instruction';
+      notifyListeners();
+      return false;
+    }
+
+    _isSending = true;
+    _sendError = null;
+    notifyListeners();
+
+    try {
+      final client = ClientConfig.currentClient;
+
+      final webhookUrl = ClientConfig.broadcastsWebhookUrl;
+      if (webhookUrl == null || webhookUrl.isEmpty) {
+        _sendError = 'Broadcasts webhook URL not configured. Ask your admin to set it in client settings.';
+        _isSending = false;
+        notifyListeners();
+        return false;
+      }
+
+      final broadcastPhone = ClientConfig.broadcastsPhone;
+      if (broadcastPhone == null || broadcastPhone.isEmpty) {
+        _sendError = 'Broadcasts phone number not configured. Ask your admin to set it in client settings.';
+        _isSending = false;
+        notifyListeners();
+        return false;
+      }
+
+      // scheduledAtBht is treated as Bahrain time (UTC+3) — convert to UTC for storage
+      final scheduledAtUtc = scheduledAtBht.subtract(const Duration(hours: 3));
+
+      final payload = {
+        'source': 'dashboard',
+        'type': 'broadcast',
+        'instruction': instruction.trim(),
+        'ai_phone': broadcastPhone,
+        'phone': broadcastPhone,
+        'client_id': client?.id,
+        'client_name': client?.name,
+        'user_name': ClientConfig.currentUserName,
+        'timestamp': scheduledAtUtc.toIso8601String(),
+        if (templateName != null && templateName.isNotEmpty)
+          'template_name': templateName,
+      };
+
+      final campaignName = instruction.trim().length > 60
+          ? '${instruction.trim().substring(0, 60)}...'
+          : instruction.trim();
+
+      if (editBroadcastId != null) {
+        await SupabaseService.adminClient
+            .from(_broadcastsTable)
+            .update({
+              'scheduled_at': scheduledAtUtc.toIso8601String(),
+              'webhook_payload': payload,
+              'campaign_name': campaignName,
+            })
+            .eq('id', editBroadcastId);
+      } else {
+        await SupabaseService.adminClient
+            .from(_broadcastsTable)
+            .insert({
+              'client_id': client?.id,
+              'campaign_name': campaignName,
+              'status': 'scheduled',
+              'scheduled_at': scheduledAtUtc.toIso8601String(),
+              'webhook_payload': payload,
+              'total_recipients': 0,
+              'sent_at': DateTime.now().toUtc().toIso8601String(),
+              'created_by': ClientConfig.currentUserName,
+            });
+      }
+
+      await SupabaseService.instance.log(
+        actionType: ActionType.broadcastSent,
+        description: 'Scheduled broadcast: $campaignName',
+        metadata: {
+          'instruction': instruction,
+          'scheduled_at': scheduledAtUtc.toIso8601String(),
+          'client_name': client?.name,
+        },
+      );
+
+      Future.delayed(const Duration(milliseconds: 500), fetchBroadcasts);
+
+      _isSending = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint('📢 [scheduleBroadcast] Error: $e');
+      _sendError = 'Failed to schedule: $e';
+      _isSending = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<void> cancelScheduledBroadcast(String broadcastId) async {
+    try {
+      await SupabaseService.adminClient
+          .from(_broadcastsTable)
+          .update({'status': 'cancelled'})
+          .eq('id', broadcastId);
+
+      final index = _broadcasts.indexWhere((b) => b.id == broadcastId);
+      if (index != -1) {
+        _broadcasts[index] = _broadcasts[index].copyWith(status: 'cancelled');
+        if (_selectedBroadcast?.id == broadcastId) {
+          _selectedBroadcast = _selectedBroadcast!.copyWith(status: 'cancelled');
+        }
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('Error cancelling scheduled broadcast: $e');
+      rethrow;
+    }
+  }
+
   void clearSendError() {
     _sendError = null;
     notifyListeners();
@@ -598,6 +792,7 @@ class BroadcastsProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _stopSendingPoller();
     _broadcastsChannel?.unsubscribe();
     _recipientsChannel?.unsubscribe();
     super.dispose();
