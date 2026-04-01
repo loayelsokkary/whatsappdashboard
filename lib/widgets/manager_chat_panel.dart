@@ -91,47 +91,50 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
   @override
   Widget build(BuildContext context) {
     final vc = context.vividColors;
-    return Container(
-      color: vc.background,
-      child: Row(
-        children: [
-          // ── Session history sidebar ──────────────────────────
-          _SessionSidebar(
-            onSessionSelected: (sessionId) =>
-                context.read<ManagerChatProvider>().switchToSession(sessionId),
-            onNewChat: () =>
-                context.read<ManagerChatProvider>().startNewSession(),
-          ),
-          // Divider
-          Container(
-            width: 1,
-            color: vc.border,
-          ),
-          // ── Chat area ────────────────────────────────────────
-          Expanded(
-            child: Column(
-              children: [
-                _buildHeader(),
-                Expanded(child: _buildMessages()),
-                _buildInput(),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 600;
+        return Container(
+          color: vc.background,
+          child: Row(
+            children: [
+              // ── Session history sidebar (desktop only) ───────
+              if (!isMobile) ...[
+                _SessionSidebar(
+                  onSessionSelected: (sessionId) =>
+                      context.read<ManagerChatProvider>().switchToSession(sessionId),
+                  onNewChat: () =>
+                      context.read<ManagerChatProvider>().startNewSession(),
+                ),
+                Container(width: 1, color: vc.border),
               ],
-            ),
-          ),
-          // ── Prediction panel (HOB only — hidden when table is null) ──
-          if (ClientConfig.customerPredictionsTable != null) ...[
-            Container(width: 1, color: vc.border),
-            SizedBox(
-              width: 280,
-              child: _PredictionInsightsPanel(
-                onPrefillChat: (text) {
-                  _messageController.text = text;
-                  _focusNode.requestFocus();
-                },
+              // ── Chat area ────────────────────────────────────
+              Expanded(
+                child: Column(
+                  children: [
+                    _buildHeader(),
+                    Expanded(child: _buildMessages()),
+                    _buildInput(),
+                  ],
+                ),
               ),
-            ),
-          ],
-        ],
-      ),
+              // ── Prediction panel (HOB only, desktop only) ────
+              if (!isMobile && ClientConfig.customerPredictionsTable != null) ...[
+                Container(width: 1, color: vc.border),
+                SizedBox(
+                  width: 280,
+                  child: _PredictionInsightsPanel(
+                    onPrefillChat: (text) {
+                      _messageController.text = text;
+                      _focusNode.requestFocus();
+                    },
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
     );
   }
 

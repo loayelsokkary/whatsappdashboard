@@ -413,6 +413,7 @@ class SupabaseService {
   Future<List<ActivityLog>> fetchActivityLogs({
     String? clientId,
     List<String>? actionTypes,
+    List<String>? excludeActionTypes,
     DateTime? startDate,
     DateTime? endDate,
     int offset = 0,
@@ -426,6 +427,9 @@ class SupabaseService {
       }
       if (actionTypes != null && actionTypes.isNotEmpty) {
         query = query.inFilter('action_type', actionTypes);
+      }
+      if (excludeActionTypes != null && excludeActionTypes.isNotEmpty) {
+        query = query.not('action_type', 'in', '(${excludeActionTypes.map((t) => '"$t"').join(',')})');
       }
       if (startDate != null) {
         query = query.gte('created_at', startDate.toIso8601String());

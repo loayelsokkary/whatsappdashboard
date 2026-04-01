@@ -29,13 +29,35 @@ class TemplatesProvider extends ChangeNotifier {
   static String get _baseUrl =>
       'https://graph.facebook.com/${SupabaseService.metaApiVersion}';
 
+  /// Returns the WABA ID for the current client directly from ClientConfig.
+  /// Never falls back to the global SupabaseService.metaWabaId — a wrong WABA
+  /// means templates from another account get written into this client's table.
+  String get _clientWabaId {
+    final clientWaba = ClientConfig.currentClient?.wabaId;
+    if (clientWaba == null || clientWaba.isEmpty) {
+      debugPrint('[templates] ERROR: No WABA ID for client "${ClientConfig.currentClient?.name}" — operation will be aborted');
+      return '';
+    }
+    return clientWaba;
+  }
+
+  /// Returns the access token for the current client.
+  /// Falls back to the global token only for the token (one Vivid app token
+  /// works across all WABAs) — but WABA ID must always be per-client.
+  String get _clientAccessToken {
+    final clientToken = ClientConfig.currentClient?.metaAccessToken;
+    return (clientToken != null && clientToken.isNotEmpty)
+        ? clientToken
+        : SupabaseService.metaAccessToken;
+  }
+
   /// Normalize a client slug into a safe prefix for Meta template names.
   /// Only lowercase letters and digits; everything else becomes underscore.
   static String normalizeSlug(String slug) =>
       slug.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_');
 
   Map<String, String> get _headers => {
-        'Authorization': 'Bearer ${SupabaseService.metaAccessToken}',
+        'Authorization': 'Bearer $_clientAccessToken',
         'Content-Type': 'application/json',
       };
 
@@ -111,14 +133,20 @@ class TemplatesProvider extends ChangeNotifier {
     }
   }
 
-  /// Fetches ALL templates from Meta API (shared WABA).
+  /// Fetches ALL templates from Meta API for the current client's WABA.
   /// Used only by sync operations — NOT for display.
   Future<void> fetchMetaTemplates() async {
+    final wabaId = _clientWabaId;
+    if (wabaId.isEmpty) {
+      _error = 'No WABA ID configured for this client — cannot fetch templates';
+      notifyListeners();
+      return;
+    }
     try {
       final all = <WhatsAppTemplate>[];
-      debugPrint('📋 Fetching templates for WABA: ${SupabaseService.metaWabaId}');
+      debugPrint('📋 Fetching templates for WABA: $wabaId');
       String? nextUrl =
-          '$_baseUrl/${SupabaseService.metaWabaId}/message_templates?limit=100&fields=id,name,status,language,category,components';
+          '$_baseUrl/$wabaId/message_templates?limit=100&fields=id,name,status,language,category,components';
 
       while (nextUrl != null) {
         final response = await http.get(
@@ -143,7 +171,7 @@ class TemplatesProvider extends ChangeNotifier {
         nextUrl = (next != null && next.isNotEmpty) ? next : null;
       }
 
-      debugPrint('📋 Templates received: ${all.length} from WABA ${SupabaseService.metaWabaId}');
+      debugPrint('📋 Templates received: ${all.length} from WABA $wabaId');
       _allMetaTemplates = all;
       if (all.isNotEmpty) _lastSuccessfulFetchTime = DateTime.now();
       print('TEMPLATES: fetched ${all.length} templates from Meta API');
@@ -179,12 +207,17 @@ class TemplatesProvider extends ChangeNotifier {
       };
       final body = jsonEncode(payload);
 
-      debugPrint('[createTemplate] POST $_baseUrl/${SupabaseService.metaWabaId}/message_templates');
+      final wabaId = _clientWabaId;
+      if (wabaId.isEmpty) {
+        _isSubmitting = false;
+        notifyListeners();
+        return (error: 'No WABA ID configured for this client', templateId: null);
+      }
+      debugPrint('[createTemplate] POST $_baseUrl/$wabaId/message_templates');
       debugPrint('[createTemplate] Payload: ${const JsonEncoder.withIndent('  ').convert(payload)}');
 
       final response = await http.post(
-        Uri.parse(
-            '$_baseUrl/${SupabaseService.metaWabaId}/message_templates'),
+        Uri.parse('$_baseUrl/$wabaId/message_templates'),
         headers: _headers,
         body: body,
       );
@@ -224,8 +257,14 @@ class TemplatesProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      final wabaId = _clientWabaId;
+      if (wabaId.isEmpty) {
+        _isSubmitting = false;
+        notifyListeners();
+        return 'No WABA ID configured for this client';
+      }
       final uri = Uri.parse(
-        '$_baseUrl/${SupabaseService.metaWabaId}/message_templates?name=$name',
+        '$_baseUrl/$wabaId/message_templates?name=$name',
       );
       debugPrint('[TemplatesProvider] DELETE $uri');
 
@@ -412,6 +451,26 @@ class TemplatesProvider extends ChangeNotifier {
         _isSyncing = false;
         notifyListeners();
         return 'Safety abort: client context changed during sync';
+      }
+
+      // ROOT CAUSE 5 — Validation gate: warn if Meta returned templates that look like
+      // they belong to a different client, which would indicate a WABA mismatch.
+      // This should not happen after Root Cause 1 fix (we now read WABA from ClientConfig
+      // directly), but log a loud warning if it ever does.
+      if (ClientConfig.currentClient?.isSharedWaba != true) {
+        final slug = ClientConfig.currentClient?.slug ?? '';
+        final expectedPrefix = slug.isNotEmpty ? '${normalizeSlug(slug)}_' : '';
+        int suspiciousCount = 0;
+        for (final t in _allMetaTemplates) {
+          final name = t.name.toLowerCase();
+          if (expectedPrefix.isNotEmpty && !name.startsWith(expectedPrefix) && name != 'hello_world') {
+            suspiciousCount++;
+            debugPrint('[sync] ⚠️ WABA MISMATCH WARNING: Template "${t.name}" does not start with expected prefix "$expectedPrefix" — possible wrong WABA!');
+          }
+        }
+        if (suspiciousCount > 0) {
+          debugPrint('[sync] ⚠️ $suspiciousCount suspicious template(s) detected for ${ClientConfig.currentClient?.name} — verify WABA ID is correct in client settings');
+        }
       }
 
       // Step 2: Apply prefix filter for shared-WABA clients to prevent cross-client contamination.

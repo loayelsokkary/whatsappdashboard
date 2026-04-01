@@ -100,65 +100,96 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
 
   Widget _buildHeader(BuildContext context) {
     final vc = context.vividColors;
-    return Container(
-      padding: const EdgeInsets.all(32),
-      child: Row(
-        children: [
-          Image.asset('assets/images/vivid_icon.png', width: 32, height: 32),
-          const SizedBox(width: 16),
-          Expanded(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 600;
+        final padding = isMobile ? 16.0 : 32.0;
+
+        final titleColumn = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Vivid Company Analytics',
+              style: TextStyle(
+                color: vc.textPrimary,
+                fontSize: isMobile ? 18 : 22,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: VividColors.cyan.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.auto_awesome, size: 14, color: VividColors.cyan),
+                      SizedBox(width: 6),
+                      Text(
+                        'Real-time',
+                        style: TextStyle(
+                          color: VividColors.cyan,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (!isMobile) ...[
+                  const SizedBox(width: 12),
+                  Text(
+                    'Aggregate metrics across all clients',
+                    style: TextStyle(
+                      color: vc.textMuted.withOpacity(0.7),
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        );
+
+        if (isMobile) {
+          return Container(
+            padding: EdgeInsets.all(padding),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Vivid Company Analytics',
-                  style: TextStyle(
-                    color: vc.textPrimary,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 4),
                 Row(
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: VividColors.cyan.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.auto_awesome, size: 14, color: VividColors.cyan),
-                          SizedBox(width: 6),
-                          Text(
-                            'Real-time',
-                            style: TextStyle(
-                              color: VividColors.cyan,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                    Image.asset('assets/images/vivid_icon.png', width: 28, height: 28),
                     const SizedBox(width: 12),
-                    Text(
-                      'Aggregate metrics across all clients',
-                      style: TextStyle(
-                        color: vc.textMuted.withOpacity(0.7),
-                        fontSize: 14,
-                      ),
-                    ),
+                    Expanded(child: titleColumn),
                   ],
                 ),
+                const SizedBox(height: 12),
+                _buildExportButton(context),
               ],
             ),
+          );
+        }
+
+        return Container(
+          padding: EdgeInsets.all(padding),
+          child: Row(
+            children: [
+              Image.asset('assets/images/vivid_icon.png', width: 32, height: 32),
+              const SizedBox(width: 16),
+              Expanded(child: titleColumn),
+              _buildExportButton(context),
+            ],
           ),
-          _buildExportButton(context),
-        ],
-      ),
+        );
+      },
     );
   }
 
