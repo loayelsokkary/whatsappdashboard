@@ -1378,9 +1378,9 @@ class _ComposeBroadcastDialogState extends State<ComposeBroadcastDialog> {
         _scheduledTime.minute,
       );
 
-      // Validate: scheduled time must be in the future (compare as BHT)
+      // Validate: scheduled time must be in the future (compare as BHT, 2-min buffer)
       final nowBht = DateTime.now().toUtc().add(const Duration(hours: 3));
-      if (scheduledBht.isBefore(nowBht)) {
+      if (scheduledBht.isBefore(nowBht.subtract(const Duration(minutes: 2)))) {
         VividToast.show(context,
           message: 'Cannot schedule in the past — please select a future time',
           type: ToastType.error,
