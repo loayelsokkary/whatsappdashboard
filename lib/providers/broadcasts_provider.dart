@@ -355,6 +355,9 @@ class BroadcastsProvider extends ChangeNotifier {
 
       debugPrint('📢 Fetched ${_broadcasts.length} broadcasts from $_broadcastsTable');
 
+      // Enrich with actual recipient counts from the recipients table
+      await _enrichRecipientCounts();
+
       await fetchMonthlySentCount();
 
       _isLoading = false;
@@ -370,6 +373,38 @@ class BroadcastsProvider extends ChangeNotifier {
       _error = 'Failed to load broadcasts';
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  /// Enrich broadcasts list with actual recipient counts from the recipients table.
+  Future<void> _enrichRecipientCounts() async {
+    if (_broadcasts.isEmpty) return;
+    try {
+      final rows = await SupabaseService.adminClient
+          .from(_recipientsTable)
+          .select('broadcast_id');
+
+      // Count rows per broadcast_id
+      final counts = <String, int>{};
+      for (final row in (rows as List)) {
+        final id = row['broadcast_id']?.toString();
+        if (id != null) counts[id] = (counts[id] ?? 0) + 1;
+      }
+
+      bool changed = false;
+      for (int i = 0; i < _broadcasts.length; i++) {
+        final actual = counts[_broadcasts[i].id] ?? 0;
+        if (actual > 0 && actual != _broadcasts[i].totalRecipients) {
+          _broadcasts[i] = _broadcasts[i].copyWith(totalRecipients: actual);
+          if (_selectedBroadcast?.id == _broadcasts[i].id) {
+            _selectedBroadcast = _broadcasts[i];
+          }
+          changed = true;
+        }
+      }
+      if (changed) notifyListeners();
+    } catch (e) {
+      debugPrint('📢 _enrichRecipientCounts error: $e');
     }
   }
 
@@ -636,6 +671,27 @@ class BroadcastsProvider extends ChangeNotifier {
           },
         );
 
+        // Insert a confirmation message into the manager chat so it appears immediately
+        final managerChatsTable = ClientConfig.managerChatsTable;
+        if (managerChatsTable != null && managerChatsTable.isNotEmpty) {
+          try {
+            final confirmText = templateName != null && templateName.isNotEmpty
+                ? '📢 Broadcast queued! Template "$templateName" is being sent. You\'ll see delivery results shortly.'
+                : '📢 Broadcast queued and being processed. You\'ll see delivery results shortly.';
+            await SupabaseService.adminClient
+                .from(managerChatsTable)
+                .insert({
+                  'client_id': client?.id,
+                  'user_id': ClientConfig.currentUser?.id,
+                  'user_name': ClientConfig.currentUserName,
+                  'user_message': instruction,
+                  'ai_response': confirmText,
+                });
+          } catch (e) {
+            debugPrint('[sendBroadcast] Chat confirmation insert failed: $e');
+          }
+        }
+
         Future.delayed(const Duration(seconds: 2), () {
           fetchBroadcasts();
           fetchMonthlySentCount();
@@ -754,6 +810,30 @@ class BroadcastsProvider extends ChangeNotifier {
           'client_name': client?.name,
         },
       );
+
+      // Insert a confirmation message into the manager chat
+      final managerChatsTable = ClientConfig.managerChatsTable;
+      if (managerChatsTable != null && managerChatsTable.isNotEmpty) {
+        try {
+          final bhtFormatted =
+              '${scheduledAtBht.day}/${scheduledAtBht.month}/${scheduledAtBht.year} '
+              '${scheduledAtBht.hour.toString().padLeft(2, '0')}:${scheduledAtBht.minute.toString().padLeft(2, '0')}';
+          final confirmText = templateName != null && templateName.isNotEmpty
+              ? '⏰ Broadcast scheduled! Template "$templateName" will be sent on $bhtFormatted (Bahrain time).'
+              : '⏰ Broadcast scheduled for $bhtFormatted (Bahrain time).';
+          await SupabaseService.adminClient
+              .from(managerChatsTable)
+              .insert({
+                'client_id': client?.id,
+                'user_id': ClientConfig.currentUser?.id,
+                'user_name': ClientConfig.currentUserName,
+                'user_message': instruction,
+                'ai_response': confirmText,
+              });
+        } catch (e) {
+          debugPrint('[scheduleBroadcast] Chat confirmation insert failed: $e');
+        }
+      }
 
       Future.delayed(const Duration(milliseconds: 500), fetchBroadcasts);
 
