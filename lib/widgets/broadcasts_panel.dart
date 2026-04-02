@@ -1378,22 +1378,6 @@ class _ComposeBroadcastDialogState extends State<ComposeBroadcastDialog> {
         _scheduledTime.minute,
       );
 
-      // Validate: scheduled time must be in the future (compare as BHT, 2-min buffer).
-      // Construct a naive (timezone-unaware) DateTime for "now in Bahrain" so Dart
-      // doesn't adjust for device local timezone when comparing with scheduledBht.
-      final nowUtc = DateTime.now().toUtc();
-      final nowBht = DateTime(
-        nowUtc.year, nowUtc.month, nowUtc.day,
-        nowUtc.hour, nowUtc.minute, nowUtc.second,
-      ).add(const Duration(hours: 3));
-      if (scheduledBht.isBefore(nowBht.subtract(const Duration(minutes: 2)))) {
-        VividToast.show(context,
-          message: 'Cannot schedule in the past — please select a future time',
-          type: ToastType.error,
-        );
-        return;
-      }
-
       success = await provider.scheduleBroadcast(
         text,
         scheduledBht,
