@@ -940,20 +940,14 @@ class _MessageBubble extends StatelessWidget {
                           children: [
                             // Send Now
                             GestureDetector(
-                              onTap: () async {
-                                final instruction = item.broadcastInstruction!;
-                                final provider = context.read<BroadcastsProvider>();
-                                final messenger = ScaffoldMessenger.of(context);
-                                final success = await provider.sendBroadcast(instruction);
-                                messenger.showSnackBar(SnackBar(
-                                  content: Text(success
-                                      ? 'Broadcast sent successfully'
-                                      : 'Broadcast failed — check webhook configuration or monthly limit'),
-                                  backgroundColor: success
-                                      ? const Color(0xFF38A169)
-                                      : const Color(0xFFE53E3E),
-                                  duration: Duration(seconds: success ? 3 : 4),
-                                ));
+                              onTap: () {
+                                showDialog(
+                                  context: context,
+                                  builder: (_) => ComposeBroadcastDialog(
+                                    initialInstruction: item.broadcastInstruction,
+                                    initiallyScheduled: false,
+                                  ),
+                                );
                               },
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
