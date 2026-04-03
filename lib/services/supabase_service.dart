@@ -707,17 +707,13 @@ class SupabaseService {
     required String clientName,
   }) async {
     try {
-      final response = await http.post(
-        Uri.parse(webhookUrl),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'predictions_table': predictionsTable,
-          'client_id': clientId,
-          'client_name': clientName,
-          'triggered_by': 'dashboard',
-          'timestamp': DateTime.now().toIso8601String(),
-        }),
-      );
+      final response = await postWebhook(webhookUrl, {
+        'predictions_table': predictionsTable,
+        'client_id': clientId,
+        'client_name': clientName,
+        'triggered_by': 'dashboard',
+        'timestamp': DateTime.now().toIso8601String(),
+      });
       debugPrint('[Predictions] Refresh response: ${response.statusCode}');
       return response.statusCode >= 200 && response.statusCode < 300;
     } catch (e) {
@@ -1187,6 +1183,39 @@ class SupabaseService {
   }
 
   // ============================================
+  // WEBHOOK PROXY HELPER
+  // On web, all n8n calls go through the proxy-webhook Edge Function to avoid
+  // CORS issues. On native, calls are made directly.
+  // ============================================
+
+  static Future<http.Response> postWebhook(
+    String url,
+    Map<String, dynamic> payload, {
+    String? secret,
+  }) async {
+    if (kIsWeb) {
+      final fnResponse = await client.functions.invoke(
+        'proxy-webhook',
+        body: {
+          'url': url,
+          'payload': payload,
+          if (secret != null && secret.isNotEmpty) 'secret': secret,
+        },
+      );
+      // Wrap the Edge Function response in an http.Response so callers are uniform
+      final statusCode = fnResponse.status;
+      final body = fnResponse.data is String
+          ? fnResponse.data as String
+          : jsonEncode(fnResponse.data ?? {});
+      return http.Response(body, statusCode);
+    } else {
+      final headers = <String, String>{'Content-Type': 'application/json'};
+      if (secret != null && secret.isNotEmpty) headers['X-Vivid-Secret'] = secret;
+      return http.post(Uri.parse(url), headers: headers, body: jsonEncode(payload));
+    }
+  }
+
+  // ============================================
   // SEND MESSAGE VIA WEBHOOK (saves to manager_response)
   // ============================================
 
@@ -1217,13 +1246,10 @@ class SupabaseService {
         if (mediaFilename != null) 'media_filename': mediaFilename,
       };
 
-      final response = await http.post(
-        Uri.parse(webhookUrl),
-        headers: {
-          'Content-Type': 'application/json',
-          if (webhookSecret.isNotEmpty) 'X-Vivid-Secret': webhookSecret,
-        },
-        body: jsonEncode(payload),
+      final response = await postWebhook(
+        webhookUrl,
+        payload,
+        secret: webhookSecret.isNotEmpty ? webhookSecret : null,
       );
 
       if (response.statusCode == 200) {

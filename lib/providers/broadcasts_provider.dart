@@ -1,8 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/supabase_service.dart';
 import '../models/models.dart';
@@ -646,14 +644,10 @@ class BroadcastsProvider extends ChangeNotifier {
           'target_sheet': targetSheet,
       };
 
-      final response = await http.post(
-        Uri.parse(webhookUrl),
-        headers: {
-          'Content-Type': 'application/json',
-          if (SupabaseService.webhookSecret.isNotEmpty)
-            'X-Vivid-Secret': SupabaseService.webhookSecret,
-        },
-        body: jsonEncode(payload),
+      final response = await SupabaseService.postWebhook(
+        webhookUrl,
+        payload,
+        secret: SupabaseService.webhookSecret.isNotEmpty ? SupabaseService.webhookSecret : null,
       );
 
       debugPrint('[sendBroadcast] Response: ${response.statusCode}');
