@@ -514,22 +514,20 @@ class _AdminPanelState extends State<AdminPanel> with SingleTickerProviderStateM
             ),
           ),
           Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Column(
-                children: [
-                  _sidebarItem(0, Icons.dashboard, 'Home'),
-                  _sidebarItem(1, Icons.business, 'Clients'),
-                  _sidebarItem(2, Icons.people, 'Users'),
-                  _sidebarItem(3, Icons.description, 'Templates'),
-                  _sidebarItem(4, Icons.insights, 'Client Analytics'),
-                  _sidebarItem(5, Icons.auto_graph, 'Vivid Analytics'),
-                  _sidebarItem(6, Icons.account_balance_wallet, 'Financials'),
-                  _sidebarItem(7, Icons.history, 'Activity Logs'),
-                  _sidebarItem(8, Icons.rocket_launch, 'Outreach'),
-                  _sidebarItem(9, Icons.settings, 'Settings'),
-                ],
-              ),
+            child: ListView(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              children: [
+                _sidebarItem(0, Icons.dashboard, 'Home'),
+                _sidebarItem(1, Icons.business, 'Clients'),
+                _sidebarItem(2, Icons.people, 'Users'),
+                _sidebarItem(3, Icons.description, 'Templates'),
+                _sidebarItem(4, Icons.insights, 'Client Analytics'),
+                _sidebarItem(5, Icons.auto_graph, 'Vivid Analytics'),
+                _sidebarItem(6, Icons.account_balance_wallet, 'Financials'),
+                _sidebarItem(7, Icons.history, 'Activity Logs'),
+                _sidebarItem(8, Icons.rocket_launch, 'Outreach'),
+                _sidebarItem(9, Icons.settings, 'Settings'),
+              ],
             ),
           ),
           Divider(color: Colors.white.withOpacity(0.08), height: 1),
@@ -7581,13 +7579,34 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
 
     setState(() => _isLoadingTemplates = true);
     try {
-      final wabaId = client.wabaId ?? SupabaseService.metaWabaId;
-      final token =
-          client.metaAccessToken ?? SupabaseService.metaAccessToken;
+      final wabaId = client.wabaId;
+      if (wabaId == null || wabaId.isEmpty) {
+        if (mounted) {
+          setState(() => _isLoadingTemplates = false);
+          VividToast.show(context,
+              message: '${client.name} has no WABA ID — set it in Edit Client first.',
+              type: ToastType.warning);
+        }
+        return;
+      }
+      final token = client.metaAccessToken ?? SupabaseService.metaAccessToken;
 
-      final metaTemplates = await _fetchMetaTemplates(wabaId, token);
+      final allMetaTemplates = await _fetchMetaTemplates(wabaId, token);
       debugPrint(
-          'ADMIN_TEMPLATES: fetched ${metaTemplates.length} from Meta for ${client.name}');
+          'ADMIN_TEMPLATES: fetched ${allMetaTemplates.length} from Meta for ${client.name} (WABA: $wabaId)');
+
+      // ROOT CAUSE 3: Apply slug-prefix filter for shared-WABA clients
+      final slug = client.slug.isNotEmpty ? client.slug : '';
+      final normalizedSlug = slug.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_');
+      final clientPrefix = slug.isNotEmpty ? '${normalizedSlug}_' : '';
+      List<Map<String, dynamic>> metaTemplates = allMetaTemplates;
+      if (client.isSharedWaba && clientPrefix.isNotEmpty) {
+        metaTemplates = allMetaTemplates.where((raw) {
+          final name = (raw['name'] as String? ?? '').toLowerCase();
+          return name.startsWith(clientPrefix) || name == 'hello_world' || name == 'vivddemo';
+        }).toList();
+        debugPrint('ADMIN_TEMPLATES: isSharedWaba filter for "${client.name}": ${allMetaTemplates.length} → ${metaTemplates.length}');
+      }
 
       final now = DateTime.now().toIso8601String();
       final toInsert = <Map<String, dynamic>>[];
@@ -7672,7 +7691,32 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
         await SupabaseService.adminClient
             .from(table)
             .update(row)
+            .eq('client_id', client.id)
             .eq('meta_template_id', row['meta_template_id'] as String);
+      }
+
+      // ROOT CAUSE 4: Delete stale/contaminated rows not returned by Meta
+      final syncedIds = metaTemplates
+          .map((raw) => raw['id']?.toString())
+          .whereType<String>()
+          .toSet();
+      if (syncedIds.isNotEmpty) {
+        final allDbRows = await SupabaseService.adminClient
+            .from(table)
+            .select('meta_template_id')
+            .eq('client_id', client.id);
+        final staleIds = (allDbRows as List)
+            .map((r) => r['meta_template_id'] as String)
+            .where((id) => !syncedIds.contains(id))
+            .toList();
+        if (staleIds.isNotEmpty) {
+          await SupabaseService.adminClient
+              .from(table)
+              .delete()
+              .eq('client_id', client.id)
+              .inFilter('meta_template_id', staleIds);
+          debugPrint('ADMIN_TEMPLATES: removed ${staleIds.length} stale template(s) from ${client.name}');
+        }
       }
 
       await _loadClientTemplates(client);
@@ -7797,15 +7841,34 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
         if (table == null || table.isEmpty) continue;
 
         try {
-          final wabaId = client.wabaId ?? SupabaseService.metaWabaId;
-          final token =
-              client.metaAccessToken ?? SupabaseService.metaAccessToken;
+          // ROOT CAUSE 2: Never fall back to global WABA — skip clients without one
+          final wabaId = client.wabaId;
+          if (wabaId == null || wabaId.isEmpty) {
+            debugPrint('ADMIN_TEMPLATES: SKIPPING ${client.name} — no waba_id configured');
+            continue;
+          }
+          final token = client.metaAccessToken ?? SupabaseService.metaAccessToken;
 
-          final metaTemplates = await _fetchMetaTemplates(wabaId, token);
+          final allMetaTemplates = await _fetchMetaTemplates(wabaId, token);
+          debugPrint('ADMIN_TEMPLATES: fetched ${allMetaTemplates.length} from Meta for ${client.name} (WABA: $wabaId)');
+
+          // ROOT CAUSE 3: Apply slug-prefix filter for shared-WABA clients
+          final slug = client.slug.isNotEmpty ? client.slug : '';
+          final normalizedSlug = slug.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_');
+          final clientPrefix = slug.isNotEmpty ? '${normalizedSlug}_' : '';
+          List<Map<String, dynamic>> templatesToSync = allMetaTemplates;
+          if (client.isSharedWaba && clientPrefix.isNotEmpty) {
+            templatesToSync = allMetaTemplates.where((raw) {
+              final name = (raw['name'] as String? ?? '').toLowerCase();
+              return name.startsWith(clientPrefix) || name == 'hello_world' || name == 'vivddemo';
+            }).toList();
+            debugPrint('ADMIN_TEMPLATES: isSharedWaba filter for "${client.name}": ${allMetaTemplates.length} → ${templatesToSync.length}');
+          }
+
           final now = DateTime.now().toIso8601String();
           final rows = <Map<String, dynamic>>[];
 
-          for (final raw in metaTemplates) {
+          for (final raw in templatesToSync) {
             final t = WhatsAppTemplate.fromJson(raw);
             final varCount =
                 RegExp(r'\{\{\d+\}\}').allMatches(t.body).length;
@@ -7844,7 +7907,8 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
           if (rows.isNotEmpty) {
             final existingResponse = await SupabaseService.adminClient
                 .from(table)
-                .select('meta_template_id');
+                .select('meta_template_id')
+                .eq('client_id', client.id);
             final existingIds = (existingResponse as List)
                 .map((r) => r['meta_template_id'] as String)
                 .toSet();
@@ -7861,8 +7925,25 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
               await SupabaseService.adminClient
                   .from(table)
                   .update(row)
+                  .eq('client_id', client.id)
                   .eq('meta_template_id', row['meta_template_id'] as String);
             }
+
+            // ROOT CAUSE 4: Delete stale/contaminated rows not in this sync
+            final syncedIds = rows.map((r) => r['meta_template_id'] as String).toSet();
+            final staleRows = (existingResponse as List)
+                .where((r) => !syncedIds.contains(r['meta_template_id'] as String))
+                .toList();
+            if (staleRows.isNotEmpty) {
+              final staleIds = staleRows.map((r) => r['meta_template_id'] as String).toList();
+              await SupabaseService.adminClient
+                  .from(table)
+                  .delete()
+                  .eq('client_id', client.id)
+                  .inFilter('meta_template_id', staleIds);
+              debugPrint('ADMIN_TEMPLATES: removed ${staleIds.length} stale template(s) from ${client.name}');
+            }
+
             synced++;
           }
         } catch (e) {
@@ -7921,59 +8002,170 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
   Widget build(BuildContext context) {
     final vc = context.vividColors;
     final clients = context.watch<AdminProvider>().clients;
-    return Row(
-      children: [
-        _buildClientList(vc, clients),
-        Container(width: 1, color: vc.border),
-        Expanded(
-          child: Column(
-            children: [
-              _buildHeader(vc),
-              _buildFilters(vc),
-              Expanded(
-                child: _isLoadingTemplates
-                    ? const Center(
-                        child: CircularProgressIndicator(
-                            color: VividColors.cyan))
-                    : _templateError != null
-                        ? Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.error_outline,
-                                    color: VividColors.statusUrgent, size: 40),
-                                const SizedBox(height: 8),
-                                Text(_templateError!,
-                                    style: TextStyle(
-                                        color: vc.textMuted, fontSize: 13)),
-                                const SizedBox(height: 12),
-                                OutlinedButton(
-                                  onPressed: _selectedTemplateClient != null
-                                      ? () => _loadClientTemplates(
-                                          _selectedTemplateClient!)
-                                      : null,
-                                  child: const Text('Retry'),
-                                ),
-                              ],
-                            ),
-                          )
-                        : _selectedTemplateClient == null
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 700;
+
+        if (isMobile) {
+          return _buildMobileLayout(vc, clients);
+        }
+
+        // Desktop: side client list + content
+        return Row(
+          children: [
+            _buildClientList(vc, clients),
+            Container(width: 1, color: vc.border),
+            Expanded(
+              child: Column(
+                children: [
+                  _buildHeader(vc, isMobile: false),
+                  _buildFilters(vc, isMobile: false),
+                  Expanded(
+                    child: _isLoadingTemplates
+                        ? const Center(
+                            child: CircularProgressIndicator(
+                                color: VividColors.cyan))
+                        : _templateError != null
                             ? Center(
-                                child: Text(
-                                  'Select a client to view templates',
-                                  style: TextStyle(
-                                      color: vc.textMuted, fontSize: 14),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.error_outline,
+                                        color: VividColors.statusUrgent, size: 40),
+                                    const SizedBox(height: 8),
+                                    Text(_templateError!,
+                                        style: TextStyle(
+                                            color: vc.textMuted, fontSize: 13)),
+                                    const SizedBox(height: 12),
+                                    OutlinedButton(
+                                      onPressed: _selectedTemplateClient != null
+                                          ? () => _loadClientTemplates(
+                                              _selectedTemplateClient!)
+                                          : null,
+                                      child: const Text('Retry'),
+                                    ),
+                                  ],
                                 ),
                               )
-                            : Row(
-                                children: [
-                                  Expanded(child: _buildGrid(vc)),
-                                  if (_selected != null) _buildPreview(vc),
-                                ],
-                              ),
+                            : _selectedTemplateClient == null
+                                ? Center(
+                                    child: Text(
+                                      'Select a client to view templates',
+                                      style: TextStyle(
+                                          color: vc.textMuted, fontSize: 14),
+                                    ),
+                                  )
+                                : Row(
+                                    children: [
+                                      Expanded(child: _buildGrid(vc, isMobile: false)),
+                                      if (_selected != null) _buildPreview(vc),
+                                    ],
+                                  ),
+                  ),
+                ],
               ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildMobileLayout(VividColorScheme vc, List<Client> clients) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Client selector dropdown
+        Container(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          decoration: BoxDecoration(
+            color: vc.surface,
+            border: Border(bottom: BorderSide(color: vc.border)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<Client>(
+                    value: _selectedTemplateClient,
+                    hint: Text('Select client',
+                        style: TextStyle(color: vc.textMuted, fontSize: 14)),
+                    isExpanded: true,
+                    dropdownColor: vc.surface,
+                    style: TextStyle(color: vc.textPrimary, fontSize: 14),
+                    onChanged: (client) {
+                      if (client != null) _loadClientTemplates(client);
+                    },
+                    items: clients.map((c) => DropdownMenuItem(
+                      value: c,
+                      child: Text(c.name, overflow: TextOverflow.ellipsis),
+                    )).toList(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              _isSyncingAll
+                  ? const SizedBox(
+                      width: 20, height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: VividColors.cyan))
+                  : IconButton(
+                      tooltip: 'Sync All',
+                      icon: const Icon(Icons.sync, size: 20, color: VividColors.statusSuccess),
+                      onPressed: _isLoadingTemplates ? null : _syncAllClients,
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                    ),
+              if (_selectedTemplateClient != null) ...[
+                const SizedBox(width: 4),
+                IconButton(
+                  tooltip: 'Refresh from Meta',
+                  icon: const Icon(Icons.refresh, size: 20, color: VividColors.cyan),
+                  onPressed: _isLoadingTemplates
+                      ? null
+                      : () => _refreshFromMeta(_selectedTemplateClient!),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                ),
+              ],
             ],
           ),
+        ),
+        // Filter chips — horizontally scrollable
+        _buildFilters(vc, isMobile: true),
+        // Main content
+        Expanded(
+          child: _isLoadingTemplates
+              ? const Center(child: CircularProgressIndicator(color: VividColors.cyan))
+              : _templateError != null
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.error_outline,
+                              color: VividColors.statusUrgent, size: 40),
+                          const SizedBox(height: 8),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            child: Text(_templateError!,
+                                style: TextStyle(color: vc.textMuted, fontSize: 13),
+                                textAlign: TextAlign.center),
+                          ),
+                          const SizedBox(height: 12),
+                          OutlinedButton(
+                            onPressed: _selectedTemplateClient != null
+                                ? () => _loadClientTemplates(_selectedTemplateClient!)
+                                : null,
+                            child: const Text('Retry'),
+                          ),
+                        ],
+                      ),
+                    )
+                  : _selectedTemplateClient == null
+                      ? Center(
+                          child: Text('Select a client above',
+                              style: TextStyle(color: vc.textMuted, fontSize: 14)),
+                        )
+                      : _buildGrid(vc, isMobile: true),
         ),
       ],
     );
@@ -8059,9 +8251,9 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
     );
   }
 
-  Widget _buildHeader(VividColorScheme vc) {
+  Widget _buildHeader(VividColorScheme vc, {bool isMobile = false}) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+      padding: EdgeInsets.fromLTRB(isMobile ? 16 : 24, 16, isMobile ? 16 : 24, 8),
       child: Row(
         children: [
           // ── Left: title ──────────────────────────────────────────────
@@ -8166,40 +8358,56 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
     );
   }
 
-  Widget _buildFilters(VividColorScheme vc) {
+  Widget _buildFilters(VividColorScheme vc, {bool isMobile = false}) {
+    final chips = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _filterChip(vc, 'All', _statusFilter == null, () => setState(() => _statusFilter = null)),
+        const SizedBox(width: 6),
+        _filterChip(vc, 'Approved', _statusFilter == 'APPROVED',
+            () => setState(() => _statusFilter = _statusFilter == 'APPROVED' ? null : 'APPROVED'),
+            color: VividColors.statusSuccess),
+        const SizedBox(width: 6),
+        _filterChip(vc, 'Pending', _statusFilter == 'PENDING',
+            () => setState(() => _statusFilter = _statusFilter == 'PENDING' ? null : 'PENDING'),
+            color: VividColors.statusWarning),
+        const SizedBox(width: 6),
+        _filterChip(vc, 'Rejected', _statusFilter == 'REJECTED',
+            () => setState(() => _statusFilter = _statusFilter == 'REJECTED' ? null : 'REJECTED'),
+            color: VividColors.statusUrgent),
+        const SizedBox(width: 16),
+        Container(width: 1, height: 20, color: vc.border),
+        const SizedBox(width: 16),
+        _filterChip(vc, 'All Categories', _categoryFilter == null,
+            () => setState(() => _categoryFilter = null)),
+        const SizedBox(width: 6),
+        _filterChip(vc, 'Marketing', _categoryFilter == 'MARKETING',
+            () => setState(() => _categoryFilter = _categoryFilter == 'MARKETING' ? null : 'MARKETING')),
+        const SizedBox(width: 6),
+        _filterChip(vc, 'Utility', _categoryFilter == 'UTILITY',
+            () => setState(() => _categoryFilter = _categoryFilter == 'UTILITY' ? null : 'UTILITY')),
+        const SizedBox(width: 6),
+        _filterChip(vc, 'Authentication', _categoryFilter == 'AUTHENTICATION',
+            () => setState(() => _categoryFilter = _categoryFilter == 'AUTHENTICATION' ? null : 'AUTHENTICATION')),
+      ],
+    );
+
+    if (isMobile) {
+      return Container(
+        decoration: BoxDecoration(
+          border: Border(bottom: BorderSide(color: vc.border)),
+        ),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          child: chips,
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
-      child: Row(
-        children: [
-          _filterChip(vc, 'All', _statusFilter == null, () => setState(() => _statusFilter = null)),
-          const SizedBox(width: 6),
-          _filterChip(vc, 'Approved', _statusFilter == 'APPROVED',
-              () => setState(() => _statusFilter = _statusFilter == 'APPROVED' ? null : 'APPROVED'),
-              color: VividColors.statusSuccess),
-          const SizedBox(width: 6),
-          _filterChip(vc, 'Pending', _statusFilter == 'PENDING',
-              () => setState(() => _statusFilter = _statusFilter == 'PENDING' ? null : 'PENDING'),
-              color: VividColors.statusWarning),
-          const SizedBox(width: 6),
-          _filterChip(vc, 'Rejected', _statusFilter == 'REJECTED',
-              () => setState(() => _statusFilter = _statusFilter == 'REJECTED' ? null : 'REJECTED'),
-              color: VividColors.statusUrgent),
-          const SizedBox(width: 16),
-          Container(width: 1, height: 20, color: vc.border),
-          const SizedBox(width: 16),
-          _filterChip(vc, 'All Categories', _categoryFilter == null,
-              () => setState(() => _categoryFilter = null)),
-          const SizedBox(width: 6),
-          _filterChip(vc, 'Marketing', _categoryFilter == 'MARKETING',
-              () => setState(() => _categoryFilter = _categoryFilter == 'MARKETING' ? null : 'MARKETING')),
-          const SizedBox(width: 6),
-          _filterChip(vc, 'Utility', _categoryFilter == 'UTILITY',
-              () => setState(() => _categoryFilter = _categoryFilter == 'UTILITY' ? null : 'UTILITY')),
-          const SizedBox(width: 6),
-          _filterChip(vc, 'Authentication', _categoryFilter == 'AUTHENTICATION',
-              () => setState(() => _categoryFilter = _categoryFilter == 'AUTHENTICATION' ? null : 'AUTHENTICATION')),
-        ],
-      ),
+      child: chips,
     );
   }
 
@@ -8232,7 +8440,7 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
     );
   }
 
-  Widget _buildGrid(VividColorScheme vc) {
+  Widget _buildGrid(VividColorScheme vc, {bool isMobile = false}) {
     final items = _filtered;
     if (items.isEmpty) {
       return Center(
@@ -8259,7 +8467,7 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
                     ? 2
                     : 1;
         return GridView.builder(
-          padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+          padding: EdgeInsets.fromLTRB(isMobile ? 12 : 24, 8, isMobile ? 12 : 24, 24),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: cols,
             mainAxisSpacing: 14,
@@ -8267,13 +8475,55 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
             childAspectRatio: 0.85,
           ),
           itemCount: items.length,
-          itemBuilder: (context, i) => _buildCard(vc, items[i]),
+          itemBuilder: (context, i) => _buildCard(vc, items[i], isMobile: isMobile),
         );
       },
     );
   }
 
-  Widget _buildCard(VividColorScheme vc, Map<String, dynamic> t) {
+  void _showPreviewBottomSheet(BuildContext context, VividColorScheme vc, Map<String, dynamic> t) {
+    setState(() => _selected = t);
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.75,
+        minChildSize: 0.4,
+        maxChildSize: 0.95,
+        builder: (_, scrollController) => ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          child: Container(
+            color: vc.surface,
+            child: Column(
+              children: [
+                // Drag handle
+                Center(
+                  child: Container(
+                    margin: const EdgeInsets.only(top: 12, bottom: 8),
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: vc.border,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    controller: scrollController,
+                    child: _buildPreview(vc, isMobile: true),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ).whenComplete(() => setState(() => _selected = null));
+  }
+
+  Widget _buildCard(VividColorScheme vc, Map<String, dynamic> t, {bool isMobile = false}) {
     final name = t['template_name'] as String? ?? '';
     final status = t['status'] as String? ?? '';
     final language = t['language_code'] as String? ?? '';
@@ -8303,7 +8553,13 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
       borderRadius: BorderRadius.circular(12),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => setState(() => _selected = isSelected ? null : t),
+        onTap: () {
+          if (isMobile) {
+            _showPreviewBottomSheet(context, vc, t);
+          } else {
+            setState(() => _selected = isSelected ? null : t);
+          }
+        },
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
@@ -8448,7 +8704,7 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
     );
   }
 
-  Widget _buildPreview(VividColorScheme vc) {
+  Widget _buildPreview(VividColorScheme vc, {bool isMobile = false}) {
     final t = _selected!;
     final name = t['template_name'] as String? ?? '';
     final status = t['status'] as String? ?? '';
@@ -8480,57 +8736,42 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
       _ => (vc.textMuted, status),
     };
 
-    return Container(
-      width: 380,
-      decoration: BoxDecoration(
-        color: vc.surface,
-        border: Border(left: BorderSide(color: vc.border)),
-      ),
-      child: Column(
+    final header = Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
+      child: Row(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(name,
-                      style: TextStyle(
-                          color: vc.textPrimary,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: statusColor.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(5),
-                    border:
-                        Border.all(color: statusColor.withValues(alpha: 0.3)),
-                  ),
-                  child: Text(statusLabel,
-                      style: TextStyle(
-                          color: statusColor,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600)),
-                ),
-                IconButton(
-                  icon: Icon(Icons.close, size: 18, color: vc.textMuted),
-                  onPressed: () => setState(() => _selected = null),
-                ),
-              ],
-            ),
-          ),
-          Divider(color: vc.border, height: 1),
           Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+            child: Text(name,
+                style: TextStyle(
+                    color: vc.textPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+            decoration: BoxDecoration(
+              color: statusColor.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(5),
+              border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+            ),
+            child: Text(statusLabel,
+                style: TextStyle(
+                    color: statusColor,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600)),
+          ),
+          IconButton(
+            icon: Icon(Icons.close, size: 18, color: vc.textMuted),
+            onPressed: () => setState(() => _selected = null),
+          ),
+        ],
+      ),
+    );
+
+    final contentChildren = <Widget>[
                   // Offer image preview (above bubble)
                   if (imageUrl != null) ...[
                     ClipRRect(
@@ -8696,7 +8937,42 @@ class _AdminTemplatesTabState extends State<_AdminTemplatesTab> {
                       ),
                     ),
                   ),
-                ],
+                ];
+
+    if (isMobile) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          header,
+          Divider(color: vc.border, height: 1),
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: contentChildren,
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Container(
+      width: 380,
+      decoration: BoxDecoration(
+        color: vc.surface,
+        border: Border(left: BorderSide(color: vc.border)),
+      ),
+      child: Column(
+        children: [
+          header,
+          Divider(color: vc.border, height: 1),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: contentChildren,
               ),
             ),
           ),

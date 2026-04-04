@@ -1516,6 +1516,8 @@ class _ComposeBroadcastDialogState extends State<ComposeBroadcastDialog> {
     final picked = await showTimePicker(
       context: context,
       initialTime: _scheduledTime,
+      initialEntryMode: TimePickerEntryMode.input,
+      helpText: 'SELECT TIME (Bahrain GMT+3)',
     );
     if (picked != null) setState(() => _scheduledTime = picked);
   }
@@ -1548,6 +1550,7 @@ class _ComposeBroadcastDialogState extends State<ComposeBroadcastDialog> {
         _scheduledTime.hour,
         _scheduledTime.minute,
       );
+
       success = await provider.scheduleBroadcast(
         text,
         scheduledBht,
@@ -1676,7 +1679,7 @@ class _ComposeBroadcastDialogState extends State<ComposeBroadcastDialog> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'Example: "Send {Name} an offer in english/arabic"',
+                      'Example: "send to Full Body Laser list"',
                       style: TextStyle(
                         color: vc.textMuted,
                         fontSize: 12,
@@ -1703,7 +1706,7 @@ class _ComposeBroadcastDialogState extends State<ComposeBroadcastDialog> {
                 maxLines: 4,
                 style: TextStyle(color: vc.textPrimary, fontSize: 15),
                 decoration: InputDecoration(
-                  hintText: 'Type your broadcast instruction...',
+                  hintText: 'e.g. "send to all Calcium customers" or "send to Full Body Laser list"',
                   hintStyle: TextStyle(color: vc.textMuted),
                   border: InputBorder.none,
                   contentPadding: const EdgeInsets.all(16),

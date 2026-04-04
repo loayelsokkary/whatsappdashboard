@@ -313,6 +313,7 @@ class _MainScaffoldState extends State<MainScaffold> {
     final current = _currentDestination ?? NavDestination.conversations;
     final currentIndex = destinations.indexOf(current).clamp(0, destinations.length - 1);
     final conversationsProvider = context.watch<ConversationsProvider>();
+    final agentProvider = context.read<AgentProvider>();
 
     final vc = context.vividColors;
     return Container(
@@ -327,6 +328,11 @@ class _MainScaffoldState extends State<MainScaffold> {
         child: BottomNavigationBar(
           currentIndex: currentIndex,
           onTap: (index) {
+            if (index == destinations.length) {
+              // Logout item tapped
+              agentProvider.logout();
+              return;
+            }
             setState(() => _currentDestination = destinations[index]);
           },
           type: BottomNavigationBarType.fixed,
@@ -336,23 +342,29 @@ class _MainScaffoldState extends State<MainScaffold> {
           selectedFontSize: 11,
           unselectedFontSize: 10,
           iconSize: 22,
-          items: destinations.map((dest) {
-            final unread = dest == NavDestination.conversations
-                ? conversationsProvider.totalUnreadCount
-                : 0;
-            return BottomNavigationBarItem(
-              icon: unread > 0
-                  ? Badge(
-                      label: Text(unread > 99 ? '99+' : '$unread',
-                          style: const TextStyle(fontSize: 9)),
-                      backgroundColor: VividColors.statusUrgent,
-                      child: Icon(_navIcon(dest)),
-                    )
-                  : Icon(_navIcon(dest)),
-              activeIcon: Icon(_navIcon(dest)),
-              label: _navLabel(dest),
-            );
-          }).toList(),
+          items: [
+            ...destinations.map((dest) {
+              final unread = dest == NavDestination.conversations
+                  ? conversationsProvider.totalUnreadCount
+                  : 0;
+              return BottomNavigationBarItem(
+                icon: unread > 0
+                    ? Badge(
+                        label: Text(unread > 99 ? '99+' : '$unread',
+                            style: const TextStyle(fontSize: 9)),
+                        backgroundColor: VividColors.statusUrgent,
+                        child: Icon(_navIcon(dest)),
+                      )
+                    : Icon(_navIcon(dest)),
+                activeIcon: Icon(_navIcon(dest)),
+                label: _navLabel(dest),
+              );
+            }),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.logout, color: VividColors.statusUrgent),
+              label: 'Sign Out',
+            ),
+          ],
         ),
       ),
     );

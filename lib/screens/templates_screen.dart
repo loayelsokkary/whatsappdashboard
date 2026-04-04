@@ -72,119 +72,199 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
 
   Widget _buildHeader(BuildContext context, TemplatesProvider provider) {
     final vc = context.vividColors;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(28, 24, 28, 20),
-      decoration: BoxDecoration(
-        color: vc.surface,
-        border: Border(
-          bottom: BorderSide(color: vc.border),
-        ),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Message Templates',
-                  style: TextStyle(
-                    color: vc.textPrimary,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.3,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Manage your WhatsApp message templates',
-                  style: TextStyle(
-                    color: vc.textSecondary,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 16),
-          // Refresh button
-          OutlinedButton.icon(
-            onPressed:
-                provider.isLoading ? null : () => provider.fetchTemplates(),
-            icon: provider.isLoading
-                ? SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: vc.textMuted),
-                  )
-                : const Icon(Icons.sync_rounded, size: 16),
-            label: const Text('Refresh'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: vc.textSecondary,
-              side: BorderSide(
-                  color: VividColors.tealBlue.withValues(alpha: 0.4)),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              textStyle:
-                  const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-            ),
-          ),
-          // Sync to AI + New Template — Vivid Admins, preview mode, and client Admins/Managers
-          if (ClientConfig.isVividAdmin ||
-              ClientConfig.isPreviewMode ||
-              (ClientConfig.currentClient != null &&
-                  ClientConfig.currentUserRole != UserRole.agent &&
-                  ClientConfig.currentUserRole != UserRole.viewer)) ...[
-            const SizedBox(width: 10),
-            OutlinedButton.icon(
-              onPressed: provider.isSyncing
-                  ? null
-                  : () async {
-                      final error =
-                          await provider.syncTemplatesToSupabase();
-                      if (!context.mounted) return;
-                      VividToast.show(context,
-                        message: error ?? 'Templates synced to AI',
-                        type: error == null ? ToastType.success : ToastType.error,
-                      );
-                    },
-              icon: provider.isSyncing
-                  ? SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: vc.textMuted),
-                    )
-                  : const Icon(Icons.cloud_upload_rounded, size: 16),
-              label: const Text('Sync to AI'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: vc.textSecondary,
-                side: BorderSide(
-                    color: VividColors.tealBlue.withValues(alpha: 0.4)),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                textStyle:
-                    const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 600;
+        final canManage = ClientConfig.isVividAdmin ||
+            ClientConfig.isPreviewMode ||
+            (ClientConfig.currentClient != null &&
+                ClientConfig.currentUserRole != UserRole.agent &&
+                ClientConfig.currentUserRole != UserRole.viewer);
+
+        final titleSection = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Message Templates',
+              style: TextStyle(
+                color: vc.textPrimary,
+                fontSize: isMobile ? 18 : 22,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.3,
               ),
             ),
-            const SizedBox(width: 10),
-            FilledButton.icon(
-              onPressed: () => _openNewTemplate(context),
-              icon: const Icon(Icons.add_rounded, size: 18),
-              label: const Text('New Template'),
-              style: FilledButton.styleFrom(
-                backgroundColor: VividColors.cyan,
-                foregroundColor: vc.background,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                textStyle:
-                    const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            const SizedBox(height: 4),
+            Text(
+              'Manage your WhatsApp message templates',
+              style: TextStyle(
+                color: vc.textSecondary,
+                fontSize: isMobile ? 12 : 13,
               ),
             ),
           ],
-        ],
-      ),
+        );
+
+        final refreshButton = OutlinedButton.icon(
+          onPressed:
+              provider.isLoading ? null : () => provider.fetchTemplates(),
+          icon: provider.isLoading
+              ? SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: vc.textMuted),
+                )
+              : const Icon(Icons.sync_rounded, size: 16),
+          label: const Text('Refresh'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: vc.textSecondary,
+            side: BorderSide(
+                color: VividColors.tealBlue.withValues(alpha: 0.4)),
+            padding: EdgeInsets.symmetric(
+                horizontal: isMobile ? 10 : 16, vertical: 10),
+            textStyle:
+                const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+          ),
+        );
+
+        if (isMobile) {
+          // Mobile: title row + buttons row stacked vertically
+          return Container(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+            decoration: BoxDecoration(
+              color: vc.surface,
+              border: Border(bottom: BorderSide(color: vc.border)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                titleSection,
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    refreshButton,
+                    if (canManage) ...[
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        onPressed: provider.isSyncing
+                            ? null
+                            : () async {
+                                final error =
+                                    await provider.syncTemplatesToSupabase();
+                                if (!context.mounted) return;
+                                VividToast.show(context,
+                                  message: error ?? 'Templates synced to AI',
+                                  type: error == null
+                                      ? ToastType.success
+                                      : ToastType.error,
+                                );
+                              },
+                        icon: provider.isSyncing
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2),
+                              )
+                            : const Icon(Icons.cloud_upload_rounded, size: 16),
+                        label: const Text('Sync'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: vc.textSecondary,
+                          side: BorderSide(
+                              color: VividColors.tealBlue.withValues(alpha: 0.4)),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 10),
+                          textStyle: const TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton.icon(
+                        onPressed: () => _openNewTemplate(context),
+                        icon: const Icon(Icons.add_rounded, size: 18),
+                        label: const Text('New'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: VividColors.cyan,
+                          foregroundColor: vc.background,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 10),
+                          textStyle: const TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          );
+        }
+
+        // Desktop: original single-row layout
+        return Container(
+          padding: const EdgeInsets.fromLTRB(28, 24, 28, 20),
+          decoration: BoxDecoration(
+            color: vc.surface,
+            border: Border(bottom: BorderSide(color: vc.border)),
+          ),
+          child: Row(
+            children: [
+              Expanded(child: titleSection),
+              const SizedBox(width: 16),
+              refreshButton,
+              if (canManage) ...[
+                const SizedBox(width: 10),
+                OutlinedButton.icon(
+                  onPressed: provider.isSyncing
+                      ? null
+                      : () async {
+                          final error =
+                              await provider.syncTemplatesToSupabase();
+                          if (!context.mounted) return;
+                          VividToast.show(context,
+                            message: error ?? 'Templates synced to AI',
+                            type: error == null
+                                ? ToastType.success
+                                : ToastType.error,
+                          );
+                        },
+                  icon: provider.isSyncing
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.cloud_upload_rounded, size: 16),
+                  label: const Text('Sync to AI'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: vc.textSecondary,
+                    side: BorderSide(
+                        color: VividColors.tealBlue.withValues(alpha: 0.4)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
+                    textStyle: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w500),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                FilledButton.icon(
+                  onPressed: () => _openNewTemplate(context),
+                  icon: const Icon(Icons.add_rounded, size: 18),
+                  label: const Text('New Template'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: VividColors.cyan,
+                    foregroundColor: vc.background,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
+                    textStyle: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
     );
   }
 

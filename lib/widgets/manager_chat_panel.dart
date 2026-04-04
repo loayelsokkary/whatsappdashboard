@@ -92,47 +92,50 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
   @override
   Widget build(BuildContext context) {
     final vc = context.vividColors;
-    return Container(
-      color: vc.background,
-      child: Row(
-        children: [
-          // ── Session history sidebar ──────────────────────────
-          _SessionSidebar(
-            onSessionSelected: (sessionId) =>
-                context.read<ManagerChatProvider>().switchToSession(sessionId),
-            onNewChat: () =>
-                context.read<ManagerChatProvider>().startNewSession(),
-          ),
-          // Divider
-          Container(
-            width: 1,
-            color: vc.border,
-          ),
-          // ── Chat area ────────────────────────────────────────
-          Expanded(
-            child: Column(
-              children: [
-                _buildHeader(),
-                Expanded(child: _buildMessages()),
-                _buildInput(),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 600;
+        return Container(
+          color: vc.background,
+          child: Row(
+            children: [
+              // ── Session history sidebar (desktop only) ───────
+              if (!isMobile) ...[
+                _SessionSidebar(
+                  onSessionSelected: (sessionId) =>
+                      context.read<ManagerChatProvider>().switchToSession(sessionId),
+                  onNewChat: () =>
+                      context.read<ManagerChatProvider>().startNewSession(),
+                ),
+                Container(width: 1, color: vc.border),
               ],
-            ),
-          ),
-          // ── Prediction panel (HOB only — hidden when table is null) ──
-          if (ClientConfig.customerPredictionsTable != null) ...[
-            Container(width: 1, color: vc.border),
-            SizedBox(
-              width: 280,
-              child: _PredictionInsightsPanel(
-                onPrefillChat: (text) {
-                  _messageController.text = text;
-                  _focusNode.requestFocus();
-                },
+              // ── Chat area ────────────────────────────────────
+              Expanded(
+                child: Column(
+                  children: [
+                    _buildHeader(),
+                    Expanded(child: _buildMessages()),
+                    _buildInput(),
+                  ],
+                ),
               ),
-            ),
-          ],
-        ],
-      ),
+              // ── Prediction panel (HOB only, desktop only) ────
+              if (!isMobile && ClientConfig.customerPredictionsTable != null) ...[
+                Container(width: 1, color: vc.border),
+                SizedBox(
+                  width: 280,
+                  child: _PredictionInsightsPanel(
+                    onPrefillChat: (text) {
+                      _messageController.text = text;
+                      _focusNode.requestFocus();
+                    },
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -937,20 +940,14 @@ class _MessageBubble extends StatelessWidget {
                           children: [
                             // Send Now
                             GestureDetector(
-                              onTap: () async {
-                                final instruction = item.broadcastInstruction!;
-                                final provider = context.read<BroadcastsProvider>();
-                                final messenger = ScaffoldMessenger.of(context);
-                                final success = await provider.sendBroadcast(instruction);
-                                messenger.showSnackBar(SnackBar(
-                                  content: Text(success
-                                      ? 'Broadcast sent successfully'
-                                      : 'Broadcast failed — check webhook configuration or monthly limit'),
-                                  backgroundColor: success
-                                      ? const Color(0xFF38A169)
-                                      : const Color(0xFFE53E3E),
-                                  duration: Duration(seconds: success ? 3 : 4),
-                                ));
+                              onTap: () {
+                                showDialog(
+                                  context: context,
+                                  builder: (_) => ComposeBroadcastDialog(
+                                    initialInstruction: item.broadcastInstruction,
+                                    initiallyScheduled: false,
+                                  ),
+                                );
                               },
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
@@ -1246,7 +1243,7 @@ class _PredictionInsightsPanelState extends State<_PredictionInsightsPanel> {
                             final messenger = ScaffoldMessenger.of(context);
                             final provider = context.read<BroadcastsProvider>();
                             setModalState(() => sending = true);
-                            final success = await provider.sendBroadcast(instruction);
+                            final success = await provider.sendBroadcast(instruction, templateName: selectedTemplate);
                             setModalState(() => sending = false);
                             if (context.mounted) Navigator.pop(ctx);
                             if (context.mounted) {

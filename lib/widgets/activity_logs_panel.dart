@@ -48,7 +48,10 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
   void _loadLogs() {
     final provider = context.read<ActivityLogsProvider>();
     if (widget.clientId != null) {
-      provider.fetchLogs(clientId: widget.clientId);
+      provider.fetchLogs(
+        clientId: widget.clientId,
+        hideInternalActions: !widget.isAdmin,
+      );
     } else {
       provider.fetchAllLogs();
     }
@@ -649,13 +652,12 @@ class _ActivityLogsPanelState extends State<ActivityLogsPanel> {
     ];
 
     if (isMobile) {
-      return Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: cards.map((c) => SizedBox(
-          width: double.infinity,
-          child: c,
-        )).toList(),
+      return Column(
+        children: [
+          Row(children: [Expanded(child: cards[0]), const SizedBox(width: 8), Expanded(child: cards[1])]),
+          const SizedBox(height: 8),
+          Row(children: [Expanded(child: cards[2]), const SizedBox(width: 8), Expanded(child: cards[3])]),
+        ],
       );
     }
     return Row(

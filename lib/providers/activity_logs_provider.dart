@@ -122,10 +122,20 @@ class ActivityLogsProvider extends ChangeNotifier {
     }
   }
 
+  // Action types that are internal (admin-only) and should be hidden from client view.
+  static const _internalActionTypes = [
+    'impersonation_start',
+    'impersonation_end',
+  ];
+
+  // Whether to hide internal (impersonation) events from this view.
+  bool _hideInternalActions = false;
+
   /// Build the server-side filter parameters.
   Map<String, dynamic> get _serverFilters => {
     'clientId': _selectedClientId ?? _fetchClientId,
     'actionTypes': _selectedActionType != null ? [_selectedActionType!.value] : null,
+    'excludeActionTypes': _hideInternalActions ? _internalActionTypes : null,
     'startDate': _startDate,
     'endDate': _endDate != null
         ? DateTime(_endDate!.year, _endDate!.month, _endDate!.day, 23, 59, 59)
@@ -135,7 +145,9 @@ class ActivityLogsProvider extends ChangeNotifier {
   /// Fetch activity logs (first page). Resets pagination.
   ///
   /// [clientId] — scope to a specific client. Null fetches all (for Vivid admins).
-  Future<void> fetchLogs({String? clientId}) async {
+  /// [hideInternalActions] — when true, impersonation events are excluded (client-facing view).
+  Future<void> fetchLogs({String? clientId, bool hideInternalActions = false}) async {
+    _hideInternalActions = hideInternalActions;
     _fetchClientId = clientId;
     _offset = 0;
     _hasMore = true;
@@ -149,6 +161,7 @@ class ActivityLogsProvider extends ChangeNotifier {
       _logs = await SupabaseService.instance.fetchActivityLogs(
         clientId: filters['clientId'] as String?,
         actionTypes: (filters['actionTypes'] as List<String>?),
+        excludeActionTypes: (filters['excludeActionTypes'] as List<String>?),
         startDate: filters['startDate'] as DateTime?,
         endDate: filters['endDate'] as DateTime?,
         offset: 0,
@@ -188,6 +201,7 @@ class ActivityLogsProvider extends ChangeNotifier {
       final newLogs = await SupabaseService.instance.fetchActivityLogs(
         clientId: filters['clientId'] as String?,
         actionTypes: (filters['actionTypes'] as List<String>?),
+        excludeActionTypes: (filters['excludeActionTypes'] as List<String>?),
         startDate: filters['startDate'] as DateTime?,
         endDate: filters['endDate'] as DateTime?,
         offset: _offset,
@@ -210,7 +224,7 @@ class ActivityLogsProvider extends ChangeNotifier {
   /// Set client filter (admin-only). Re-fetches from server.
   void setClientFilter(String? clientId) {
     _selectedClientId = clientId;
-    fetchLogs(clientId: _fetchClientId);
+    fetchLogs(clientId: _fetchClientId, hideInternalActions: _hideInternalActions);
   }
 
   /// Set user filter (client-side)
@@ -223,14 +237,14 @@ class ActivityLogsProvider extends ChangeNotifier {
   /// Set action type filter. Re-fetches from server for efficiency.
   void setActionTypeFilter(ActionType? actionType) {
     _selectedActionType = actionType;
-    fetchLogs(clientId: _fetchClientId);
+    fetchLogs(clientId: _fetchClientId, hideInternalActions: _hideInternalActions);
   }
 
   /// Set date range filter. Re-fetches from server.
   void setDateRange(DateTime? start, DateTime? end) {
     _startDate = start;
     _endDate = end;
-    fetchLogs(clientId: _fetchClientId);
+    fetchLogs(clientId: _fetchClientId, hideInternalActions: _hideInternalActions);
   }
 
   /// Set search query (client-side)
@@ -256,7 +270,7 @@ class ActivityLogsProvider extends ChangeNotifier {
     _endDate = null;
     _searchQuery = '';
     _filterAiOnly = false;
-    fetchLogs(clientId: _fetchClientId);
+    fetchLogs(clientId: _fetchClientId, hideInternalActions: _hideInternalActions);
   }
 
   // ── Computed getters ────────────────────────────────

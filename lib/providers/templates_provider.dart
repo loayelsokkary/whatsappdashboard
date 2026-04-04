@@ -29,13 +29,35 @@ class TemplatesProvider extends ChangeNotifier {
   static String get _baseUrl =>
       'https://graph.facebook.com/${SupabaseService.metaApiVersion}';
 
+  /// Returns the WABA ID for the current client directly from ClientConfig.
+  /// Never falls back to the global SupabaseService.metaWabaId — a wrong WABA
+  /// means templates from another account get written into this client's table.
+  String get _clientWabaId {
+    final clientWaba = ClientConfig.currentClient?.wabaId;
+    if (clientWaba == null || clientWaba.isEmpty) {
+      debugPrint('[templates] ERROR: No WABA ID for client "${ClientConfig.currentClient?.name}" — operation will be aborted');
+      return '';
+    }
+    return clientWaba;
+  }
+
+  /// Returns the access token for the current client.
+  /// Falls back to the global token only for the token (one Vivid app token
+  /// works across all WABAs) — but WABA ID must always be per-client.
+  String get _clientAccessToken {
+    final clientToken = ClientConfig.currentClient?.metaAccessToken;
+    return (clientToken != null && clientToken.isNotEmpty)
+        ? clientToken
+        : SupabaseService.metaAccessToken;
+  }
+
   /// Normalize a client slug into a safe prefix for Meta template names.
   /// Only lowercase letters and digits; everything else becomes underscore.
   static String normalizeSlug(String slug) =>
       slug.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_');
 
   Map<String, String> get _headers => {
-        'Authorization': 'Bearer ${SupabaseService.metaAccessToken}',
+        'Authorization': 'Bearer $_clientAccessToken',
         'Content-Type': 'application/json',
       };
 
@@ -111,14 +133,20 @@ class TemplatesProvider extends ChangeNotifier {
     }
   }
 
-  /// Fetches ALL templates from Meta API (shared WABA).
+  /// Fetches ALL templates from Meta API for the current client's WABA.
   /// Used only by sync operations — NOT for display.
   Future<void> fetchMetaTemplates() async {
+    final wabaId = _clientWabaId;
+    if (wabaId.isEmpty) {
+      _error = 'No WABA ID configured for this client — cannot fetch templates';
+      notifyListeners();
+      return;
+    }
     try {
       final all = <WhatsAppTemplate>[];
-      debugPrint('📋 Fetching templates for WABA: ${SupabaseService.metaWabaId}');
+      debugPrint('📋 Fetching templates for WABA: $wabaId');
       String? nextUrl =
-          '$_baseUrl/${SupabaseService.metaWabaId}/message_templates?limit=100&fields=id,name,status,language,category,components';
+          '$_baseUrl/$wabaId/message_templates?limit=100&fields=id,name,status,language,category,components';
 
       while (nextUrl != null) {
         final response = await http.get(
@@ -143,7 +171,7 @@ class TemplatesProvider extends ChangeNotifier {
         nextUrl = (next != null && next.isNotEmpty) ? next : null;
       }
 
-      debugPrint('📋 Templates received: ${all.length} from WABA ${SupabaseService.metaWabaId}');
+      debugPrint('📋 Templates received: ${all.length} from WABA $wabaId');
       _allMetaTemplates = all;
       if (all.isNotEmpty) _lastSuccessfulFetchTime = DateTime.now();
       print('TEMPLATES: fetched ${all.length} templates from Meta API');
@@ -179,12 +207,17 @@ class TemplatesProvider extends ChangeNotifier {
       };
       final body = jsonEncode(payload);
 
-      debugPrint('[createTemplate] POST $_baseUrl/${SupabaseService.metaWabaId}/message_templates');
+      final wabaId = _clientWabaId;
+      if (wabaId.isEmpty) {
+        _isSubmitting = false;
+        notifyListeners();
+        return (error: 'No WABA ID configured for this client', templateId: null);
+      }
+      debugPrint('[createTemplate] POST $_baseUrl/$wabaId/message_templates');
       debugPrint('[createTemplate] Payload: ${const JsonEncoder.withIndent('  ').convert(payload)}');
 
       final response = await http.post(
-        Uri.parse(
-            '$_baseUrl/${SupabaseService.metaWabaId}/message_templates'),
+        Uri.parse('$_baseUrl/$wabaId/message_templates'),
         headers: _headers,
         body: body,
       );
@@ -224,8 +257,14 @@ class TemplatesProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      final wabaId = _clientWabaId;
+      if (wabaId.isEmpty) {
+        _isSubmitting = false;
+        notifyListeners();
+        return 'No WABA ID configured for this client';
+      }
       final uri = Uri.parse(
-        '$_baseUrl/${SupabaseService.metaWabaId}/message_templates?name=$name',
+        '$_baseUrl/$wabaId/message_templates?name=$name',
       );
       debugPrint('[TemplatesProvider] DELETE $uri');
 
@@ -412,6 +451,26 @@ class TemplatesProvider extends ChangeNotifier {
         _isSyncing = false;
         notifyListeners();
         return 'Safety abort: client context changed during sync';
+      }
+
+      // ROOT CAUSE 5 — Validation gate: warn if Meta returned templates that look like
+      // they belong to a different client, which would indicate a WABA mismatch.
+      // This should not happen after Root Cause 1 fix (we now read WABA from ClientConfig
+      // directly), but log a loud warning if it ever does.
+      if (ClientConfig.currentClient?.isSharedWaba != true) {
+        final slug = ClientConfig.currentClient?.slug ?? '';
+        final expectedPrefix = slug.isNotEmpty ? '${normalizeSlug(slug)}_' : '';
+        int suspiciousCount = 0;
+        for (final t in _allMetaTemplates) {
+          final name = t.name.toLowerCase();
+          if (expectedPrefix.isNotEmpty && !name.startsWith(expectedPrefix) && name != 'hello_world') {
+            suspiciousCount++;
+            debugPrint('[sync] ⚠️ WABA MISMATCH WARNING: Template "${t.name}" does not start with expected prefix "$expectedPrefix" — possible wrong WABA!');
+          }
+        }
+        if (suspiciousCount > 0) {
+          debugPrint('[sync] ⚠️ $suspiciousCount suspicious template(s) detected for ${ClientConfig.currentClient?.name} — verify WABA ID is correct in client settings');
+        }
       }
 
       // Step 2: Apply prefix filter for shared-WABA clients to prevent cross-client contamination.
@@ -799,30 +858,53 @@ class TemplatesProvider extends ChangeNotifier {
 
     try {
       // Step 1: Start upload session
-      final initUrl = 'https://graph.facebook.com/${SupabaseService.metaApiVersion}/${SupabaseService.metaAppId}/uploads'
-          '?file_type=$mimeType&file_length=${imageBytes.length}';
-      debugPrint('[uploadImage] Step 1 — POST $initUrl');
-
-      final initResponse = await http.post(
-        Uri.parse(initUrl),
-        headers: {'Authorization': 'Bearer ${SupabaseService.metaAccessToken}'},
-      );
-
-      debugPrint('[uploadImage] Step 1 response: ${initResponse.statusCode} — ${initResponse.body}');
-
-      if (initResponse.statusCode != 200) {
-        _isSubmitting = false;
-        notifyListeners();
-        return null;
-      }
-
-      final initBody = jsonDecode(initResponse.body) as Map<String, dynamic>;
-      final uploadId = initBody['id'] as String?;
-      if (uploadId == null) {
-        debugPrint('[uploadImage] ERROR: no upload session id in response: ${initResponse.body}');
-        _isSubmitting = false;
-        notifyListeners();
-        return null;
+      // On web, CORS blocks direct calls to graph.facebook.com — proxy through Edge Function
+      String? uploadId;
+      if (kIsWeb) {
+        debugPrint('[uploadImage] Step 1 — via Edge Function (CORS proxy)');
+        final fn1Response = await SupabaseService.client.functions.invoke(
+          'proxy-meta-upload',
+          body: {
+            'action': 'create_session',
+            'appId': SupabaseService.metaAppId,
+            'apiVersion': SupabaseService.metaApiVersion,
+            'fileType': mimeType,
+            'fileLength': imageBytes.length.toString(),
+            'accessToken': _clientAccessToken,
+          },
+        );
+        final fn1Body = fn1Response.data is Map
+            ? fn1Response.data as Map<String, dynamic>
+            : jsonDecode(fn1Response.data.toString()) as Map<String, dynamic>;
+        uploadId = fn1Body['id'] as String?;
+        if (uploadId == null) {
+          debugPrint('[uploadImage] Step 1 failed via Edge Function: $fn1Body');
+          _isSubmitting = false;
+          notifyListeners();
+          return null;
+        }
+      } else {
+        final initUrl = 'https://graph.facebook.com/${SupabaseService.metaApiVersion}/${SupabaseService.metaAppId}/uploads'
+            '?file_type=$mimeType&file_length=${imageBytes.length}';
+        debugPrint('[uploadImage] Step 1 — POST $initUrl');
+        final initResponse = await http.post(
+          Uri.parse(initUrl),
+          headers: {'Authorization': 'Bearer $_clientAccessToken'},
+        );
+        debugPrint('[uploadImage] Step 1 response: ${initResponse.statusCode} — ${initResponse.body}');
+        if (initResponse.statusCode != 200) {
+          _isSubmitting = false;
+          notifyListeners();
+          return null;
+        }
+        final initBody = jsonDecode(initResponse.body) as Map<String, dynamic>;
+        uploadId = initBody['id'] as String?;
+        if (uploadId == null) {
+          debugPrint('[uploadImage] ERROR: no upload session id in response: ${initResponse.body}');
+          _isSubmitting = false;
+          notifyListeners();
+          return null;
+        }
       }
 
       final sessionUrl =
@@ -841,13 +923,29 @@ class TemplatesProvider extends ChangeNotifier {
             'sessionUrl': sessionUrl,
             'fileBase64': fileBase64,
             'mimeType': mimeType,
+            'accessToken': _clientAccessToken,
           },
         );
-        debugPrint('[uploadImage] Edge Function response: ${fnResponse.data}');
-        handle = (fnResponse.data as Map<String, dynamic>?)?['handle'] as String?;
-        if (handle == null) {
-          final err = (fnResponse.data as Map<String, dynamic>?)?['error'];
-          debugPrint('[uploadImage] ERROR from Edge Function: $err');
+        debugPrint('[uploadImage] Edge Function raw type: ${fnResponse.data.runtimeType}');
+        debugPrint('[uploadImage] Edge Function raw response: ${fnResponse.data}');
+        Map<String, dynamic> fnBody;
+        if (fnResponse.data is Map<String, dynamic>) {
+          fnBody = fnResponse.data as Map<String, dynamic>;
+        } else if (fnResponse.data is Map) {
+          fnBody = Map<String, dynamic>.from(fnResponse.data as Map);
+        } else if (fnResponse.data is String) {
+          fnBody = jsonDecode(fnResponse.data as String) as Map<String, dynamic>;
+        } else {
+          debugPrint('[uploadImage] ERROR: unexpected response type ${fnResponse.data.runtimeType}');
+          _isSubmitting = false;
+          notifyListeners();
+          return null;
+        }
+        handle = fnBody['h']?.toString();
+        if (handle == null || handle.isEmpty) {
+          debugPrint('[uploadImage] ERROR: no handle in response. Full body: $fnBody');
+        } else {
+          debugPrint('[uploadImage] Extracted handle: $handle');
         }
       } else {
         // Native platforms — direct upload works fine
