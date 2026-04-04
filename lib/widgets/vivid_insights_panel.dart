@@ -43,14 +43,19 @@ class _VividInsightsPanelState extends State<VividInsightsPanel> {
     final p = context.read<AdminAnalyticsProvider>();
     final futures = <Future>[];
 
-    if (client.hasFeature('conversations') && client.messagesTable != null) {
+    // Use same fallback logic as the provider: slug is enough when table name is null
+    final hasMessagesTable = client.messagesTable != null || client.slug.isNotEmpty;
+    final hasBroadcastsTable = client.broadcastsTable != null || client.slug.isNotEmpty;
+
+    // Optimal Timing = when customers respond to broadcasts → needs broadcasts feature
+    if (client.hasFeature('broadcasts') && hasBroadcastsTable) {
       futures.add(p.fetchOptimalTiming(client).then((v) => _timing = v));
+      futures.add(p.fetchBroadcastROI(client).then((v) => _roi = v));
+    }
+    if (client.hasFeature('conversations') && hasMessagesTable) {
       futures.add(p.fetchResponseTime(client).then((v) => _responseTime = v));
       futures.add(
           p.fetchConversationEngagement(client).then((v) => _engagement = v));
-    }
-    if (client.hasFeature('broadcasts') && client.broadcastsTable != null) {
-      futures.add(p.fetchBroadcastROI(client).then((v) => _roi = v));
     }
     if (client.hasFeature('predictive_intelligence') &&
         client.customerPredictionsTable != null) {
@@ -58,7 +63,11 @@ class _VividInsightsPanelState extends State<VividInsightsPanel> {
           .add(p.fetchCustomerReturnRate(client).then((v) => _returnRate = v));
     }
 
-    await Future.wait(futures);
+    try {
+      await Future.wait(futures);
+    } catch (e) {
+      debugPrint('VividInsightsPanel load error: $e');
+    }
     if (mounted) setState(() => _loading = false);
   }
 
@@ -96,17 +105,16 @@ class _VividInsightsPanelState extends State<VividInsightsPanel> {
     if (_timing != null && client.hasFeature('broadcasts')) {
       cards.add(_TimingCard(result: _timing!));
     }
-    if (_roi != null) {
+    if (_roi != null && client.hasFeature('broadcasts')) {
       cards.add(_ROICard(result: _roi!));
     }
-    if (_responseTime != null) {
+    if (_responseTime != null && client.hasFeature('conversations')) {
       cards.add(_ResponseTimeCard(result: _responseTime!));
     }
-    if (_returnRate != null &&
-        client.hasFeature('predictive_intelligence')) {
+    if (_returnRate != null && client.hasFeature('predictive_intelligence')) {
       cards.add(_ReturnRateCard(result: _returnRate!));
     }
-    if (_engagement != null) {
+    if (_engagement != null && client.hasFeature('conversations')) {
       cards.add(_EngagementCard(result: _engagement!));
     }
     // Card 6: Feature Adoption — always shown
@@ -388,7 +396,10 @@ class _HeatmapWidget extends StatelessWidget {
   final List<List<int>> heatmap; // [day][hour]
   const _HeatmapWidget({required this.heatmap});
 
-  static const _days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  static const _dayLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+  static const _cellSize = 16.0;
+  static const _cellGap = 1.0;
+  static const _labelWidth = 16.0;
 
   @override
   Widget build(BuildContext context) {
@@ -400,66 +411,64 @@ class _HeatmapWidget extends StatelessWidget {
       }
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Hour labels top (every 3h)
-        Padding(
-          padding: const EdgeInsets.only(left: 32),
-          child: Row(
-            children: List.generate(24, (h) {
-              if (h % 3 != 0) return const Expanded(child: SizedBox());
-              return Expanded(
-                child: Text(
-                  h == 0
-                      ? '12a'
-                      : h == 12
-                          ? '12p'
-                          : h < 12
-                              ? '${h}a'
-                              : '${h - 12}p',
-                  style: TextStyle(color: vc.textMuted, fontSize: 8),
-                  textAlign: TextAlign.center,
-                ),
-              );
-            }),
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Hour labels top (every 3h)
+          Row(
+            children: [
+              const SizedBox(width: _labelWidth + 4),
+              ...List.generate(24, (h) {
+                return SizedBox(
+                  width: _cellSize + _cellGap,
+                  child: h % 3 == 0
+                      ? Text(
+                          '$h',
+                          style: TextStyle(color: vc.textMuted, fontSize: 8),
+                          textAlign: TextAlign.center,
+                        )
+                      : const SizedBox.shrink(),
+                );
+              }),
+            ],
           ),
-        ),
-        const SizedBox(height: 2),
-        ...List.generate(7, (day) {
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 3),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 28,
-                  child: Text(
-                    _days[day],
-                    style: TextStyle(color: vc.textMuted, fontSize: 10),
-                    textAlign: TextAlign.right,
+          const SizedBox(height: 3),
+          // Day rows
+          ...List.generate(7, (day) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: _cellGap),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: _labelWidth,
+                    child: Text(
+                      _dayLabels[day],
+                      style: TextStyle(color: vc.textMuted, fontSize: 9),
+                      textAlign: TextAlign.center,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 4),
-                ...List.generate(24, (hour) {
-                  final val = heatmap[day][hour];
-                  final intensity = val / maxVal;
-                  return Expanded(
-                    child: Container(
-                      height: 14,
-                      margin: const EdgeInsets.symmetric(horizontal: 0.5),
+                  const SizedBox(width: 4),
+                  ...List.generate(24, (hour) {
+                    final val = heatmap[day][hour];
+                    final intensity = val == 0 ? 0.05 : 0.15 + (val / maxVal) * 0.85;
+                    return Container(
+                      width: _cellSize,
+                      height: _cellSize,
+                      margin: const EdgeInsets.only(right: _cellGap),
                       decoration: BoxDecoration(
-                        color: VividColors.cyan
-                            .withValues(alpha: 0.05 + intensity * 0.9),
+                        color: VividColors.cyan.withValues(alpha: intensity),
                         borderRadius: BorderRadius.circular(2),
                       ),
-                    ),
-                  );
-                }),
-              ],
-            ),
-          );
-        }),
-      ],
+                    );
+                  }),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
     );
   }
 }
@@ -490,6 +499,27 @@ class _ROICard extends StatelessWidget {
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Trend line chart — shown ABOVE the metric boxes
+                if (result.campaignResponseRates.length >= 2) ...[
+                  Text('Response rate trend',
+                      style: TextStyle(color: vc.textMuted, fontSize: 11)),
+                  const SizedBox(height: 6),
+                  SizedBox(
+                    height: 120,
+                    child: CustomPaint(
+                      painter: _SparklinePainter(
+                        values: result.campaignResponseRates
+                            .map((v) => v.round())
+                            .toList(),
+                        maxVal: 100,
+                        color: Colors.orange,
+                        drawDots: true,
+                      ),
+                      size: Size.infinite,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                ],
                 // 4 metric boxes
                 Wrap(
                   spacing: 8,
@@ -518,26 +548,6 @@ class _ROICard extends StatelessWidget {
                         Colors.purple.shade300),
                   ],
                 ),
-                if (result.campaignResponseRates.length >= 2) ...[
-                  const SizedBox(height: 14),
-                  Text('Response rate per campaign',
-                      style:
-                          TextStyle(color: vc.textMuted, fontSize: 11)),
-                  const SizedBox(height: 6),
-                  SizedBox(
-                    height: 60,
-                    child: CustomPaint(
-                      painter: _SparklinePainter(
-                        values: result.campaignResponseRates
-                            .map((v) => v.round())
-                            .toList(),
-                        maxVal: 100,
-                        color: Colors.orange,
-                      ),
-                      size: Size.infinite,
-                    ),
-                  ),
-                ],
               ],
             ),
     );
@@ -622,6 +632,19 @@ class _ResponseTimeCard extends StatelessWidget {
                     ),
                   ),
                 ],
+                if (result.slowConversations > 0) ...[
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      const Icon(Icons.warning_amber_rounded, size: 15, color: Colors.orange),
+                      const SizedBox(width: 6),
+                      Text(
+                        '${result.slowConversations} conversations over 4hr response time',
+                        style: const TextStyle(color: Colors.orange, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ],
                 if (result.agentStats.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   Text('By agent',
@@ -630,31 +653,51 @@ class _ResponseTimeCard extends StatelessWidget {
                           fontSize: 11,
                           fontWeight: FontWeight.w600)),
                   const SizedBox(height: 6),
-                  ...result.agentStats.entries
-                      .toList()
-                      .take(4)
-                      .map((e) => Padding(
-                            padding: const EdgeInsets.only(bottom: 4),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                    child: Text(e.key,
-                                        style: TextStyle(
-                                            color: vc.textPrimary,
-                                            fontSize: 12))),
-                                Text(
-                                    '${e.value.$1.round()} min avg',
+                  // Header row
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Row(
+                      children: [
+                        Expanded(child: Text('Agent', style: TextStyle(color: vc.textMuted, fontSize: 10, fontWeight: FontWeight.w600))),
+                        SizedBox(width: 80, child: Text('Avg Response', style: TextStyle(color: vc.textMuted, fontSize: 10, fontWeight: FontWeight.w600), textAlign: TextAlign.right)),
+                        SizedBox(width: 55, child: Text('Messages', style: TextStyle(color: vc.textMuted, fontSize: 10, fontWeight: FontWeight.w600), textAlign: TextAlign.right)),
+                      ],
+                    ),
+                  ),
+                  Divider(height: 1, color: vc.border),
+                  const SizedBox(height: 4),
+                  ...(() {
+                    final sorted = result.agentStats.entries.toList()
+                      ..sort((a, b) => b.value.$2.compareTo(a.value.$2));
+                    return sorted.take(10).map((e) => Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                  child: Text(e.key,
+                                      style: TextStyle(
+                                          color: vc.textPrimary,
+                                          fontSize: 12),
+                                      overflow: TextOverflow.ellipsis)),
+                              SizedBox(
+                                width: 80,
+                                child: Text(
+                                    '${e.value.$1.round()} min',
+                                    style: TextStyle(
+                                        color: e.value.$1 >= 240 ? Colors.orange : vc.textMuted,
+                                        fontSize: 12),
+                                    textAlign: TextAlign.right)),
+                              SizedBox(
+                                width: 55,
+                                child: Text('${e.value.$2}',
                                     style: TextStyle(
                                         color: vc.textMuted,
-                                        fontSize: 12)),
-                                const SizedBox(width: 12),
-                                Text('${e.value.$2} msgs',
-                                    style: TextStyle(
-                                        color: vc.textMuted,
-                                        fontSize: 12)),
-                              ],
-                            ),
-                          )),
+                                        fontSize: 12),
+                                    textAlign: TextAlign.right)),
+                            ],
+                          ),
+                        ));
+                  })(),
                 ],
               ],
             ),
@@ -1052,9 +1095,10 @@ class _SparklinePainter extends CustomPainter {
   final List<int> values;
   final int maxVal;
   final Color color;
+  final bool drawDots;
 
   const _SparklinePainter(
-      {required this.values, required this.maxVal, required this.color});
+      {required this.values, required this.maxVal, required this.color, this.drawDots = false});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1067,16 +1111,21 @@ class _SparklinePainter extends CustomPainter {
     final fillPaint = Paint()
       ..color = color.withValues(alpha: 0.12)
       ..style = PaintingStyle.fill;
+    final dotPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
 
     final path = Path();
     final fill = Path();
     final step =
         values.length > 1 ? size.width / (values.length - 1) : 0.0;
 
+    final points = <Offset>[];
     for (var i = 0; i < values.length; i++) {
       final x = i * step;
       final y =
           size.height - (values[i].clamp(0, maxVal) / maxVal * size.height);
+      points.add(Offset(x, y));
       if (i == 0) {
         path.moveTo(x, y);
         fill.moveTo(x, size.height);
@@ -1090,6 +1139,16 @@ class _SparklinePainter extends CustomPainter {
     fill.close();
     canvas.drawPath(fill, fillPaint);
     canvas.drawPath(path, linePaint);
+
+    if (drawDots) {
+      for (final pt in points) {
+        canvas.drawCircle(pt, 3.5, dotPaint);
+        canvas.drawCircle(pt, 3.5, Paint()
+          ..color = Colors.white.withValues(alpha: 0.8)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5);
+      }
+    }
   }
 
   @override

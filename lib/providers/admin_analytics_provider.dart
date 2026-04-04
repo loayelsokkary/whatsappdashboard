@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import '../models/models.dart';
 import '../services/supabase_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -473,10 +473,162 @@ class ConversationEngagementResult {
   });
 }
 
+// ─── KPI ANALYTICS DATA CLASSES ─────────────────────────────────────────────
+
+class KpiClientHealth {
+  final String name;
+  final String grade;
+  final Color gradeColor;
+  const KpiClientHealth({required this.name, required this.grade, required this.gradeColor});
+}
+
+/// Generic per-client stat row used for breakdowns across multiple KPI cards.
+class KpiClientBreakdown {
+  final String name;
+  final String value;
+  final Color? color;
+  const KpiClientBreakdown({required this.name, required this.value, this.color});
+}
+
+class KpiChurnClient {
+  final String name;
+  /// Days since last sent broadcast. -1 means never broadcast.
+  final int daysSinceLastBroadcast;
+  const KpiChurnClient({required this.name, required this.daysSinceLastBroadcast});
+}
+
+class KpiOnboardingClient {
+  final String name;
+  /// Days from client.createdAt to first sent broadcast. -1 means no broadcast yet.
+  final int daysToFirstBroadcast;
+  const KpiOnboardingClient({required this.name, required this.daysToFirstBroadcast});
+}
+
+/// Internal per-client result used for parallel KPI aggregation
+class _PerClientKpiData {
+  final String clientName;
+  final bool activeThis;
+  final bool activeLast;
+  final int bcastThis;
+  final int bcastLast;
+  final List<int> weeklyVolume; // 12-element list
+  final List<double> responseRates;
+  final List<String> campaignNames;
+  final double revenueThis;
+  final double revenueLast;
+  final int revenueCampaigns;
+  final Set<String> reachPhonesThis;
+  final Set<String> reachPhonesLast;
+  final String healthGrade;
+  final Color gradeColor;
+  final bool isLowHealth;
+  final KpiChurnClient? churnEntry;
+  final KpiOnboardingClient onboardingEntry;
+  const _PerClientKpiData({
+    required this.clientName,
+    required this.activeThis,
+    required this.activeLast,
+    required this.bcastThis,
+    required this.bcastLast,
+    required this.weeklyVolume,
+    required this.responseRates,
+    required this.campaignNames,
+    required this.revenueThis,
+    required this.revenueLast,
+    required this.revenueCampaigns,
+    required this.reachPhonesThis,
+    required this.reachPhonesLast,
+    required this.healthGrade,
+    required this.gradeColor,
+    required this.isLowHealth,
+    this.churnEntry,
+    required this.onboardingEntry,
+  });
+}
+
+class VividKpiAnalytics {
+  // 1. Active Clients
+  final int activeClientsThisPeriod;
+  final int activeClientsLastPeriod;
+  final int totalClients;
+
+  // 2. Broadcast Volume
+  final List<int> weeklyBroadcastVolume; // 12 weeks, oldest → newest
+  final int broadcastsThisPeriod;
+  final int broadcastsLastPeriod;
+
+  // 3. Avg Response Rate
+  final double avgResponseRatePct; // 0–100
+  final List<double> campaignResponseRates; // last 10 campaigns, oldest first
+  final List<String> campaignNames;
+
+  // 4. Revenue
+  final double revenueThisPeriod;
+  final double revenueLastPeriod;
+  final int revenueCampaignCount;
+
+  // 5. Customer Reach
+  final int reachThisPeriod;
+  final int reachLastPeriod;
+
+  // 6. Client Health
+  final Map<String, int> healthGradeCounts; // A/B/C/D/F → count
+  final List<KpiClientHealth> lowHealthClients;
+
+  // 7. Churn Risk
+  final int churnRiskCount;
+  final List<KpiChurnClient> churnRiskClients;
+
+  // 8. Time to First Broadcast
+  final double avgDaysToFirstBroadcast;
+  final List<KpiOnboardingClient> onboardingBreakdown;
+
+  // Per-client breakdowns for cards 1–5
+  final List<KpiClientBreakdown> clientActivityBreakdown;   // 1. active/inactive per client
+  final List<KpiClientBreakdown> clientBroadcastBreakdown;  // 2. broadcast count per client
+  final List<KpiClientBreakdown> clientResponseRateBreakdown; // 3. avg response rate per client
+  final List<KpiClientBreakdown> clientRevenueBreakdown;    // 4. revenue per client
+  final List<KpiClientBreakdown> clientReachBreakdown;      // 5. unique reach per client
+
+  final String periodLabel;
+
+  const VividKpiAnalytics({
+    required this.activeClientsThisPeriod,
+    required this.activeClientsLastPeriod,
+    required this.totalClients,
+    required this.weeklyBroadcastVolume,
+    required this.broadcastsThisPeriod,
+    required this.broadcastsLastPeriod,
+    required this.avgResponseRatePct,
+    required this.campaignResponseRates,
+    required this.campaignNames,
+    required this.revenueThisPeriod,
+    required this.revenueLastPeriod,
+    required this.revenueCampaignCount,
+    required this.reachThisPeriod,
+    required this.reachLastPeriod,
+    required this.healthGradeCounts,
+    required this.lowHealthClients,
+    required this.churnRiskCount,
+    required this.churnRiskClients,
+    required this.avgDaysToFirstBroadcast,
+    required this.onboardingBreakdown,
+    required this.clientActivityBreakdown,
+    required this.clientBroadcastBreakdown,
+    required this.clientResponseRateBreakdown,
+    required this.clientRevenueBreakdown,
+    required this.clientReachBreakdown,
+    required this.periodLabel,
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 /// Provider for admin-level analytics per client
 class AdminAnalyticsProvider extends ChangeNotifier {
   bool _isLoading = false;
   bool _isLoadingCompany = false;
+  bool _isLoadingKpi = false; // used by isLoadingKpi getter and fetchKpiAnalytics
   String? _error;
   
   // Cache analytics per client
@@ -485,6 +637,12 @@ class AdminAnalyticsProvider extends ChangeNotifier {
   
   // Company-wide analytics
   VividCompanyAnalytics? _companyAnalytics;
+  DateTime? _companyCacheTime;
+
+  // KPI analytics
+  VividKpiAnalytics? _kpiAnalytics;
+  DateTime? _kpiCacheTime;
+  String? _kpiCachePeriod;
 
   // Real-time subscriptions
   RealtimeChannel? _messagesChannel;
@@ -494,8 +652,10 @@ class AdminAnalyticsProvider extends ChangeNotifier {
 
   bool get isLoading => _isLoading;
   bool get isLoadingCompany => _isLoadingCompany;
+  bool get isLoadingKpi => _isLoadingKpi;
   String? get error => _error;
   VividCompanyAnalytics? get companyAnalytics => _companyAnalytics;
+  VividKpiAnalytics? get kpiAnalytics => _kpiAnalytics;
 
   // ============================================
   // TABLE NAME HELPERS
@@ -953,6 +1113,13 @@ class AdminAnalyticsProvider extends ChangeNotifier {
   /// Fetch company-wide analytics (all clients combined)
   /// Iterates over each client's slug-based tables and aggregates results
   Future<void> fetchCompanyAnalytics(List<Client> clients) async {
+    // 5-minute cache — skip refetch if data is fresh
+    if (_companyAnalytics != null &&
+        _companyCacheTime != null &&
+        DateTime.now().difference(_companyCacheTime!).inMinutes < 5) {
+      return;
+    }
+
     _isLoadingCompany = true;
     _error = null;
     notifyListeners();
@@ -1264,15 +1431,578 @@ class AdminAnalyticsProvider extends ChangeNotifier {
       // Subscribe to real-time updates
       _subscribeToCompanyUpdates(clients);
 
+      _companyCacheTime = DateTime.now();
       _error = null;
     } catch (e) {
       _error = 'Failed to fetch company analytics: $e';
-      print('Error fetching company analytics: $e');
+      debugPrint('Error fetching company analytics: $e');
     }
 
     _isLoadingCompany = false;
     notifyListeners();
   }
+
+  // ─── KPI ANALYTICS ────────────────────────────────────────────────────────
+
+  Future<void> fetchKpiAnalytics(
+    List<Client> clients, {
+    String period = 'this_month', // 'this_month' | 'last_30' | 'last_90' | 'all_time'
+  }) async {
+    // 5-minute cache per period
+    final now0 = DateTime.now();
+    if (_kpiAnalytics != null &&
+        _kpiCachePeriod == period &&
+        _kpiCacheTime != null &&
+        now0.difference(_kpiCacheTime!).inMinutes < 5) {
+      return;
+    }
+
+    _isLoadingKpi = true;
+    notifyListeners();
+
+    try {
+      final supabase = SupabaseService.adminClient;
+      final now = DateTime.now().toUtc();
+
+      // ── Period windows ──────────────────────────────────
+      DateTime? thisPeriodStart;
+      DateTime? lastPeriodStart;
+      DateTime? lastPeriodEnd;
+      String periodLabel;
+
+      if (period == 'this_month') {
+        thisPeriodStart = DateTime.utc(now.year, now.month, 1);
+        lastPeriodStart = DateTime.utc(now.year, now.month - 1, 1);
+        lastPeriodEnd = thisPeriodStart;
+        periodLabel = 'This Month';
+      } else if (period == 'last_30') {
+        thisPeriodStart = now.subtract(const Duration(days: 30));
+        lastPeriodStart = now.subtract(const Duration(days: 60));
+        lastPeriodEnd = thisPeriodStart;
+        periodLabel = 'Last 30 Days';
+      } else if (period == 'last_90') {
+        thisPeriodStart = now.subtract(const Duration(days: 90));
+        lastPeriodStart = now.subtract(const Duration(days: 180));
+        lastPeriodEnd = thisPeriodStart;
+        periodLabel = 'Last 90 Days';
+      } else {
+        // all_time — no date filter; last period = never (compare to 0)
+        thisPeriodStart = null;
+        lastPeriodStart = null;
+        lastPeriodEnd = null;
+        periodLabel = 'All Time';
+      }
+
+      // ── 12-week bar chart start ──────────────────────────
+      final twelveWeeksAgo = now.subtract(const Duration(days: 84));
+
+      // ── Accumulators ─────────────────────────────────────
+      int activeThisPeriod = 0;
+      int activeLastPeriod = 0;
+
+      // weekly broadcast volume: index 0 = oldest week
+      final weeklyVolume = List<int>.filled(12, 0);
+
+      int bcastThisPeriod = 0;
+      int bcastLastPeriod = 0;
+
+      // response rate: per campaign
+      final allResponseRates = <double>[];
+      final allCampaignNames = <String>[];
+
+      double revenueThis = 0;
+      double revenueLast = 0;
+      int revenueCampaigns = 0;
+
+      final reachPhonesThis = <String>{};
+      final reachPhonesLast = <String>{};
+
+      // health
+      final healthGrades = <String, int>{'A': 0, 'B': 0, 'C': 0, 'D': 0, 'F': 0};
+      final lowHealthClients = <KpiClientHealth>[];
+
+      // churn risk
+      final churnClients = <KpiChurnClient>[];
+
+      // onboarding
+      final onboardingRows = <KpiOnboardingClient>[];
+
+      // Use existing companyAnalytics activities for health scoring if loaded
+      final existingActivities = _companyAnalytics?.allClientActivities ?? [];
+      final activityMap = {for (final a in existingActivities) a.clientId: a};
+
+      // ── Parallel per-client processing ──────────────────
+      Future<_PerClientKpiData> processClient(Client client) async {
+        bool activeThis = false;
+        bool activeLast = false;
+        DateTime? lastBroadcastDate;
+        int bcastThis = 0;
+        int bcastLast = 0;
+        final localWeekly = List<int>.filled(12, 0);
+        final localRates = <double>[];
+        final localNames = <String>[];
+        double revThis = 0;
+        double revLast = 0;
+        int revCampaigns = 0;
+        final localReachThis = <String>{};
+        final localReachLast = <String>{};
+
+        // ── BROADCASTS ───────────────────────────────────
+        if (client.hasFeature('broadcasts')) {
+          try {
+            final bTable = _getBroadcastsTable(client);
+            final rTable = _getRecipientsTable(client);
+
+            final List<dynamic> allBroadcasts = await supabase
+                .from(bTable)
+                .select('id,sent_at,offer_amount,campaign_name')
+                .eq('status', 'sent')
+                .order('sent_at', ascending: true);
+
+            for (final b in allBroadcasts) {
+              final sentAtStr = b['sent_at'] as String?;
+              final sentAt = sentAtStr != null ? DateTime.tryParse(sentAtStr)?.toUtc() : null;
+              if (sentAt == null) continue;
+
+              if (lastBroadcastDate == null || sentAt.isAfter(lastBroadcastDate)) {
+                lastBroadcastDate = sentAt;
+              }
+
+              if (thisPeriodStart == null || sentAt.isAfter(thisPeriodStart)) {
+                activeThis = true;
+                bcastThis++;
+              }
+              if (lastPeriodStart != null && lastPeriodEnd != null &&
+                  sentAt.isAfter(lastPeriodStart) && sentAt.isBefore(lastPeriodEnd)) {
+                activeLast = true;
+                bcastLast++;
+              }
+
+              if (sentAt.isAfter(twelveWeeksAgo)) {
+                final daysDiff = sentAt.difference(twelveWeeksAgo).inDays;
+                final weekIndex = (daysDiff ~/ 7).clamp(0, 11);
+                localWeekly[weekIndex]++;
+              }
+
+              final offerAmount = (b['offer_amount'] as num?)?.toDouble() ?? 0.0;
+              final bid = b['id'] as String;
+              final campaignName = b['campaign_name'] as String? ?? 'Campaign';
+
+              if (rTable != null && client.hasFeature('conversations')) {
+                try {
+                  final msgTable = _getMessagesTable(client);
+                  final List<dynamic> recipients = await supabase
+                      .from(rTable)
+                      .select('customer_phone,status')
+                      .eq('broadcast_id', bid);
+
+                  if (recipients.isNotEmpty) {
+                    final recipientPhones = recipients
+                        .map((r) => r['customer_phone'] as String?)
+                        .whereType<String>()
+                        .toSet();
+
+                    if (recipientPhones.isNotEmpty) {
+                      final cutoff = sentAt.add(const Duration(hours: 72));
+                      final List<dynamic> responses = await supabase
+                          .from(msgTable)
+                          .select('customer_phone')
+                          .inFilter('customer_phone', recipientPhones.toList())
+                          .gte('created_at', sentAt.toIso8601String())
+                          .lte('created_at', cutoff.toIso8601String());
+
+                      final respondedPhones = responses
+                          .map((r) => r['customer_phone'] as String?)
+                          .whereType<String>()
+                          .toSet();
+
+                      localRates.add(recipientPhones.isNotEmpty
+                          ? respondedPhones.length / recipientPhones.length * 100
+                          : 0.0);
+                      localNames.add(campaignName);
+
+                      if (respondedPhones.isNotEmpty && offerAmount > 0) {
+                        if (thisPeriodStart == null || sentAt.isAfter(thisPeriodStart)) {
+                          revThis += offerAmount;
+                          revCampaigns++;
+                        } else if (lastPeriodStart != null && lastPeriodEnd != null &&
+                            sentAt.isAfter(lastPeriodStart) && sentAt.isBefore(lastPeriodEnd)) {
+                          revLast += offerAmount;
+                        }
+                      }
+                    }
+                  }
+                } catch (_) {}
+              }
+            }
+
+            final onboarding = allBroadcasts.isNotEmpty
+                ? () {
+                    final firstSentStr = allBroadcasts.first['sent_at'] as String?;
+                    final firstSent = firstSentStr != null ? DateTime.tryParse(firstSentStr) : null;
+                    return KpiOnboardingClient(
+                      name: client.name,
+                      daysToFirstBroadcast: firstSent != null
+                          ? firstSent.difference(client.createdAt).inDays
+                          : -1,
+                    );
+                  }()
+                : KpiOnboardingClient(name: client.name, daysToFirstBroadcast: -1);
+
+            // ── MESSAGES — activity + reach ──────────────────
+            if (client.hasFeature('conversations')) {
+              try {
+                final msgTable = _getMessagesTable(client);
+                final phone = _getConversationsPhone(client);
+                var q = supabase.from(msgTable).select('customer_phone,created_at');
+                if (phone != null && phone.isNotEmpty) q = q.eq('ai_phone', phone);
+                const pageSize = 1000;
+                int offset = 0;
+                while (true) {
+                  final List<dynamic> msgs = await q
+                      .order('created_at', ascending: false)
+                      .range(offset, offset + pageSize - 1);
+                  for (final m in msgs) {
+                    final cPhone = m['customer_phone'] as String?;
+                    final createdAtStr = m['created_at'] as String?;
+                    final createdAt = createdAtStr != null ? DateTime.tryParse(createdAtStr)?.toUtc() : null;
+                    if (createdAt == null || cPhone == null) continue;
+                    if (thisPeriodStart == null || createdAt.isAfter(thisPeriodStart)) {
+                      localReachThis.add(cPhone);
+                      activeThis = true;
+                    }
+                    if (lastPeriodStart != null && lastPeriodEnd != null &&
+                        createdAt.isAfter(lastPeriodStart) && createdAt.isBefore(lastPeriodEnd)) {
+                      localReachLast.add(cPhone);
+                      activeLast = true;
+                    }
+                  }
+                  if (msgs.length < pageSize) break;
+                  offset += pageSize;
+                }
+              } catch (e) {
+                debugPrint('[KPI] messages error for ${client.name}: $e');
+              }
+            }
+
+            // ── Health grade ─────────────────────────────────
+            final activity = activityMap[client.id];
+            final cAi = activity?.aiMessages ?? 0;
+            final cMgr = activity?.managerMessages ?? 0;
+            final cTotal = cAi + cMgr;
+            final autoRate = cTotal > 0 ? (cAi / cTotal) * 100 : 0.0;
+            final msgCount = activity?.messageCount ?? 0;
+            final daysSinceOnboarding = now.difference(client.createdAt.toUtc()).inDays;
+            final lastAct = activity?.lastActivity ?? lastBroadcastDate;
+            final daysSinceAct = lastAct != null ? now.difference(lastAct).inDays : 999;
+            int healthScore = 0;
+            healthScore += (daysSinceAct <= 7 ? 100 : daysSinceAct <= 14 ? 70 : daysSinceAct <= 30 ? 40 : daysSinceAct <= 60 ? 10 : 0) * 30 ~/ 100;
+            final msgPerDay = daysSinceOnboarding > 0 ? msgCount / daysSinceOnboarding : 0;
+            healthScore += (msgPerDay >= 10 ? 100 : msgPerDay >= 3 ? 70 : msgPerDay >= 1 ? 40 : msgPerDay > 0 ? 20 : 0) * 20 ~/ 100;
+            final coreFeatures = ['conversations', 'broadcasts', 'manager_chat'];
+            final adopted = coreFeatures.where((f) => client.enabledFeatures.contains(f)).length;
+            healthScore += (adopted * 100 ~/ 3) * 20 ~/ 100;
+            healthScore += (autoRate >= 80 ? 100 : autoRate >= 50 ? 70 : autoRate >= 20 ? 40 : autoRate > 0 ? 20 : 0) * 15 ~/ 100;
+            int configPts = 0;
+            if (client.webhookUrl != null && client.webhookUrl!.isNotEmpty) configPts += 25;
+            if (client.businessPhone != null && client.businessPhone!.isNotEmpty) configPts += 25;
+            if (client.slug.isNotEmpty) configPts += 25;
+            if (client.enabledFeatures.isNotEmpty) configPts += 25;
+            healthScore += configPts * 15 ~/ 100;
+            final grade = healthScore >= 80 ? 'A' : healthScore >= 60 ? 'B' : healthScore >= 40 ? 'C' : healthScore >= 20 ? 'D' : 'F';
+
+            // ── Churn risk ────────────────────────────────────
+            KpiChurnClient? churnEntry;
+            if (client.hasFeature('broadcasts')) {
+              final daysSince = lastBroadcastDate != null ? now.difference(lastBroadcastDate).inDays : -1;
+              if (daysSince > 30 || daysSince == -1) {
+                churnEntry = KpiChurnClient(name: client.name, daysSinceLastBroadcast: daysSince);
+              }
+            }
+
+            return _PerClientKpiData(
+              clientName: client.name,
+              activeThis: activeThis || thisPeriodStart == null,
+              activeLast: activeLast,
+              bcastThis: bcastThis,
+              bcastLast: bcastLast,
+              weeklyVolume: localWeekly,
+              responseRates: localRates,
+              campaignNames: localNames,
+              revenueThis: revThis,
+              revenueLast: revLast,
+              revenueCampaigns: revCampaigns,
+              reachPhonesThis: localReachThis,
+              reachPhonesLast: localReachLast,
+              healthGrade: grade,
+              gradeColor: grade == 'D' ? Colors.orange : grade == 'F' ? Colors.red : Colors.green,
+              isLowHealth: grade == 'D' || grade == 'F',
+              churnEntry: churnEntry,
+              onboardingEntry: onboarding,
+            );
+          } catch (e) {
+            debugPrint('[KPI] error for ${client.name}: $e');
+          }
+        }
+
+        // Client has no broadcasts feature — still compute health + onboarding stub
+        final activity = activityMap[client.id];
+        final cAi = activity?.aiMessages ?? 0;
+        final cMgr = activity?.managerMessages ?? 0;
+        final cTotal = cAi + cMgr;
+        final autoRate = cTotal > 0 ? (cAi / cTotal) * 100 : 0.0;
+        final msgCount = activity?.messageCount ?? 0;
+        final daysSinceOnboarding = now.difference(client.createdAt.toUtc()).inDays;
+        final lastAct = activity?.lastActivity;
+        final daysSinceAct = lastAct != null ? now.difference(lastAct).inDays : 999;
+        int healthScore = 0;
+        healthScore += (daysSinceAct <= 7 ? 100 : daysSinceAct <= 14 ? 70 : daysSinceAct <= 30 ? 40 : daysSinceAct <= 60 ? 10 : 0) * 30 ~/ 100;
+        final msgPerDay = daysSinceOnboarding > 0 ? msgCount / daysSinceOnboarding : 0;
+        healthScore += (msgPerDay >= 10 ? 100 : msgPerDay >= 3 ? 70 : msgPerDay >= 1 ? 40 : msgPerDay > 0 ? 20 : 0) * 20 ~/ 100;
+        final coreFeatures = ['conversations', 'broadcasts', 'manager_chat'];
+        final adopted = coreFeatures.where((f) => client.enabledFeatures.contains(f)).length;
+        healthScore += (adopted * 100 ~/ 3) * 20 ~/ 100;
+        healthScore += (autoRate >= 80 ? 100 : autoRate >= 50 ? 70 : autoRate >= 20 ? 40 : autoRate > 0 ? 20 : 0) * 15 ~/ 100;
+        int configPts = 0;
+        if (client.webhookUrl != null && client.webhookUrl!.isNotEmpty) configPts += 25;
+        if (client.businessPhone != null && client.businessPhone!.isNotEmpty) configPts += 25;
+        if (client.slug.isNotEmpty) configPts += 25;
+        if (client.enabledFeatures.isNotEmpty) configPts += 25;
+        healthScore += configPts * 15 ~/ 100;
+        final grade = healthScore >= 80 ? 'A' : healthScore >= 60 ? 'B' : healthScore >= 40 ? 'C' : healthScore >= 20 ? 'D' : 'F';
+
+        if (client.hasFeature('conversations')) {
+          try {
+            final msgTable = _getMessagesTable(client);
+            final phone = _getConversationsPhone(client);
+            var q = supabase.from(msgTable).select('customer_phone,created_at');
+            if (phone != null && phone.isNotEmpty) q = q.eq('ai_phone', phone);
+            const pageSize = 1000;
+            int offset = 0;
+            while (true) {
+              final List<dynamic> msgs = await q
+                  .order('created_at', ascending: false)
+                  .range(offset, offset + pageSize - 1);
+              for (final m in msgs) {
+                final cPhone = m['customer_phone'] as String?;
+                final createdAtStr = m['created_at'] as String?;
+                final createdAt = createdAtStr != null ? DateTime.tryParse(createdAtStr)?.toUtc() : null;
+                if (createdAt == null || cPhone == null) continue;
+                if (thisPeriodStart == null || createdAt.isAfter(thisPeriodStart)) {
+                  localReachThis.add(cPhone);
+                  activeThis = true;
+                }
+                if (lastPeriodStart != null && lastPeriodEnd != null &&
+                    createdAt.isAfter(lastPeriodStart) && createdAt.isBefore(lastPeriodEnd)) {
+                  localReachLast.add(cPhone);
+                  activeLast = true;
+                }
+              }
+              if (msgs.length < pageSize) break;
+              offset += pageSize;
+            }
+          } catch (e) {
+            debugPrint('[KPI] messages error for ${client.name}: $e');
+          }
+        }
+
+        // Churn risk for conversation-only clients: flag if inactive 30+ days
+        KpiChurnClient? churnEntry;
+        if (daysSinceAct > 30) {
+          churnEntry = KpiChurnClient(
+            name: client.name,
+            daysSinceLastBroadcast: daysSinceAct == 999 ? -1 : daysSinceAct,
+          );
+        }
+
+        return _PerClientKpiData(
+          clientName: client.name,
+          activeThis: activeThis || thisPeriodStart == null,
+          activeLast: activeLast,
+          bcastThis: 0,
+          bcastLast: 0,
+          weeklyVolume: List<int>.filled(12, 0),
+          responseRates: const [],
+          campaignNames: const [],
+          revenueThis: 0,
+          revenueLast: 0,
+          revenueCampaigns: 0,
+          reachPhonesThis: localReachThis,
+          reachPhonesLast: localReachLast,
+          healthGrade: grade,
+          gradeColor: grade == 'D' ? Colors.orange : grade == 'F' ? Colors.red : Colors.green,
+          isLowHealth: grade == 'D' || grade == 'F',
+          churnEntry: churnEntry,
+          onboardingEntry: KpiOnboardingClient(name: client.name, daysToFirstBroadcast: -1),
+        );
+      }
+
+      // Run all clients in parallel
+      final perClientResults = await Future.wait(clients.map(processClient));
+
+      // Per-client breakdown accumulators
+      final clientActivityRows = <KpiClientBreakdown>[];
+      final clientBcastRows = <KpiClientBreakdown>[];
+      final clientRespRows = <KpiClientBreakdown>[];
+      final clientRevRows = <KpiClientBreakdown>[];
+      final clientReachRows = <KpiClientBreakdown>[];
+
+      // ── Aggregate results ────────────────────────────────
+      for (final r in perClientResults) {
+        if (r.activeThis) activeThisPeriod++;
+        if (r.activeLast) activeLastPeriod++;
+        bcastThisPeriod += r.bcastThis;
+        bcastLastPeriod += r.bcastLast;
+        for (int i = 0; i < 12; i++) { weeklyVolume[i] += r.weeklyVolume[i]; }
+        allResponseRates.addAll(r.responseRates);
+        allCampaignNames.addAll(r.campaignNames);
+        revenueThis += r.revenueThis;
+        revenueLast += r.revenueLast;
+        revenueCampaigns += r.revenueCampaigns;
+        reachPhonesThis.addAll(r.reachPhonesThis);
+        reachPhonesLast.addAll(r.reachPhonesLast);
+        healthGrades[r.healthGrade] = (healthGrades[r.healthGrade] ?? 0) + 1;
+        if (r.isLowHealth) {
+          lowHealthClients.add(KpiClientHealth(
+            name: r.onboardingEntry.name,
+            grade: r.healthGrade,
+            gradeColor: r.gradeColor,
+          ));
+        }
+        if (r.churnEntry != null) churnClients.add(r.churnEntry!);
+        onboardingRows.add(r.onboardingEntry);
+
+        // Per-client breakdown rows
+        clientActivityRows.add(KpiClientBreakdown(
+          name: r.clientName,
+          value: r.activeThis ? 'Active' : 'Inactive',
+          color: r.activeThis ? Colors.green : Colors.blueGrey,
+        ));
+        clientBcastRows.add(KpiClientBreakdown(
+          name: r.clientName,
+          value: r.bcastThis.toString(),
+          color: r.bcastThis > 0 ? Colors.blue : Colors.blueGrey,
+        ));
+        if (r.responseRates.isNotEmpty) {
+          final avg = r.responseRates.reduce((a, b) => a + b) / r.responseRates.length;
+          clientRespRows.add(KpiClientBreakdown(
+            name: r.clientName,
+            value: '${avg.toStringAsFixed(1)}%',
+            color: avg >= 10 ? Colors.green : avg >= 5 ? Colors.amber : Colors.redAccent,
+          ));
+        }
+        if (r.revenueThis > 0) {
+          clientRevRows.add(KpiClientBreakdown(
+            name: r.clientName,
+            value: '${r.revenueThis.toStringAsFixed(0)} BHD',
+            color: Colors.green,
+          ));
+        }
+        if (r.reachPhonesThis.isNotEmpty) {
+          clientReachRows.add(KpiClientBreakdown(
+            name: r.clientName,
+            value: r.reachPhonesThis.length.toString(),
+            color: Colors.teal,
+          ));
+        }
+      }
+
+      // Sort breakdowns descending by value
+      clientActivityRows.sort((a, b) {
+        if (a.value == 'Active' && b.value != 'Active') return -1;
+        if (b.value == 'Active' && a.value != 'Active') return 1;
+        return a.name.compareTo(b.name);
+      });
+      clientBcastRows.sort((a, b) {
+        final av = int.tryParse(a.value) ?? 0;
+        final bv = int.tryParse(b.value) ?? 0;
+        return bv.compareTo(av);
+      });
+      clientRespRows.sort((a, b) {
+        final av = double.tryParse(a.value.replaceAll('%', '')) ?? 0;
+        final bv = double.tryParse(b.value.replaceAll('%', '')) ?? 0;
+        return bv.compareTo(av);
+      });
+      clientRevRows.sort((a, b) {
+        final av = double.tryParse(a.value.replaceAll(' BHD', '')) ?? 0;
+        final bv = double.tryParse(b.value.replaceAll(' BHD', '')) ?? 0;
+        return bv.compareTo(av);
+      });
+      clientReachRows.sort((a, b) {
+        final av = int.tryParse(a.value) ?? 0;
+        final bv = int.tryParse(b.value) ?? 0;
+        return bv.compareTo(av);
+      });
+
+      // Sort churn: never-broadcast first, then by days desc
+      churnClients.sort((a, b) {
+        if (a.daysSinceLastBroadcast == -1 && b.daysSinceLastBroadcast != -1) return -1;
+        if (b.daysSinceLastBroadcast == -1 && a.daysSinceLastBroadcast != -1) return 1;
+        return b.daysSinceLastBroadcast.compareTo(a.daysSinceLastBroadcast);
+      });
+
+      // Last 10 campaign response rates
+      final rateCount = allResponseRates.length;
+      final recentRates = allResponseRates.length > 10
+          ? allResponseRates.sublist(rateCount - 10)
+          : allResponseRates;
+      final recentNames = allCampaignNames.length > 10
+          ? allCampaignNames.sublist(rateCount - 10)
+          : allCampaignNames;
+      final avgRate = recentRates.isNotEmpty
+          ? recentRates.reduce((a, b) => a + b) / recentRates.length
+          : 0.0;
+
+      // Avg days to first broadcast (exclude -1 = no broadcast)
+      final withBroadcast = onboardingRows.where((r) => r.daysToFirstBroadcast >= 0).toList();
+      final avgDays = withBroadcast.isNotEmpty
+          ? withBroadcast.map((r) => r.daysToFirstBroadcast).reduce((a, b) => a + b) / withBroadcast.length
+          : 0.0;
+      onboardingRows.sort((a, b) {
+        if (a.daysToFirstBroadcast == -1) return 1;
+        if (b.daysToFirstBroadcast == -1) return -1;
+        return b.daysToFirstBroadcast.compareTo(a.daysToFirstBroadcast);
+      });
+
+      _kpiAnalytics = VividKpiAnalytics(
+        activeClientsThisPeriod: activeThisPeriod,
+        activeClientsLastPeriod: activeLastPeriod,
+        totalClients: clients.length,
+        weeklyBroadcastVolume: weeklyVolume,
+        broadcastsThisPeriod: bcastThisPeriod,
+        broadcastsLastPeriod: bcastLastPeriod,
+        avgResponseRatePct: avgRate,
+        campaignResponseRates: recentRates,
+        campaignNames: recentNames,
+        revenueThisPeriod: revenueThis,
+        revenueLastPeriod: revenueLast,
+        revenueCampaignCount: revenueCampaigns,
+        reachThisPeriod: reachPhonesThis.length,
+        reachLastPeriod: reachPhonesLast.length,
+        healthGradeCounts: healthGrades,
+        lowHealthClients: lowHealthClients,
+        churnRiskCount: churnClients.length,
+        churnRiskClients: churnClients,
+        avgDaysToFirstBroadcast: avgDays,
+        onboardingBreakdown: onboardingRows,
+        clientActivityBreakdown: clientActivityRows,
+        clientBroadcastBreakdown: clientBcastRows,
+        clientResponseRateBreakdown: clientRespRows,
+        clientRevenueBreakdown: clientRevRows,
+        clientReachBreakdown: clientReachRows,
+        periodLabel: periodLabel,
+      );
+      _kpiCacheTime = DateTime.now();
+      _kpiCachePeriod = period;
+    } catch (e) {
+      debugPrint('[KPI] fetchKpiAnalytics error: $e');
+    }
+
+    _isLoadingKpi = false;
+    notifyListeners();
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
 
   void _subscribeToCompanyUpdates(List<Client> clients) {
     // Unsubscribe from all existing company channels
@@ -1424,9 +2154,7 @@ class AdminAnalyticsProvider extends ChangeNotifier {
       final enabledCount = coreFeatures.where((f) => client.hasFeature(f)).length;
 
       final result = ClientOverviewMetrics(
-        daysActive: client.createdAt != null
-            ? DateTime.now().difference(client.createdAt!).inDays
-            : 0,
+        daysActive: DateTime.now().difference(client.createdAt).inDays,
         enabledFeatureCount: enabledCount,
         totalMessages: totalMessages,
         uniqueCustomers: uniqueCustomers,
@@ -1982,21 +2710,26 @@ class AdminAnalyticsProvider extends ChangeNotifier {
     // Last 90 days to keep query fast
     final since = DateTime.now().subtract(const Duration(days: 90));
     try {
+      // Only count customer inbound messages (customer_message IS NOT NULL/empty)
       final rows = await _fetchAllRows(
         table,
-        'created_at',
+        'created_at,customer_message',
         start: since,
         end: DateTime.now(),
       );
       // heatmap[day 0-6][hour 0-23]
       final heatmap = List.generate(7, (_) => List.filled(24, 0));
+      int counted = 0;
       for (final r in rows) {
+        final custMsg = r['customer_message']?.toString() ?? '';
+        if (custMsg.isEmpty) continue; // skip outbound-only rows
         final ts = DateTime.tryParse(r['created_at']?.toString() ?? '');
         if (ts == null) continue;
         final bht = ts.toUtc().add(const Duration(hours: 3));
         final dow = bht.weekday - 1; // 0=Mon
         final hour = bht.hour;
         heatmap[dow][hour]++;
+        counted++;
       }
       int peakDay = 0, peakHour = 0, peakVal = 0;
       for (int d = 0; d < 7; d++) {
@@ -2010,10 +2743,10 @@ class AdminAnalyticsProvider extends ChangeNotifier {
       }
       return OptimalTimingResult(
         heatmap: heatmap,
-        totalMessages: rows.length,
+        totalMessages: counted,
         peakHour: peakHour,
         peakDay: peakDay,
-        hasEnoughData: rows.length >= 50,
+        hasEnoughData: counted >= 50,
       );
     } catch (e) {
       debugPrint('fetchOptimalTiming error: $e');
@@ -2191,6 +2924,22 @@ class AdminAnalyticsProvider extends ChangeNotifier {
           final inboundTs = DateTime.tryParse(r['created_at']?.toString() ?? '');
           if (inboundTs == null) continue;
 
+          // Check same row first: some clients (e.g. AI-only) store both
+          // customer_message and ai_response on the same record.
+          final sameAi = r['ai_response']?.toString() ?? '';
+          final sameMan = r['manager_response']?.toString() ?? '';
+          if (sameAi.isNotEmpty || sameMan.isNotEmpty) {
+            // Response time is ~0 for same-row (AI responded inline) — skip
+            // these for the purposes of "slow conversations" but do count them
+            // as a valid paired response so the card shows data.
+            const delta = Duration(seconds: 5);
+            responseDurations.add(delta);
+            final weeksAgo = now.difference(inboundTs).inDays ~/ 7;
+            if (weeksAgo < 8) weekBuckets[7 - weeksAgo].add(delta.inSeconds / 60);
+            // Don't add to agent stats for same-row AI responses
+            continue;
+          }
+
           // Find next outbound to same phone after this inbound
           for (int j = i + 1; j < msgs.length; j++) {
             final next = msgs[j];
@@ -2207,9 +2956,11 @@ class AdminAnalyticsProvider extends ChangeNotifier {
             final weeksAgo = now.difference(outboundTs).inDays ~/ 7;
             if (weeksAgo < 8) weekBuckets[7 - weeksAgo].add(delta.inMinutes.toDouble());
 
-            // Agent breakdown
-            final agent = next['sent_by']?.toString();
-            if (agent != null && agent.isNotEmpty && agent != 'ai') {
+            // Agent breakdown — exclude AI and Broadcast entries
+            final agent = next['sent_by']?.toString() ?? '';
+            if (agent.isNotEmpty &&
+                agent.toLowerCase() != 'ai' &&
+                agent.toLowerCase() != 'broadcast') {
               agentRaw.putIfAbsent(agent, () => []).add(delta.inMinutes.toDouble());
             }
             break;

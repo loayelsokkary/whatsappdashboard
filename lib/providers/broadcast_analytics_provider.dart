@@ -81,25 +81,18 @@ class BroadcastAnalyticsProvider extends ChangeNotifier {
   /// Get dynamic table names from ClientConfig
   String get _broadcastsTable {
     final table = ClientConfig.broadcastsTable;
-    if (table != null && table.isNotEmpty) {
-      return table;
-    }
+    if (table != null && table.isNotEmpty) return table;
     final slug = ClientConfig.currentClient?.slug;
-    if (slug != null && slug.isNotEmpty) {
-      return '${slug}_broadcasts';
-    }
-    return 'broadcasts';
+    if (slug != null && slug.isNotEmpty) return '${slug}_broadcasts';
+    throw StateError('No broadcasts table configured — client not fully loaded');
   }
 
   String get _recipientsTable {
     final explicit = ClientConfig.broadcastRecipientsTableName;
     if (explicit != null && explicit.isNotEmpty) return explicit;
-    final broadcastsTable = _broadcastsTable;
-    if (broadcastsTable != 'broadcasts') {
-      final prefix = broadcastsTable.replaceAll('_broadcasts', '');
-      return '${prefix}_broadcast_recipients';
-    }
-    return 'broadcast_recipients';
+    final slug = ClientConfig.currentClient?.slug;
+    if (slug != null && slug.isNotEmpty) return '${slug}_broadcast_recipients';
+    throw StateError('No broadcast_recipients table configured — client not fully loaded');
   }
 
   Future<void> fetchAnalytics() async {

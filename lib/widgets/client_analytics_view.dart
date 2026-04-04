@@ -168,10 +168,15 @@ class _ClientAnalyticsViewState extends State<ClientAnalyticsView>
     }
     // Rebuild tabs now that we know about label column
     final oldLen = _tabs.length;
+    final prevIndex = _tabController.index;
     _buildTabs();
     if (_tabs.length != oldLen) {
       _tabController.dispose();
-      _tabController = TabController(length: _tabs.length, vsync: this);
+      _tabController = TabController(
+        length: _tabs.length,
+        vsync: this,
+        initialIndex: prevIndex.clamp(0, _tabs.length - 1),
+      );
     }
     if (mounted) setState(() {});
     _loadAllSections();

@@ -1,13 +1,12 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../providers/admin_analytics_provider.dart';
 import '../providers/admin_provider.dart';
 import '../theme/vivid_theme.dart';
-import '../utils/analytics_exporter.dart';
-import '../utils/toast_service.dart';
 
-/// Company-wide analytics view for Vivid admin dashboard
+/// Vivid company-wide analytics — 8 business KPIs
 class VividCompanyAnalyticsView extends StatefulWidget {
   const VividCompanyAnalyticsView({super.key});
 
@@ -16,71 +15,52 @@ class VividCompanyAnalyticsView extends StatefulWidget {
 }
 
 class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
+  String _period = 'this_month';
+
+  static const _periodOptions = [
+    ('this_month', 'This Month'),
+    ('last_30', 'Last 30 Days'),
+    ('last_90', 'Last 90 Days'),
+    ('all_time', 'All Time'),
+  ];
+
   @override
   void initState() {
     super.initState();
-    _loadAnalytics();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
-  void _loadAnalytics() {
-    final adminProvider = context.read<AdminProvider>();
-    final analyticsProvider = context.read<AdminAnalyticsProvider>();
-    analyticsProvider.fetchCompanyAnalytics(adminProvider.clients);
+  void _load() {
+    final clients = context.read<AdminProvider>().clients;
+    context.read<AdminAnalyticsProvider>().fetchKpiAnalytics(clients, period: _period);
   }
 
   @override
   Widget build(BuildContext context) {
     final vc = context.vividColors;
     return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            vc.background,
-            vc.surface,
-            vc.surfaceAlt.withOpacity(0.5),
-          ],
-        ),
-      ),
+      color: vc.background,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildHeader(context),
           Expanded(
             child: Consumer<AdminAnalyticsProvider>(
               builder: (context, provider, _) {
-                final vc = context.vividColors;
-                final analytics = provider.companyAnalytics;
-
-                if (provider.isLoadingCompany || analytics == null && provider.error == null) {
-                  return const Center(
-                    child: CircularProgressIndicator(
-                      color: VividColors.cyan,
-                      strokeWidth: 2,
-                    ),
-                  );
+                if (provider.isLoadingKpi && provider.kpiAnalytics == null) {
+                  return const Center(child: CircularProgressIndicator(color: VividColors.cyan, strokeWidth: 2));
                 }
-
-                if (analytics == null) {
+                final kpi = provider.kpiAnalytics;
+                if (kpi == null) {
                   return Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(
-                          Icons.analytics_outlined,
-                          size: 64,
-                          color: vc.textMuted.withValues(alpha: 0.3),
-                        ),
+                        Icon(Icons.analytics_outlined, size: 64, color: vc.textMuted.withValues(alpha: 0.3)),
                         const SizedBox(height: 16),
-                        Text(
-                          provider.error ?? 'No analytics data available',
-                          style: TextStyle(color: vc.textMuted),
-                          textAlign: TextAlign.center,
-                        ),
+                        Text('No data available', style: TextStyle(color: vc.textMuted)),
                         const SizedBox(height: 24),
                         ElevatedButton.icon(
-                          onPressed: _loadAnalytics,
+                          onPressed: _load,
                           icon: const Icon(Icons.refresh),
                           label: const Text('Retry'),
                         ),
@@ -88,8 +68,7 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
                     ),
                   );
                 }
-
-                return _buildAnalyticsContent(context, analytics);
+                return _buildContent(context, kpi, provider.isLoadingKpi);
               },
             ),
           ),
@@ -101,694 +80,43 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
   Widget _buildHeader(BuildContext context) {
     final vc = context.vividColors;
     return Container(
-      padding: const EdgeInsets.all(32),
+      padding: const EdgeInsets.fromLTRB(28, 24, 28, 20),
+      decoration: BoxDecoration(
+        color: vc.surface,
+        border: Border(bottom: BorderSide(color: vc.border)),
+      ),
       child: Row(
         children: [
-          Image.asset('assets/images/vivid_icon.png', width: 32, height: 32),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Vivid Company Analytics',
-                  style: TextStyle(
-                    color: vc.textPrimary,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: VividColors.cyan.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.auto_awesome, size: 14, color: VividColors.cyan),
-                          SizedBox(width: 6),
-                          Text(
-                            'Real-time',
-                            style: TextStyle(
-                              color: VividColors.cyan,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      'Aggregate metrics across all clients',
-                      style: TextStyle(
-                        color: vc.textMuted.withOpacity(0.7),
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          _buildExportButton(context),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildExportButton(BuildContext context) {
-    final vc = context.vividColors;
-    final analytics = context.read<AdminAnalyticsProvider>().companyAnalytics;
-    return PopupMenuButton<String>(
-      onSelected: (format) async {
-        if (analytics == null) return;
-        try {
-          if (format == 'csv') {
-            AnalyticsExporter.exportCompanyAnalyticsCsv(analytics);
-          } else if (format == 'pdf') {
-            await AnalyticsExporter.exportCompanyAnalyticsPdf(analytics);
-          }
-          if (mounted) {
-            VividToast.show(context, message: '${format.toUpperCase()} exported', type: ToastType.success);
-          }
-        } catch (e) {
-          if (mounted) {
-            VividToast.show(context, message: 'Export failed: $e', type: ToastType.error);
-          }
-        }
-      },
-      offset: const Offset(0, 40),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      color: vc.surface,
-      itemBuilder: (_) => [
-        PopupMenuItem(value: 'csv', child: Row(children: [
-          Icon(Icons.table_chart, color: Colors.green, size: 18),
-          const SizedBox(width: 10),
-          Text('Export CSV', style: TextStyle(color: vc.textPrimary)),
-        ])),
-        PopupMenuItem(value: 'pdf', child: Row(children: [
-          Icon(Icons.picture_as_pdf, color: Colors.red, size: 18),
-          const SizedBox(width: 10),
-          Text('Export PDF', style: TextStyle(color: vc.textPrimary)),
-        ])),
-      ],
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          gradient: VividColors.primaryGradient,
-          borderRadius: BorderRadius.circular(10),
-          boxShadow: [
-            BoxShadow(color: VividColors.brightBlue.withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 3)),
-          ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.download, color: vc.background, size: 18),
-            const SizedBox(width: 6),
-            Text('Export', style: TextStyle(color: vc.background, fontWeight: FontWeight.w600, fontSize: 13)),
-            Icon(Icons.arrow_drop_down, color: vc.background, size: 18),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildResponsiveCardRow(List<Widget> cards, {required bool isMobile}) {
-    if (isMobile) {
-      return Column(
-        children: cards.expand((card) => [card, const SizedBox(height: 12)]).toList()..removeLast(),
-      );
-    }
-    final children = <Widget>[];
-    for (var i = 0; i < cards.length; i++) {
-      children.add(Expanded(child: cards[i]));
-      if (i < cards.length - 1) children.add(const SizedBox(width: 20));
-    }
-    return Row(children: children);
-  }
-
-  Widget _buildAnalyticsContent(BuildContext context, VividCompanyAnalytics analytics) {
-    final vc = context.vividColors;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isMobile = constraints.maxWidth < 600;
-        final horizontalPadding = isMobile ? 16.0 : 32.0;
-
-        return SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(horizontalPadding, 0, horizontalPadding, horizontalPadding),
-          child: Column(
+          Image.asset('assets/images/vivid_icon.png', width: 30, height: 30),
+          const SizedBox(width: 14),
+          Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Top row - Key metrics
-              _buildResponsiveCardRow([
-                _MetricCard(
-                  icon: Icons.business,
-                  label: 'Total Clients',
-                  value: analytics.totalClients.toString(),
-                  color: VividColors.brightBlue,
-                  description: 'Number of active client accounts on Vivid',
-                  onTap: () => _showMetricDrillDown(context,
-                    label: 'Total Clients',
-                    totalValue: analytics.totalClients.toString(),
-                    rows: analytics.allClientActivities
-                        .map((c) => MapEntry(c.clientName, _formatLastActivity(c.lastActivity)))
-                        .toList(),
-                  ),
-                ),
-                _MetricCard(
-                  icon: Icons.message,
-                  label: 'Total Messages',
-                  value: _fmtInt(analytics.totalMessages),
-                  color: VividColors.cyan,
-                  description: 'All WhatsApp messages across every client',
-                  onTap: () {
-                    final sorted = [...analytics.allClientActivities]
-                      ..sort((a, b) => b.messageCount.compareTo(a.messageCount));
-                    _showMetricDrillDown(context,
-                      label: 'Total Messages',
-                      totalValue: _fmtInt(analytics.totalMessages),
-                      rows: sorted.map((c) => MapEntry(c.clientName, _fmtInt(c.messageCount))).toList(),
-                    );
-                  },
-                ),
-                _MetricCard(
-                  icon: Icons.auto_awesome,
-                  label: 'Automation Rate',
-                  value: '${analytics.overallAutomationRate.toStringAsFixed(1)}%',
-                  color: analytics.overallAutomationRate >= 80 ? Colors.teal : VividColors.brightBlue,
-                  description: 'Percentage of messages handled by AI across all clients',
-                  isHighlight: true,
-                  onTap: () {
-                    final sorted = [...analytics.allClientActivities]
-                      ..sort((a, b) => b.automationRate.compareTo(a.automationRate));
-                    _showMetricDrillDown(context,
-                      label: 'Automation Rate',
-                      totalValue: '${analytics.overallAutomationRate.toStringAsFixed(1)}%',
-                      rows: sorted.map((c) => MapEntry(c.clientName, '${c.automationRate.toStringAsFixed(1)}%')).toList(),
-                    );
-                  },
-                ),
-              ], isMobile: isMobile),
-              const SizedBox(height: 20),
-
-              // Second row
-              _buildResponsiveCardRow([
-                _MetricCard(
-                  icon: Icons.smart_toy,
-                  label: 'AI Messages',
-                  value: _fmtInt(analytics.totalAiMessages),
-                  color: VividColors.cyan,
-                  description: 'Responses generated automatically by AI',
-                  onTap: () {
-                    final sorted = [...analytics.allClientActivities]
-                      ..sort((a, b) => b.aiMessages.compareTo(a.aiMessages));
-                    _showMetricDrillDown(context,
-                      label: 'AI Messages',
-                      totalValue: _fmtInt(analytics.totalAiMessages),
-                      rows: sorted.map((c) => MapEntry(c.clientName, _fmtInt(c.aiMessages))).toList(),
-                    );
-                  },
-                ),
-                _MetricCard(
-                  icon: Icons.support_agent,
-                  label: 'Manager Messages',
-                  value: _fmtInt(analytics.totalManagerMessages),
-                  color: VividColors.brightBlue,
-                  description: 'Responses sent manually by human agents',
-                  onTap: () {
-                    final sorted = [...analytics.allClientActivities]
-                      ..sort((a, b) => b.managerMessages.compareTo(a.managerMessages));
-                    _showMetricDrillDown(context,
-                      label: 'Manager Messages',
-                      totalValue: _fmtInt(analytics.totalManagerMessages),
-                      rows: sorted.map((c) => MapEntry(c.clientName, _fmtInt(c.managerMessages))).toList(),
-                    );
-                  },
-                ),
-                _MetricCard(
-                  icon: Icons.people,
-                  label: 'Unique Customers',
-                  value: _fmtInt(analytics.totalUniqueCustomers),
-                  color: Colors.blueGrey,
-                  description: 'Distinct phone numbers across all clients',
-                  onTap: () {
-                    final sorted = [...analytics.allClientActivities]
-                      ..sort((a, b) => b.uniqueCustomers.compareTo(a.uniqueCustomers));
-                    _showMetricDrillDown(context,
-                      label: 'Unique Customers',
-                      totalValue: _fmtInt(analytics.totalUniqueCustomers),
-                      rows: sorted.map((c) => MapEntry(c.clientName, _fmtInt(c.uniqueCustomers))).toList(),
-                    );
-                  },
-                ),
-              ], isMobile: isMobile),
-              const SizedBox(height: 20),
-
-              // Third row - Broadcasts
-              _buildResponsiveCardRow([
-                _MetricCard(
-                  icon: Icons.campaign,
-                  label: 'Total Broadcasts',
-                  value: analytics.totalBroadcasts.toString(),
-                  color: Colors.blueGrey,
-                  description: 'Broadcast campaigns sent across all clients',
-                  onTap: () {
-                    final sorted = [...analytics.allClientActivities]
-                      ..sort((a, b) => b.broadcastCount.compareTo(a.broadcastCount));
-                    _showMetricDrillDown(context,
-                      label: 'Total Broadcasts',
-                      totalValue: analytics.totalBroadcasts.toString(),
-                      rows: sorted.map((c) => MapEntry(c.clientName, '${c.broadcastCount} campaigns')).toList(),
-                    );
-                  },
-                ),
-                _MetricCard(
-                  icon: Icons.group,
-                  label: 'Recipients Reached',
-                  value: _fmtInt(analytics.totalRecipientsReached),
-                  color: Colors.teal,
-                  description: 'Total broadcast recipients across all campaigns',
-                  onTap: () {
-                    final sorted = [...analytics.allClientActivities]
-                      ..sort((a, b) => b.broadcastCount.compareTo(a.broadcastCount));
-                    _showMetricDrillDown(context,
-                      label: 'Recipients Reached',
-                      totalValue: _fmtInt(analytics.totalRecipientsReached),
-                      rows: sorted.map((c) => MapEntry(c.clientName, '${c.broadcastCount} bc')).toList(),
-                    );
-                  },
-                ),
-                _MetricCard(
-                  icon: Icons.access_time,
-                  label: 'Last Activity',
-                  value: _formatLastActivity(analytics.lastActivityAcrossAll),
-                  color: vc.textMuted,
-                  description: 'Most recent message or broadcast across all clients',
-                  onTap: () {
-                    final sorted = [...analytics.allClientActivities]
-                      ..sort((a, b) {
-                        if (a.lastActivity == null) return 1;
-                        if (b.lastActivity == null) return -1;
-                        return b.lastActivity!.compareTo(a.lastActivity!);
-                      });
-                    _showMetricDrillDown(context,
-                      label: 'Last Activity',
-                      totalValue: _formatLastActivity(analytics.lastActivityAcrossAll),
-                      rows: sorted.map((c) => MapEntry(c.clientName, _formatLastActivity(c.lastActivity))).toList(),
-                    );
-                  },
-                ),
-              ], isMobile: isMobile),
-              const SizedBox(height: 32),
-
-              // Most active clients section
-              _buildMostActiveClients(context, analytics.mostActiveClients),
-              const SizedBox(height: 32),
-
-              // Activity chart (last 7 days)
-              _buildActivityChart(context, analytics.messagesByDay),
-              const SizedBox(height: 32),
-
-              // Time period stats
-              _buildSectionHeader(context, Icons.date_range, 'Message Volume by Period'),
-              const SizedBox(height: 16),
-              _buildResponsiveCardRow([
-                _MetricCard(
-                  icon: Icons.today,
-                  label: 'Today',
-                  value: _fmtInt(analytics.todayMessages),
-                  color: VividColors.cyan,
-                  description: 'Messages received and sent today across all clients',
-                ),
-                _MetricCard(
-                  icon: Icons.view_week,
-                  label: 'This Week',
-                  value: _fmtInt(analytics.thisWeekMessages),
-                  color: VividColors.brightBlue,
-                  description: 'Total messages since Monday across all clients',
-                ),
-                _MetricCard(
-                  icon: Icons.calendar_month,
-                  label: 'This Month',
-                  value: _fmtInt(analytics.thisMonthMessages),
-                  color: Colors.blueGrey,
-                  description: 'Total messages since the 1st of this month',
-                ),
-              ], isMobile: isMobile),
-              const SizedBox(height: 32),
-
-              // Client breakdown table
-              _buildClientBreakdownTable(context, analytics.allClientActivities, isMobile: isMobile),
-
-              // Broadcast performance
-              if (analytics.broadcastTotalRecipients > 0) ...[
-                const SizedBox(height: 32),
-                _buildSectionHeader(context, Icons.campaign, 'Broadcast Performance'),
-                const SizedBox(height: 16),
-                _buildResponsiveCardRow([
-                  _MetricCard(
-                    icon: Icons.done_all,
-                    label: 'Delivered',
-                    value: _fmtInt(analytics.broadcastDeliveredCount),
-                    color: Colors.teal,
-                    description: '${(analytics.broadcastDeliveredCount / analytics.broadcastTotalRecipients * 100).toStringAsFixed(1)}% delivery rate across all broadcasts',
-                  ),
-                  _MetricCard(
-                    icon: Icons.visibility,
-                    label: 'Read',
-                    value: _fmtInt(analytics.broadcastReadCount),
-                    color: VividColors.brightBlue,
-                    description: '${(analytics.broadcastReadCount / analytics.broadcastTotalRecipients * 100).toStringAsFixed(1)}% of recipients opened the message',
-                  ),
-                  _MetricCard(
-                    icon: Icons.error_outline,
-                    label: 'Failed',
-                    value: _fmtInt(analytics.broadcastFailedCount),
-                    color: analytics.broadcastFailedCount > 0 ? Colors.redAccent : Colors.blueGrey,
-                    description: '${(analytics.broadcastFailedCount / analytics.broadcastTotalRecipients * 100).toStringAsFixed(1)}% failed — check number quality',
-                  ),
-                ], isMobile: isMobile),
-              ],
-              const SizedBox(height: 32),
-
-              // Busiest hours
-              _buildBusiestHoursChart(context, analytics.messagesByHour, isMobile: isMobile),
-              const SizedBox(height: 32),
-
-              // Top customers
-              _buildTopCustomers(context, analytics.topCustomers),
-              const SizedBox(height: 32),
-
-              // AI performance
-              _buildAiPerformanceSection(context, analytics, isMobile: isMobile),
-              const SizedBox(height: 32),
-
-              // Client Retention Health
-              if (analytics.allClientActivities.isNotEmpty)
-                _buildRetentionHealthSection(context, analytics.allClientActivities),
+              Text('Vivid Analytics',
+                  style: TextStyle(color: vc.textPrimary, fontSize: 20, fontWeight: FontWeight.w600)),
+              Text('Business KPIs across all clients',
+                  style: TextStyle(color: vc.textMuted, fontSize: 13)),
             ],
           ),
-        );
-      },
-    );
-  }
-
-  Widget _buildRetentionHealthSection(BuildContext context, List<ClientActivity> clients) {
-    final vc = context.vividColors;
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: vc.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Client Retention Health',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.6),
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
+          const Spacer(),
+          // Period selector
+          _PeriodSelector(
+            selected: _period,
+            options: _periodOptions,
+            onChanged: (p) {
+              setState(() => _period = p);
+              _load();
+            },
           ),
-          const SizedBox(height: 16),
-          ...clients.asMap().entries.map((entry) {
-            final index = entry.key;
-            final client = entry.value;
-            // Status dot: green if automationRate > 5, amber if 2–5, grey otherwise
-            final Color dotColor = client.automationRate > 5
-                ? const Color(0xFF4CAF50)
-                : client.automationRate >= 2
-                    ? const Color(0xFFF59E0B)
-                    : const Color(0x4DFFFFFF);
-            final isLast = index == clients.length - 1;
-            return Column(
-              children: [
-                SizedBox(
-                  height: 48,
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: dotColor,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          client.clientName,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      Text(
-                        '${client.automationRate.toStringAsFixed(0)}% AI',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.4),
-                          fontSize: 11,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Text(
-                        _fmtInt(client.messageCount),
-                        style: const TextStyle(
-                          color: VividColors.cyan,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (!isLast)
-                  Divider(height: 1, color: Colors.white.withValues(alpha: 0.08)),
-              ],
-            );
-          }),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMostActiveClients(BuildContext context, List<ClientActivity> clients) {
-    final vc = context.vividColors;
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: vc.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: vc.border.withValues(alpha: 0.15)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: VividColors.brightBlue.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(Icons.leaderboard, color: VividColors.brightBlue, size: 22),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Most Active Clients',
-                style: TextStyle(
-                  color: vc.textPrimary.withValues(alpha: 0.6),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          if (clients.isEmpty)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Text(
-                  'No activity data yet',
-                  style: TextStyle(color: vc.textMuted),
-                ),
-              ),
-            )
-          else
-            ...clients.asMap().entries.map((entry) {
-              final index = entry.key;
-              final client = entry.value;
-              return _buildClientActivityRow(context, index + 1, client,
-                  showDivider: index < clients.length - 1);
-            }),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildClientActivityRow(BuildContext context, int rank, ClientActivity client, {bool showDivider = true}) {
-    return Column(
-      children: [
-        SizedBox(
-          height: 56,
-          child: Row(
-            children: [
-              Text(
-                '$rank',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.25),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  client.clientName,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w500,
-                    fontSize: 14,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              Text(
-                _fmtInt(client.messageCount),
-                style: const TextStyle(
-                  color: VividColors.cyan,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              if (client.broadcastCount > 0) ...[
-                const SizedBox(width: 12),
-                Text(
-                  '${client.broadcastCount} bc',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.35),
-                    fontSize: 11,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        if (showDivider)
-          Divider(
-            height: 1,
-            color: Colors.white.withValues(alpha: 0.08),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildActivityChart(BuildContext context, Map<String, int> messagesByDay) {
-    final vc = context.vividColors;
-    // Get last 7 days
-    final now = DateTime.now();
-    final days = List.generate(7, (i) {
-      final date = now.subtract(Duration(days: 6 - i));
-      return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-    });
-
-    final maxMessages = messagesByDay.values.isEmpty
-        ? 1
-        : messagesByDay.values.reduce((a, b) => a > b ? a : b);
-
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: vc.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: vc.border.withValues(alpha: 0.15)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: VividColors.cyan.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(Icons.show_chart, color: VividColors.cyan, size: 22),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Message Volume (Last 7 Days)',
-                style: TextStyle(
-                  color: vc.textPrimary.withValues(alpha: 0.6),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          SizedBox(
-            height: 180,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: days.map((day) {
-                final count = messagesByDay[day] ?? 0;
-                final height = maxMessages > 0 ? (count / maxMessages) * 120 : 0.0;
-                final dayParts = day.split('-');
-                final dayLabel = '${dayParts[2]}/${dayParts[1]}';
-
-                return Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        Text(
-                          count.toString(),
-                          style: TextStyle(
-                            color: VividColors.cyan.withValues(alpha: 0.7),
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Container(
-                          height: height.clamp(4.0, 120.0),
-                          decoration: BoxDecoration(
-                            color: VividColors.cyan.withValues(alpha: 0.6),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          dayLabel,
-                          style: TextStyle(
-                            color: vc.textMuted.withOpacity(0.7),
-                            fontSize: 10,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }).toList(),
+          const SizedBox(width: 12),
+          Consumer<AdminAnalyticsProvider>(
+            builder: (_, provider, __) => IconButton(
+              onPressed: provider.isLoadingKpi ? null : _load,
+              icon: provider.isLoadingKpi
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: VividColors.cyan))
+                  : const Icon(Icons.refresh, size: 20),
+              color: vc.textMuted,
+              tooltip: 'Refresh',
             ),
           ),
         ],
@@ -796,674 +124,719 @@ class _VividCompanyAnalyticsViewState extends State<VividCompanyAnalyticsView> {
     );
   }
 
-  Widget _buildSectionHeader(BuildContext context, IconData icon, String title) {
-    final vc = context.vividColors;
-    return Row(
-      children: [
-        Icon(icon, color: vc.textMuted, size: 20),
-        const SizedBox(width: 8),
-        Text(
-          title,
-          style: TextStyle(
-            color: vc.textPrimary.withValues(alpha: 0.6),
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ],
-    );
-  }
+  Widget _buildContent(BuildContext context, VividKpiAnalytics kpi, bool isLoading) {
+    return LayoutBuilder(builder: (context, constraints) {
+      final isMobile = constraints.maxWidth < 640;
+      final pad = isMobile ? 16.0 : 28.0;
 
-  Widget _buildClientBreakdownTable(BuildContext context, List<ClientActivity> clients, {bool isMobile = false}) {
-    final vc = context.vividColors;
-    if (clients.isEmpty) return const SizedBox.shrink();
-
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: vc.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: vc.border.withValues(alpha: 0.15)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.blueGrey.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(Icons.table_chart, color: Colors.blueGrey, size: 22),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Client Breakdown',
-                style: TextStyle(
-                  color: vc.textPrimary.withValues(alpha: 0.6),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          if (isMobile)
-            // Mobile: card-based list
-            ...clients.map((client) => _buildMobileClientCard(context, client))
-          else ...[
-            // Desktop: Header row
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              decoration: BoxDecoration(
-                color: vc.surfaceAlt,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  Expanded(flex: 3, child: Text('Client', style: TextStyle(color: vc.textMuted, fontSize: 12, fontWeight: FontWeight.w600))),
-                  Expanded(flex: 2, child: Text('Messages', style: TextStyle(color: vc.textMuted, fontSize: 12, fontWeight: FontWeight.w600), textAlign: TextAlign.center)),
-                  Expanded(flex: 2, child: Text('AI', style: TextStyle(color: vc.textMuted, fontSize: 12, fontWeight: FontWeight.w600), textAlign: TextAlign.center)),
-                  Expanded(flex: 2, child: Text('Manager', style: TextStyle(color: vc.textMuted, fontSize: 12, fontWeight: FontWeight.w600), textAlign: TextAlign.center)),
-                  Expanded(flex: 2, child: Text('Customers', style: TextStyle(color: vc.textMuted, fontSize: 12, fontWeight: FontWeight.w600), textAlign: TextAlign.center)),
-                  Expanded(flex: 2, child: Text('Auto Rate', style: TextStyle(color: vc.textMuted, fontSize: 12, fontWeight: FontWeight.w600), textAlign: TextAlign.center)),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            // Desktop: Table rows
-            ...clients.map((client) => Container(
-              margin: const EdgeInsets.only(bottom: 4),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: vc.surfaceAlt.withOpacity(0.5),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  Expanded(flex: 3, child: Text(client.clientName, style: TextStyle(color: vc.textPrimary, fontSize: 13, fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis)),
-                  Expanded(flex: 2, child: Text(_fmtInt(client.messageCount), style: const TextStyle(color: VividColors.cyan, fontSize: 13, fontWeight: FontWeight.bold), textAlign: TextAlign.center)),
-                  Expanded(flex: 2, child: Text(_fmtInt(client.aiMessages), style: const TextStyle(color: VividColors.cyan, fontSize: 13), textAlign: TextAlign.center)),
-                  Expanded(flex: 2, child: Text(_fmtInt(client.managerMessages), style: const TextStyle(color: VividColors.brightBlue, fontSize: 13), textAlign: TextAlign.center)),
-                  Expanded(flex: 2, child: Text(client.uniqueCustomers.toString(), style: const TextStyle(color: Colors.blueGrey, fontSize: 13), textAlign: TextAlign.center)),
-                  Expanded(flex: 2, child: Text('${client.automationRate.toStringAsFixed(0)}%', style: TextStyle(color: client.automationRate >= 80 ? Colors.teal : VividColors.brightBlue, fontSize: 13, fontWeight: FontWeight.bold), textAlign: TextAlign.center)),
-                ],
-              ),
-            )),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMobileClientCard(BuildContext context, ClientActivity client) {
-    final vc = context.vividColors;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: vc.surfaceAlt.withOpacity(0.5),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: vc.borderSubtle),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  client.clientName,
-                  style: TextStyle(color: vc.textPrimary, fontSize: 14, fontWeight: FontWeight.w600),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: (client.automationRate >= 80 ? Colors.teal : VividColors.brightBlue).withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  '${client.automationRate.toStringAsFixed(0)}%',
-                  style: TextStyle(
-                    color: client.automationRate >= 80 ? Colors.teal : VividColors.brightBlue,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(child: _buildMobileStatItem(context, 'Messages', _fmtInt(client.messageCount), VividColors.cyan)),
-              Expanded(child: _buildMobileStatItem(context, 'AI', _fmtInt(client.aiMessages), VividColors.cyan)),
-              Expanded(child: _buildMobileStatItem(context, 'Manager', _fmtInt(client.managerMessages), VividColors.brightBlue)),
-              Expanded(child: _buildMobileStatItem(context, 'Customers', client.uniqueCustomers.toString(), Colors.blueGrey)),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMobileStatItem(BuildContext context, String label, String value, Color color) {
-    final vc = context.vividColors;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: TextStyle(color: vc.textMuted, fontSize: 10)),
-        const SizedBox(height: 2),
-        Text(value, style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.w600)),
-      ],
-    );
-  }
-
-  Widget _buildBusiestHoursChart(BuildContext context, Map<int, int> messagesByHour, {bool isMobile = false}) {
-    final vc = context.vividColors;
-    if (messagesByHour.isEmpty) return const SizedBox.shrink();
-
-    final maxCount = messagesByHour.values.reduce((a, b) => a > b ? a : b);
-
-    final barsWidget = SizedBox(
-      height: 200,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: List.generate(24, (hour) {
-          final count = messagesByHour[hour] ?? 0;
-          final height = maxCount > 0 ? (count / maxCount) * 140 : 0.0;
-          return Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 1),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  if (count > 0)
-                    Text(
-                      count.toString(),
-                      style: const TextStyle(
-                        color: VividColors.cyan,
-                        fontSize: 8,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  const SizedBox(height: 2),
-                  Container(
-                    height: height.clamp(2.0, 140.0),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.bottomCenter,
-                        end: Alignment.topCenter,
-                        colors: [VividColors.brightBlue, VividColors.cyan],
-                      ),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    hour % 3 == 0 ? '${hour}h' : '',
-                    style: TextStyle(
-                      color: vc.textMuted.withOpacity(0.7),
-                      fontSize: 9,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }),
-      ),
-    );
-
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: vc.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: vc.border.withValues(alpha: 0.15)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: VividColors.brightBlue.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(Icons.schedule, color: VividColors.brightBlue, size: 22),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Busiest Hours',
-                style: TextStyle(
-                  color: vc.textPrimary.withValues(alpha: 0.6),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          if (isMobile)
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: SizedBox(width: 600, child: barsWidget),
-            )
-          else
-            barsWidget,
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTopCustomers(BuildContext context, List<TopCustomerInfo> customers) {
-    final vc = context.vividColors;
-    if (customers.isEmpty) return const SizedBox.shrink();
-
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: vc.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: vc.border.withValues(alpha: 0.15)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.teal.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(Icons.people, color: Colors.teal, size: 22),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Most Active Customers',
-                style: TextStyle(
-                  color: vc.textPrimary.withValues(alpha: 0.6),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          ...customers.asMap().entries.map((entry) {
-            final index = entry.key;
-            final customer = entry.value;
-            final rankColor = index == 0
-                ? Colors.amber
-                : index == 1
-                    ? Colors.grey[400]
-                    : index == 2
-                        ? Colors.orange[700]
-                        : vc.textMuted;
-
-            return Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: vc.surfaceAlt,
-                borderRadius: BorderRadius.circular(10),
-                border: index < 3 ? Border.all(color: rankColor!.withOpacity(0.3)) : null,
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 28,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      color: rankColor!.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text('#${index + 1}', style: TextStyle(color: rankColor, fontWeight: FontWeight.bold, fontSize: 11)),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          customer.name ?? customer.phone,
-                          style: TextStyle(color: vc.textPrimary, fontWeight: FontWeight.w500, fontSize: 13),
-                        ),
-                        Text(
-                          customer.clientName,
-                          style: TextStyle(color: vc.textMuted.withOpacity(0.7), fontSize: 11),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.message, size: 14, color: VividColors.cyan),
-                      const SizedBox(width: 4),
-                      Text(
-                        _fmtInt(customer.messageCount),
-                        style: const TextStyle(color: VividColors.cyan, fontWeight: FontWeight.bold, fontSize: 13),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            );
-          }),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAiPerformanceSection(BuildContext context, VividCompanyAnalytics analytics, {bool isMobile = false}) {
-    final vc = context.vividColors;
-    final total = analytics.totalAiMessages + analytics.totalManagerMessages;
-    final aiPercent = total > 0 ? (analytics.totalAiMessages / total * 100) : 0.0;
-    final managerPercent = total > 0 ? (analytics.totalManagerMessages / total * 100) : 0.0;
-
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: vc.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: vc.border.withValues(alpha: 0.15)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: VividColors.cyan.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(Icons.psychology, color: VividColors.cyan, size: 22),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'AI Performance',
-                style: TextStyle(
-                  color: vc.textPrimary.withValues(alpha: 0.6),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          // AI vs Manager ratio bar
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: SizedBox(
-              height: 36,
-              child: Row(
-                children: [
-                  if (aiPercent > 0)
-                    Expanded(
-                      flex: aiPercent.round().clamp(1, 100),
-                      child: Container(
-                        color: VividColors.cyan,
-                        alignment: Alignment.center,
-                        child: aiPercent > 10
-                            ? Text('AI ${aiPercent.toStringAsFixed(0)}%',
-                                style: TextStyle(color: vc.background, fontSize: 12, fontWeight: FontWeight.bold))
-                            : null,
-                      ),
-                    ),
-                  if (managerPercent > 0)
-                    Expanded(
-                      flex: managerPercent.round().clamp(1, 100),
-                      child: Container(
-                        color: VividColors.brightBlue,
-                        alignment: Alignment.center,
-                        child: managerPercent > 10
-                            ? Text('Manager ${managerPercent.toStringAsFixed(0)}%',
-                                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold))
-                            : null,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          _buildResponsiveCardRow([
-            _MetricCard(
-              icon: Icons.swap_horiz,
-              label: 'Handoffs',
-              value: analytics.handoffCount.toString(),
-              color: Colors.blueGrey,
-              description: 'Messages where AI responded but manager also stepped in',
-            ),
-            _MetricCard(
-              icon: Icons.check_circle,
-              label: 'AI Enabled',
-              value: analytics.aiEnabledCustomers.toString(),
-              color: Colors.teal,
-              description: 'Customer conversations with AI auto-reply turned on',
-            ),
-            _MetricCard(
-              icon: Icons.cancel,
-              label: 'AI Disabled',
-              value: analytics.aiDisabledCustomers.toString(),
-              color: Colors.redAccent,
-              description: 'Customer conversations with AI auto-reply turned off',
-            ),
-          ], isMobile: isMobile),
-        ],
-      ),
-    );
-  }
-
-  static final _numFmt = NumberFormat('#,###');
-  String _fmtInt(int number) => _numFmt.format(number);
-
-  static String _initials(String name) {
-    final parts = name.trim().split(' ').where((p) => p.isNotEmpty).toList();
-    if (parts.isEmpty) return '?';
-    if (parts.length == 1) return parts[0].substring(0, 1).toUpperCase();
-    return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-  }
-
-  void _showMetricDrillDown(
-    BuildContext context, {
-    required String label,
-    required String totalValue,
-    required List<MapEntry<String, String>> rows,
-  }) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1A1F2E),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      isScrollControlled: true,
-      builder: (ctx) => DraggableScrollableSheet(
-        initialChildSize: 0.55,
-        minChildSize: 0.35,
-        maxChildSize: 0.85,
-        expand: false,
-        builder: (_, sc) => Column(
+      return SingleChildScrollView(
+        padding: EdgeInsets.all(pad),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(
-              child: Container(
-                margin: const EdgeInsets.only(top: 12),
-                width: 40, height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(2),
-                ),
+            if (isLoading)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 12),
+                child: LinearProgressIndicator(color: VividColors.cyan, backgroundColor: Colors.transparent),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Expanded(
-                    child: Text(label, style: const TextStyle(
-                      color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600,
-                    )),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(totalValue, style: const TextStyle(
-                    color: VividColors.cyan, fontSize: 28, fontWeight: FontWeight.w700,
-                  )),
-                ],
-              ),
-            ),
-            Expanded(
-              child: ListView.separated(
-                controller: sc,
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                itemCount: rows.length,
-                separatorBuilder: (_, __) => Divider(
-                  height: 1, color: Colors.white.withValues(alpha: 0.06),
-                ),
-                itemBuilder: (_, i) {
-                  final row = rows[i];
-                  return SizedBox(
-                    height: 56,
-                    child: Row(
-                      children: [
-                        CircleAvatar(
-                          radius: 18,
-                          backgroundColor: VividColors.brightBlue.withValues(alpha: 0.2),
-                          child: Text(_initials(row.key),
-                            style: const TextStyle(
-                              color: VividColors.cyan, fontSize: 11, fontWeight: FontWeight.w600,
-                            )),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(child: Text(row.key, style: const TextStyle(
-                          color: Colors.white, fontWeight: FontWeight.w500, fontSize: 14,
-                        ))),
-                        Text(row.value, style: const TextStyle(
-                          color: VividColors.cyan, fontWeight: FontWeight.w600, fontSize: 14,
-                        )),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text('Close', style: TextStyle(color: Colors.white.withValues(alpha: 0.5))),
-            ),
-            const SizedBox(height: 8),
+
+            // ── Row 1: 4 large KPI cards ──────────────────────────
+            _buildRow([
+              _ActiveClientsCard(kpi: kpi),
+              _BroadcastVolumeCard(kpi: kpi),
+              _ResponseRateCard(kpi: kpi),
+              _RevenueCard(kpi: kpi),
+            ], isMobile: isMobile),
+
+            SizedBox(height: isMobile ? 12 : 20),
+
+            // ── Row 2: 4 medium KPI cards ─────────────────────────
+            _buildRow([
+              _CustomerReachCard(kpi: kpi),
+              _ClientHealthCard(kpi: kpi),
+              _ChurnRiskCard(kpi: kpi),
+              _TimeToFirstBroadcastCard(kpi: kpi),
+            ], isMobile: isMobile),
+
+            const SizedBox(height: 32),
           ],
         ),
-      ),
-    );
+      );
+    });
   }
 
-  String _formatLastActivity(DateTime? date) {
-    if (date == null) return 'N/A';
-
-    final now = DateTime.now();
-    final diff = now.difference(date);
-
-    if (diff.inMinutes < 1) return 'Just now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-    if (diff.inHours < 24) return '${diff.inHours}h ago';
-    if (diff.inDays < 7) return '${diff.inDays}d ago';
-    return '${date.day}/${date.month}/${date.year}';
+  Widget _buildRow(List<Widget> cards, {required bool isMobile}) {
+    if (isMobile) {
+      return Column(
+        children: cards.expand((c) => [c, const SizedBox(height: 12)]).toList()..removeLast(),
+      );
+    }
+    return IntrinsicHeight(
+      child: Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (int i = 0; i < cards.length; i++) ...[
+          if (i > 0) const SizedBox(width: 16),
+          Expanded(child: cards[i]),
+        ],
+      ],
+    ),
+    );
   }
 }
 
-// ============================================
-// METRIC CARD
-// ============================================
+// ═══════════════════════════════════════════════════════════════════
+// PERIOD SELECTOR
+// ═══════════════════════════════════════════════════════════════════
 
-class _MetricCard extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  final Color color;
-  final String? description;
-  final bool isHighlight;
-  final VoidCallback? onTap;
+class _PeriodSelector extends StatelessWidget {
+  final String selected;
+  final List<(String, String)> options;
+  final ValueChanged<String> onChanged;
 
-  const _MetricCard({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.color,
-    this.description,
-    this.isHighlight = false,
-    this.onTap,
-  });
+  const _PeriodSelector({required this.selected, required this.options, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
     final vc = context.vividColors;
-    final card = Container(
-      padding: const EdgeInsets.all(24),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      decoration: BoxDecoration(
+        color: vc.surfaceAlt,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: vc.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: options.map((opt) {
+          final isSelected = opt.$1 == selected;
+          return GestureDetector(
+            onTap: () => onChanged(opt.$1),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: isSelected ? VividColors.cyan.withValues(alpha: 0.15) : Colors.transparent,
+                borderRadius: BorderRadius.circular(7),
+              ),
+              child: Text(
+                opt.$2,
+                style: TextStyle(
+                  color: isSelected ? VividColors.cyan : vc.textMuted,
+                  fontSize: 12,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// BASE KPI CARD
+// ═══════════════════════════════════════════════════════════════════
+
+class _KpiCard extends StatefulWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String value;
+  final String? subtitle;
+  final Color valueColor;
+  final Widget? chart;
+  final List<_DrillRow>? drillDown;
+  final String? trendLabel;
+  final Color? trendColor;
+
+  const _KpiCard({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.value,
+    this.subtitle,
+    this.valueColor = Colors.white,
+    this.chart,
+    this.drillDown,
+    this.trendLabel,
+    this.trendColor,
+  });
+
+  @override
+  State<_KpiCard> createState() => _KpiCardState();
+}
+
+class _KpiCardState extends State<_KpiCard> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final vc = context.vividColors;
+    return Container(
       decoration: BoxDecoration(
         color: vc.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        border: Border.all(color: vc.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: color.withValues(alpha: 0.8), size: 28),
-          const SizedBox(height: 8),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Color(0x80FFFFFF),
-              fontSize: 12,
-              fontWeight: FontWeight.w400,
-            ),
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: 12),
-          Text(
-            value,
-            style: TextStyle(
-              color: isHighlight ? color : Colors.white,
-              fontSize: 32,
-              fontWeight: FontWeight.w600,
-              height: 1,
-            ),
-          ),
-          if (description != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              description!,
-              style: const TextStyle(
-                color: Color(0x66FFFFFF),
-                fontSize: 11,
+          // Header
+          InkWell(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: widget.iconColor.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(widget.icon, color: widget.iconColor, size: 18),
+                      ),
+                      const Spacer(),
+                      Icon(
+                        _expanded ? Icons.expand_less : Icons.expand_more,
+                        size: 20,
+                        color: vc.textMuted,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Text(widget.value,
+                      style: TextStyle(color: widget.valueColor, fontSize: 28, fontWeight: FontWeight.w700)),
+                  if (widget.trendLabel != null) ...[
+                    const SizedBox(height: 4),
+                    Text(widget.trendLabel!,
+                        style: TextStyle(color: widget.trendColor ?? vc.textMuted, fontSize: 12)),
+                  ],
+                  const SizedBox(height: 4),
+                  Text(widget.title,
+                      style: TextStyle(color: vc.textMuted, fontSize: 12, fontWeight: FontWeight.w500)),
+                  if (widget.subtitle != null) ...[
+                    const SizedBox(height: 2),
+                    Text(widget.subtitle!,
+                        style: TextStyle(color: vc.textMuted.withValues(alpha: 0.6), fontSize: 11)),
+                  ],
+                ],
               ),
+            ),
+          ),
+
+          // Chart area
+          if (widget.chart != null) ...[
+            Divider(height: 1, color: vc.border),
+            Padding(padding: const EdgeInsets.all(16), child: widget.chart!),
+          ],
+
+          // Drill-down list
+          if (_expanded) ...[
+            Divider(height: 1, color: vc.border),
+            Padding(
+              padding: const EdgeInsets.all(14),
+              child: widget.drillDown != null && widget.drillDown!.isNotEmpty
+                  ? Column(
+                      children: widget.drillDown!.map((row) => _buildDrillRow(context, row)).toList(),
+                    )
+                  : Text('No breakdown available',
+                      style: TextStyle(color: vc.textMuted, fontSize: 12)),
             ),
           ],
         ],
       ),
     );
-    if (onTap == null) return card;
-    return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: card,
+  }
+
+  Widget _buildDrillRow(BuildContext context, _DrillRow row) {
+    final vc = context.vividColors;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          if (row.dot != null)
+            Container(
+              width: 8, height: 8,
+              margin: const EdgeInsets.only(right: 8),
+              decoration: BoxDecoration(color: row.dot, shape: BoxShape.circle),
+            ),
+          Expanded(child: Text(row.label, style: TextStyle(color: vc.textPrimary, fontSize: 12))),
+          Text(row.value, style: TextStyle(color: row.valueColor ?? vc.textMuted, fontSize: 12, fontWeight: FontWeight.w600)),
+        ],
       ),
     );
   }
+}
+
+class _DrillRow {
+  final String label;
+  final String value;
+  final Color? dot;
+  final Color? valueColor;
+  const _DrillRow(this.label, this.value, {this.dot, this.valueColor});
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// KPI 1 — MONTHLY ACTIVE CLIENTS
+// ═══════════════════════════════════════════════════════════════════
+
+class _ActiveClientsCard extends StatelessWidget {
+  final VividKpiAnalytics kpi;
+  const _ActiveClientsCard({required this.kpi});
+
+  @override
+  Widget build(BuildContext context) {
+    final pct = kpi.totalClients > 0 ? kpi.activeClientsThisPeriod / kpi.totalClients : 0.0;
+    final color = pct >= 1.0 ? Colors.green : pct >= 0.5 ? Colors.amber : Colors.redAccent;
+    final trend = _trend(kpi.activeClientsThisPeriod, kpi.activeClientsLastPeriod);
+
+    return _KpiCard(
+      icon: Icons.people_alt_outlined,
+      iconColor: color,
+      title: 'Active Clients',
+      value: kpi.activeClientsThisPeriod.toString(),
+      subtitle: 'of ${kpi.totalClients} total',
+      valueColor: color,
+      trendLabel: trend.$1,
+      trendColor: trend.$2,
+      chart: _ActivityBar(active: kpi.activeClientsThisPeriod, total: kpi.totalClients, color: color),
+      drillDown: kpi.clientActivityBreakdown.map((r) => _DrillRow(
+        r.name, r.value, dot: r.color, valueColor: r.color,
+      )).toList(),
+    );
+  }
+}
+
+class _ActivityBar extends StatelessWidget {
+  final int active;
+  final int total;
+  final Color color;
+  const _ActivityBar({required this.active, required this.total, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final vc = context.vividColors;
+    final pct = total > 0 ? active / total : 0.0;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: LinearProgressIndicator(
+            value: pct,
+            backgroundColor: vc.surfaceAlt,
+            valueColor: AlwaysStoppedAnimation(color),
+            minHeight: 8,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text('${(pct * 100).toStringAsFixed(0)}% active this period',
+            style: TextStyle(color: vc.textMuted, fontSize: 11)),
+      ],
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// KPI 2 — BROADCAST VOLUME TREND
+// ═══════════════════════════════════════════════════════════════════
+
+class _BroadcastVolumeCard extends StatelessWidget {
+  final VividKpiAnalytics kpi;
+  const _BroadcastVolumeCard({required this.kpi});
+
+  @override
+  Widget build(BuildContext context) {
+    final cur = kpi.broadcastsThisPeriod;
+    final prev = kpi.broadcastsLastPeriod;
+    String trendLabel;
+    Color trendColor;
+    if (cur == 0 && prev == 0) {
+      trendLabel = 'No data';
+      trendColor = Colors.blueGrey;
+    } else if (prev == 0) {
+      trendLabel = 'This period: $cur vs last: 0 (new)';
+      trendColor = Colors.green;
+    } else {
+      final diff = cur - prev;
+      final pct = (diff / prev * 100).round();
+      final sign = diff >= 0 ? '+' : '';
+      trendLabel = 'This period: $cur vs last: $prev ($sign$pct%)';
+      trendColor = diff >= 0 ? Colors.green : Colors.redAccent;
+    }
+    return _KpiCard(
+      icon: Icons.campaign_outlined,
+      iconColor: VividColors.brightBlue,
+      title: 'Broadcast Volume',
+      value: NumberFormat('#,###').format(kpi.broadcastsThisPeriod),
+      subtitle: 'this period',
+      trendLabel: trendLabel,
+      trendColor: trendColor,
+      chart: _BarChart(
+        values: kpi.weeklyBroadcastVolume.map((v) => v.toDouble()).toList(),
+        color: VividColors.brightBlue,
+        label: '12-week trend',
+      ),
+      drillDown: kpi.clientBroadcastBreakdown.map((r) => _DrillRow(
+        r.name,
+        NumberFormat('#,###').format(int.tryParse(r.value) ?? 0),
+        dot: r.color, valueColor: r.color,
+      )).toList(),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// KPI 3 — AVG RESPONSE RATE
+// ═══════════════════════════════════════════════════════════════════
+
+class _ResponseRateCard extends StatelessWidget {
+  final VividKpiAnalytics kpi;
+  const _ResponseRateCard({required this.kpi});
+
+  @override
+  Widget build(BuildContext context) {
+    final rate = kpi.avgResponseRatePct;
+    final color = rate >= 10 ? Colors.green : rate >= 5 ? Colors.amber : Colors.redAccent;
+    final label = rate >= 10 ? 'Good' : rate >= 5 ? 'Fair' : rate == 0 ? 'No data' : 'Low';
+
+    return _KpiCard(
+      icon: Icons.reply_outlined,
+      iconColor: color,
+      title: 'Avg Response Rate',
+      value: '${rate.toStringAsFixed(1)}%',
+      subtitle: '$label — last ${kpi.campaignResponseRates.length} campaigns',
+      valueColor: color,
+      chart: kpi.campaignResponseRates.isEmpty
+          ? null
+          : _Sparkline(
+              values: kpi.campaignResponseRates,
+              color: color,
+              label: 'Campaign response rates (%)',
+            ),
+      drillDown: kpi.clientResponseRateBreakdown.map((r) => _DrillRow(
+        r.name, r.value, dot: r.color, valueColor: r.color,
+      )).toList(),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// KPI 4 — REVENUE
+// ═══════════════════════════════════════════════════════════════════
+
+class _RevenueCard extends StatelessWidget {
+  final VividKpiAnalytics kpi;
+  const _RevenueCard({required this.kpi});
+
+  @override
+  Widget build(BuildContext context) {
+    final trend = _trend(kpi.revenueThisPeriod.round(), kpi.revenueLastPeriod.round());
+    return _KpiCard(
+      icon: Icons.attach_money,
+      iconColor: Colors.green,
+      title: 'Revenue Generated',
+      value: '${kpi.revenueThisPeriod.toStringAsFixed(0)} BHD',
+      subtitle: 'from ${kpi.revenueCampaignCount} campaigns with responses',
+      valueColor: Colors.green,
+      trendLabel: trend.$1,
+      trendColor: trend.$2,
+      drillDown: kpi.clientRevenueBreakdown.map((r) => _DrillRow(
+        r.name, r.value, dot: r.color, valueColor: r.color,
+      )).toList(),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// KPI 5 — CUSTOMER REACH
+// ═══════════════════════════════════════════════════════════════════
+
+class _CustomerReachCard extends StatelessWidget {
+  final VividKpiAnalytics kpi;
+  const _CustomerReachCard({required this.kpi});
+
+  @override
+  Widget build(BuildContext context) {
+    final trend = _trend(kpi.reachThisPeriod, kpi.reachLastPeriod);
+    return _KpiCard(
+      icon: Icons.person_search_outlined,
+      iconColor: VividColors.cyan,
+      title: 'Customer Reach',
+      value: NumberFormat('#,###').format(kpi.reachThisPeriod),
+      subtitle: 'unique phones this period',
+      trendLabel: trend.$1,
+      trendColor: trend.$2,
+      drillDown: kpi.clientReachBreakdown.map((r) => _DrillRow(
+        r.name,
+        NumberFormat('#,###').format(int.tryParse(r.value) ?? 0),
+        dot: r.color, valueColor: r.color,
+      )).toList(),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// KPI 6 — CLIENT HEALTH DISTRIBUTION
+// ═══════════════════════════════════════════════════════════════════
+
+class _ClientHealthCard extends StatelessWidget {
+  final VividKpiAnalytics kpi;
+  const _ClientHealthCard({required this.kpi});
+
+  @override
+  Widget build(BuildContext context) {
+    final grades = ['A', 'B', 'C', 'D', 'F'];
+    final colors = [Colors.green, VividColors.cyan, Colors.amber, Colors.orange, Colors.redAccent];
+    final total = kpi.totalClients;
+
+    return _KpiCard(
+      icon: Icons.health_and_safety_outlined,
+      iconColor: Colors.teal,
+      title: 'Client Health',
+      value: '${kpi.healthGradeCounts['A'] ?? 0} A-grade',
+      subtitle: '${kpi.lowHealthClients.length} need attention',
+      chart: total == 0 ? null : Column(
+        children: [
+          // Stacked bar
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: Row(
+              children: grades.asMap().entries.map((e) {
+                final count = kpi.healthGradeCounts[e.value] ?? 0;
+                final flex = total > 0 ? (count / total * 100).round() : 0;
+                if (flex == 0) return const SizedBox.shrink();
+                return Expanded(
+                  flex: flex,
+                  child: Container(height: 12, color: colors[e.key]),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: grades.asMap().entries.map((e) {
+              final count = kpi.healthGradeCounts[e.value] ?? 0;
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(width: 8, height: 8, decoration: BoxDecoration(color: colors[e.key], shape: BoxShape.circle)),
+                  const SizedBox(width: 4),
+                  Text('${e.value}: $count', style: const TextStyle(fontSize: 10, color: Colors.white70)),
+                ],
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+      drillDown: kpi.lowHealthClients.isEmpty ? null : kpi.lowHealthClients.map((c) => _DrillRow(
+        c.name,
+        c.grade,
+        dot: c.gradeColor,
+        valueColor: c.gradeColor,
+      )).toList(),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// KPI 7 — CHURN RISK
+// ═══════════════════════════════════════════════════════════════════
+
+class _ChurnRiskCard extends StatelessWidget {
+  final VividKpiAnalytics kpi;
+  const _ChurnRiskCard({required this.kpi});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = kpi.churnRiskCount == 0 ? Colors.green : Colors.redAccent;
+    return _KpiCard(
+      icon: Icons.warning_amber_outlined,
+      iconColor: color,
+      title: 'Churn Risk',
+      value: kpi.churnRiskCount.toString(),
+      subtitle: 'clients — no activity in 30+ days',
+      valueColor: color,
+      drillDown: kpi.churnRiskClients.map((c) {
+        final days = c.daysSinceLastBroadcast;
+        final label = days == -1 ? 'Never broadcast' : '$days days ago';
+        final dc = days == -1 || days > 60 ? Colors.redAccent : Colors.orange;
+        return _DrillRow(c.name, label, dot: dc, valueColor: dc);
+      }).toList(),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// KPI 8 — TIME TO FIRST BROADCAST
+// ═══════════════════════════════════════════════════════════════════
+
+class _TimeToFirstBroadcastCard extends StatelessWidget {
+  final VividKpiAnalytics kpi;
+  const _TimeToFirstBroadcastCard({required this.kpi});
+
+  @override
+  Widget build(BuildContext context) {
+    final avg = kpi.avgDaysToFirstBroadcast;
+    final color = avg == 0 ? Colors.blueGrey : avg <= 14 ? Colors.green : avg <= 30 ? Colors.amber : Colors.redAccent;
+    return _KpiCard(
+      icon: Icons.timer_outlined,
+      iconColor: color,
+      title: 'Time to First Broadcast',
+      value: avg == 0 ? 'N/A' : '${avg.toStringAsFixed(1)} days',
+      subtitle: 'avg from signup to first campaign',
+      valueColor: color,
+      drillDown: kpi.onboardingBreakdown.map((c) {
+        final days = c.daysToFirstBroadcast;
+        final label = days == -1 ? 'No broadcast yet' : '$days days';
+        final dc = days == -1 ? Colors.blueGrey : days <= 14 ? Colors.green : days <= 30 ? Colors.amber : Colors.redAccent;
+        return _DrillRow(c.name, label, dot: dc, valueColor: dc);
+      }).toList(),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CHART WIDGETS
+// ═══════════════════════════════════════════════════════════════════
+
+/// 12-bar bar chart
+class _BarChart extends StatelessWidget {
+  final List<double> values;
+  final Color color;
+  final String label;
+  const _BarChart({required this.values, required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final vc = context.vividColors;
+    final maxVal = values.isEmpty ? 1.0 : values.reduce(math.max).clamp(1.0, double.infinity);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          height: 50,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: values.map((v) {
+              final h = (v / maxVal) * 50;
+              return Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 1),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 400),
+                        height: h.clamp(2, 50),
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: 0.7),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('12 weeks ago', style: TextStyle(color: vc.textMuted, fontSize: 9)),
+            Text(label, style: TextStyle(color: vc.textMuted, fontSize: 9)),
+            Text('now', style: TextStyle(color: vc.textMuted, fontSize: 9)),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Sparkline
+class _Sparkline extends StatelessWidget {
+  final List<double> values;
+  final Color color;
+  final String label;
+  const _Sparkline({required this.values, required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final vc = context.vividColors;
+    if (values.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          height: 40,
+          child: CustomPaint(
+            size: const Size(double.infinity, 40),
+            painter: _SparklinePainter(values: values, color: color),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(label, style: TextStyle(color: vc.textMuted, fontSize: 10)),
+      ],
+    );
+  }
+}
+
+class _SparklinePainter extends CustomPainter {
+  final List<double> values;
+  final Color color;
+  const _SparklinePainter({required this.values, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (values.length < 2) return;
+    final maxV = values.reduce(math.max).clamp(0.001, double.infinity);
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    final path = Path();
+    for (int i = 0; i < values.length; i++) {
+      final x = i / (values.length - 1) * size.width;
+      final y = size.height - (values[i] / maxV) * size.height;
+      if (i == 0) { path.moveTo(x, y); } else { path.lineTo(x, y); }
+    }
+    canvas.drawPath(path, paint);
+
+    // Fill
+    final fill = Path.from(path)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+    canvas.drawPath(fill, paint..color = color.withValues(alpha: 0.12)..style = PaintingStyle.fill);
+  }
+
+  @override
+  bool shouldRepaint(_SparklinePainter old) => old.values != values;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════════
+
+/// Returns (trendLabel, trendColor)
+(String, Color) _trend(num current, num previous) {
+  if (previous == 0 && current == 0) return ('No data', Colors.blueGrey);
+  if (previous == 0) return ('+${current.toStringAsFixed(0)} vs prev period', Colors.green);
+  final diff = current - previous;
+  final pct = (diff / previous * 100).round();
+  if (diff > 0) return ('+$pct% vs last period', Colors.green);
+  if (diff < 0) return ('$pct% vs last period', Colors.redAccent);
+  return ('Same as last period', Colors.blueGrey);
 }

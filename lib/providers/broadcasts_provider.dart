@@ -89,6 +89,9 @@ class BroadcastRecipient {
   final String? customerName;
   final String? messageSent;
   final String? status;
+  final String? wamid;
+  final DateTime? deliveredAt;
+  final DateTime? readAt;
 
   const BroadcastRecipient({
     required this.id,
@@ -97,6 +100,9 @@ class BroadcastRecipient {
     this.customerName,
     this.messageSent,
     this.status,
+    this.wamid,
+    this.deliveredAt,
+    this.readAt,
   });
 
   factory BroadcastRecipient.fromJson(Map<String, dynamic> json) {
@@ -107,6 +113,13 @@ class BroadcastRecipient {
       customerName: json['customer_name'] as String?,
       messageSent: json['message_sent'] as String?,
       status: json['status'] as String?,
+      wamid: json['wamid'] as String?,
+      deliveredAt: json['delivered_at'] != null
+          ? DateTime.tryParse(json['delivered_at'] as String)
+          : null,
+      readAt: json['read_at'] != null
+          ? DateTime.tryParse(json['read_at'] as String)
+          : null,
     );
   }
 
@@ -152,17 +165,22 @@ class BroadcastsProvider extends ChangeNotifier {
   bool get hasLimit => monthlyLimit > 0;
   bool get isAtLimit => hasLimit && _monthlySentCount >= monthlyLimit;
 
+  // Status breakdown from loaded recipients
+  int get recipientsSent => _recipients.where((r) {
+        final s = r.status?.toLowerCase() ?? '';
+        return s == 'sent' || s == 'accepted';
+      }).length;
+  int get recipientsDelivered => _recipients.where((r) => r.status?.toLowerCase() == 'delivered').length;
+  int get recipientsRead => _recipients.where((r) => r.status?.toLowerCase() == 'read').length;
+  int get recipientsFailed => _recipients.where((r) => r.status?.toLowerCase() == 'failed').length;
+
   /// Get dynamic table names from ClientConfig
   String get _broadcastsTable {
     final table = ClientConfig.broadcastsTable;
-    if (table != null && table.isNotEmpty) {
-      return table;
-    }
+    if (table != null && table.isNotEmpty) return table;
     final slug = ClientConfig.currentClient?.slug;
-    if (slug != null && slug.isNotEmpty) {
-      return '${slug}_broadcasts';
-    }
-    return 'broadcasts';
+    if (slug != null && slug.isNotEmpty) return '${slug}_broadcasts';
+    throw StateError('No broadcasts table configured — client not fully loaded');
   }
 
   String get _recipientsTable {
@@ -170,12 +188,9 @@ class BroadcastsProvider extends ChangeNotifier {
     final explicit = ClientConfig.broadcastRecipientsTableName;
     if (explicit != null && explicit.isNotEmpty) return explicit;
     // Fallback: derive from the broadcasts table name (supports older rows)
-    final broadcastsTable = _broadcastsTable;
-    if (broadcastsTable != 'broadcasts') {
-      final prefix = broadcastsTable.replaceAll('_broadcasts', '');
-      return '${prefix}_broadcast_recipients';
-    }
-    return 'broadcast_recipients';
+    final slug = ClientConfig.currentClient?.slug;
+    if (slug != null && slug.isNotEmpty) return '${slug}_broadcast_recipients';
+    throw StateError('No broadcast_recipients table configured — client not fully loaded');
   }
 
   void initialize() {
@@ -291,7 +306,7 @@ class BroadcastsProvider extends ChangeNotifier {
 
   void _subscribeToRecipients(String broadcastId) {
     _recipientsChannel?.unsubscribe();
-    
+
     _recipientsChannel = SupabaseService.client
         .channel('recipients_$broadcastId')
         .onPostgresChanges(
@@ -306,6 +321,20 @@ class BroadcastsProvider extends ChangeNotifier {
           callback: (payload) {
             debugPrint('📢 New recipient received');
             _handleNewRecipient(payload.newRecord);
+          },
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: _recipientsTable,
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'broadcast_id',
+            value: broadcastId,
+          ),
+          callback: (payload) {
+            debugPrint('📢 Recipient status updated');
+            _handleRecipientUpdate(payload.newRecord);
           },
         )
         .subscribe();
@@ -332,6 +361,19 @@ class BroadcastsProvider extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('Error handling new recipient: $e');
+    }
+  }
+
+  void _handleRecipientUpdate(Map<String, dynamic> data) {
+    try {
+      final updated = BroadcastRecipient.fromJson(data);
+      final idx = _recipients.indexWhere((r) => r.id == updated.id);
+      if (idx != -1) {
+        _recipients[idx] = updated;
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('Error handling recipient update: $e');
     }
   }
 
@@ -423,7 +465,7 @@ class BroadcastsProvider extends ChangeNotifier {
       // Use adminClient to bypass RLS on per-client tables
       final response = await SupabaseService.adminClient
           .from(_recipientsTable)
-          .select('id, customer_name, customer_phone, status')
+          .select('id, customer_name, customer_phone, status, wamid, delivered_at, read_at')
           .eq('broadcast_id', broadcastId)
           .range(0, _recipientsPageSize - 1);
       final rows = List<Map<String, dynamic>>.from(response as List);
@@ -445,7 +487,7 @@ class BroadcastsProvider extends ChangeNotifier {
       // Use adminClient to bypass RLS on per-client tables
       final response = await SupabaseService.adminClient
           .from(_recipientsTable)
-          .select('id, customer_name, customer_phone, status')
+          .select('id, customer_name, customer_phone, status, wamid, delivered_at, read_at')
           .eq('broadcast_id', broadcastId)
           .range(_recipientOffset, _recipientOffset + _recipientsPageSize - 1);
       final rows = List<Map<String, dynamic>>.from(response as List);
@@ -558,7 +600,7 @@ class BroadcastsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> sendBroadcast(String instruction, {String? templateName}) async {
+  Future<bool> sendBroadcast(String instruction, {String? templateName, String? templateImageUrl}) async {
     if (instruction.trim().isEmpty) {
       _sendError = 'Please enter a broadcast instruction';
       notifyListeners();
@@ -607,6 +649,8 @@ class BroadcastsProvider extends ChangeNotifier {
         'timestamp': DateTime.now().toIso8601String(),
         if (templateName != null && templateName.isNotEmpty)
           'template_name': templateName,
+        if (templateImageUrl != null && templateImageUrl.isNotEmpty)
+          'offer_image_url': templateImageUrl,
       };
 
       final response = await http.post(
@@ -665,6 +709,7 @@ class BroadcastsProvider extends ChangeNotifier {
     DateTime scheduledAtBht, {
     String? editBroadcastId,
     String? templateName,
+    String? templateImageUrl,
   }) async {
     if (instruction.trim().isEmpty) {
       _sendError = 'Please enter a broadcast instruction';
@@ -710,6 +755,8 @@ class BroadcastsProvider extends ChangeNotifier {
         'timestamp': scheduledAtUtc.toIso8601String(),
         if (templateName != null && templateName.isNotEmpty)
           'template_name': templateName,
+        if (templateImageUrl != null && templateImageUrl.isNotEmpty)
+          'offer_image_url': templateImageUrl,
       };
 
       final campaignName = instruction.trim().length > 60
@@ -737,6 +784,8 @@ class BroadcastsProvider extends ChangeNotifier {
               'total_recipients': 0,
               'sent_at': DateTime.now().toUtc().toIso8601String(),
               'created_by': ClientConfig.currentUserName,
+              if (templateImageUrl != null && templateImageUrl.isNotEmpty)
+                'photo': templateImageUrl,
             });
       }
 

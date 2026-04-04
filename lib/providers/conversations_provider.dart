@@ -726,15 +726,18 @@ class ConversationsProvider extends ChangeNotifier {
         mediaFilename: mediaFilename,
       );
 
-      // DON'T remove pending message here!
-      // Real-time subscription will bring the actual message
-      // and _removePendingIfExists() will handle the swap
-
       if (!success) {
-        // Only remove on failure
+        // Remove on failure
         _pendingMessages.removeWhere((m) => m.id == pendingId);
         _error = 'Failed to send message';
       } else {
+        // Fallback: if realtime doesn't arrive within 5s, remove the pending bubble
+        Future.delayed(const Duration(seconds: 5), () {
+          if (_pendingMessages.any((m) => m.id == pendingId)) {
+            _pendingMessages.removeWhere((m) => m.id == pendingId);
+            notifyListeners();
+          }
+        });
         // Auto-detect trigger words and label silently
         final detectedLabel = _detectTriggerLabel(trimmedText);
         if (detectedLabel != null) {

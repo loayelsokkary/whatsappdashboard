@@ -194,6 +194,10 @@ class _BroadcastsList extends StatelessWidget {
                           return _BroadcastCard(
                             broadcast: broadcast,
                             isSelected: isSelected,
+                            sentCount: isSelected ? provider.recipientsSent : null,
+                            deliveredCount: isSelected ? provider.recipientsDelivered : null,
+                            readCount: isSelected ? provider.recipientsRead : null,
+                            failedCount: isSelected ? provider.recipientsFailed : null,
                             onTap: () => provider.selectBroadcast(broadcast),
                             onEdit: broadcast.status == 'scheduled'
                                 ? () => _showComposeBroadcastDialog(context, editBroadcast: broadcast)
@@ -361,6 +365,10 @@ class _BroadcastCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback? onCancel;
   final VoidCallback? onEdit;
+  final int? sentCount;
+  final int? deliveredCount;
+  final int? readCount;
+  final int? failedCount;
 
   const _BroadcastCard({
     required this.broadcast,
@@ -368,6 +376,10 @@ class _BroadcastCard extends StatelessWidget {
     required this.onTap,
     this.onCancel,
     this.onEdit,
+    this.sentCount,
+    this.deliveredCount,
+    this.readCount,
+    this.failedCount,
   });
 
   @override
@@ -392,7 +404,33 @@ class _BroadcastCard extends StatelessWidget {
             bottom: BorderSide(color: vc.borderSubtle),
           ),
         ),
-        child: Column(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Thumbnail
+            if (broadcast.photo != null && broadcast.photo!.isNotEmpty) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(
+                  broadcast.photo!,
+                  width: 48,
+                  height: 48,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: vc.surfaceAlt,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(Icons.broken_image_outlined, size: 22, color: vc.textMuted),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+            ],
+            Expanded(
+              child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
@@ -421,6 +459,17 @@ class _BroadcastCard extends StatelessWidget {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
+            // Delivery progress bars (only when selected and data loaded)
+            if (deliveredCount != null && broadcast.totalRecipients > 0) ...[
+              const SizedBox(height: 10),
+              _DeliveryProgressBars(
+                total: broadcast.totalRecipients,
+                delivered: (sentCount ?? 0) + (deliveredCount ?? 0) + (readCount ?? 0),
+                read: readCount ?? 0,
+                failed: failedCount ?? 0,
+                vc: vc,
+              ),
+            ],
             const SizedBox(height: 12),
             Row(
               children: [
@@ -470,6 +519,9 @@ class _BroadcastCard extends StatelessWidget {
                 ],
               ),
             ],
+          ],
+              ),
+            ),
           ],
         ),
       ),
@@ -789,7 +841,7 @@ class _RecipientDetailsState extends State<_RecipientDetails> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (broadcast.messageContent != null || broadcast.photo != null)
+                  if (broadcast.messageContent != null || (broadcast.photo != null && broadcast.photo!.isNotEmpty && broadcast.photo!.startsWith('http')))
                     Container(
                       width: double.infinity,
                       margin: const EdgeInsets.all(20),
@@ -816,7 +868,7 @@ class _RecipientDetailsState extends State<_RecipientDetails> {
                           LayoutBuilder(
                             builder: (context, constraints) {
                               final vc = context.vividColors;
-                              final hasImage = broadcast.photo != null;
+                              final hasImage = broadcast.photo != null && broadcast.photo!.isNotEmpty && broadcast.photo!.startsWith('http');
                               final hasText = broadcast.messageContent != null;
                               final isNarrow = constraints.maxWidth < 600;
 
@@ -977,13 +1029,14 @@ class _RecipientDetailsState extends State<_RecipientDetails> {
                           ],
                         ),
                         if (!provider.isLoadingRecipients &&
-                            provider.selectedBroadcast!.totalRecipients > 0) ...[
-                          const SizedBox(height: 10),
-                          _DeliveryStats(
-                            sentCount: provider.recipientSentCount,
-                            failedCount: (provider.selectedBroadcast?.totalRecipients ?? 0) -
-                                provider.recipientSentCount,
-                            totalCount: provider.selectedBroadcast?.totalRecipients ?? 0,
+                            provider.recipients.isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          _StatusBreakdown(
+                            sentCount: provider.recipientsSent,
+                            deliveredCount: provider.recipientsDelivered,
+                            readCount: provider.recipientsRead,
+                            failedCount: provider.recipientsFailed,
+                            total: provider.selectedBroadcast?.totalRecipients ?? provider.recipients.length,
                           ),
                         ],
                       ],
@@ -1097,62 +1150,173 @@ class _RecipientDetailsState extends State<_RecipientDetails> {
   }
 }
 
-class _DeliveryStats extends StatelessWidget {
+class _StatusBreakdown extends StatelessWidget {
   final int sentCount;
+  final int deliveredCount;
+  final int readCount;
   final int failedCount;
-  final int totalCount;
+  final int total;
 
-  const _DeliveryStats({
+  const _StatusBreakdown({
     required this.sentCount,
+    required this.deliveredCount,
+    required this.readCount,
     required this.failedCount,
-    required this.totalCount,
+    required this.total,
   });
 
   @override
   Widget build(BuildContext context) {
     final vc = context.vividColors;
-    final sent = sentCount;
-    final failed = failedCount < 0 ? 0 : failedCount;
-    final rate = totalCount > 0 ? (sent / totalCount * 100) : 0.0;
+    final reached = sentCount + deliveredCount + readCount;
+    final deliveryRate = total > 0 ? reached / total * 100 : 0.0;
+    final deliveredOnDevice = deliveredCount + readCount;
+    final readRate = deliveredOnDevice > 0 ? readCount / deliveredOnDevice * 100 : 0.0;
 
-    return Row(
+    // Segments for stacked bar: sent=blue, delivered=green, read=cyan, failed=red
+    // Values are proportional to total
+    final segments = [
+      (sentCount, VividColors.brightBlue),
+      (deliveredCount, Colors.green),
+      (readCount, VividColors.cyan),
+      (failedCount, Colors.redAccent),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildStat(vc, 'Sent', sent.toString(), Colors.green),
-        const SizedBox(width: 16),
-        _buildStat(vc, 'Failed', failed.toString(), Colors.red),
-        const SizedBox(width: 16),
-        _buildStat(vc, 'Rate', '${rate.toStringAsFixed(1)}%', VividColors.cyan),
+        // Stacked bar
+        if (total > 0)
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: SizedBox(
+              height: 10,
+              child: Row(
+                children: segments.map((seg) {
+                  final flex = (seg.$1 / total * 1000).round();
+                  if (flex == 0) return const SizedBox.shrink();
+                  return Expanded(
+                    flex: flex,
+                    child: Container(color: seg.$2),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+        const SizedBox(height: 12),
+        // Stats row
+        Wrap(
+          spacing: 16,
+          runSpacing: 6,
+          children: [
+            _statChip('Sent', sentCount, VividColors.brightBlue, vc),
+            _statChip('Delivered', deliveredCount, Colors.green, vc),
+            _statChip('Read', readCount, VividColors.cyan, vc),
+            _statChip('Failed', failedCount, Colors.redAccent, vc),
+          ],
+        ),
+        const SizedBox(height: 10),
+        // Rate pills
+        Row(
+          children: [
+            _ratePill('Delivery ${deliveryRate.toStringAsFixed(0)}%', Colors.green, vc),
+            const SizedBox(width: 8),
+            _ratePill('Read ${readRate.toStringAsFixed(0)}%', VividColors.cyan, vc),
+          ],
+        ),
       ],
     );
   }
 
-  Widget _buildStat(VividColorScheme vc, String label, String value, Color color) {
+  Widget _statChip(String label, int count, Color color, VividColorScheme vc) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(
-          width: 6,
-          height: 6,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-          ),
+        Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+        const SizedBox(width: 5),
+        Text('$label: ', style: TextStyle(color: vc.textMuted, fontSize: 12)),
+        Text('$count', style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600)),
+      ],
+    );
+  }
+
+  Widget _ratePill(String label, Color color, VividColorScheme vc) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600)),
+    );
+  }
+}
+
+class _DeliveryProgressBars extends StatelessWidget {
+  final int total;
+  final int delivered;
+  final int read;
+  final int failed;
+  final VividColorScheme vc;
+
+  const _DeliveryProgressBars({
+    required this.total,
+    required this.delivered,
+    required this.read,
+    required this.failed,
+    required this.vc,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final deliveryRate = total > 0 ? delivered / total : 0.0;
+    final readRate = delivered > 0 ? read / delivered : 0.0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Delivery bar
+        Row(
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: LinearProgressIndicator(
+                  value: deliveryRate,
+                  minHeight: 4,
+                  backgroundColor: vc.surfaceAlt,
+                  valueColor: const AlwaysStoppedAnimation(Colors.green),
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              '$delivered/$total delivered',
+              style: TextStyle(color: vc.textMuted, fontSize: 10),
+            ),
+          ],
         ),
-        const SizedBox(width: 4),
-        Text(
-          '$label: ',
-          style: TextStyle(
-            color: vc.textMuted,
-            fontSize: 12,
-          ),
-        ),
-        Text(
-          value,
-          style: TextStyle(
-            color: color,
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-          ),
+        const SizedBox(height: 4),
+        // Read bar
+        Row(
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: LinearProgressIndicator(
+                  value: readRate,
+                  minHeight: 4,
+                  backgroundColor: vc.surfaceAlt,
+                  valueColor: const AlwaysStoppedAnimation(VividColors.cyan),
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              '$read read',
+              style: TextStyle(color: vc.textMuted, fontSize: 10),
+            ),
+          ],
         ),
       ],
     );
@@ -1164,12 +1328,29 @@ class _RecipientTile extends StatelessWidget {
 
   const _RecipientTile({required this.recipient});
 
+  static const _statusMeta = {
+    'sent':      (Colors.blue,        Icons.send,              'Sent'),
+    'accepted':  (Color(0xFFF59E0B),  Icons.pending_outlined,  'Accepted'),
+    'delivered': (Colors.green,       Icons.done_all,          'Delivered'),
+    'read':      (VividColors.cyan,   Icons.visibility,        'Read'),
+    'failed':    (Colors.redAccent,   Icons.error_outline,     'Failed'),
+  };
+
   @override
   Widget build(BuildContext context) {
     final vc = context.vividColors;
-    final bool isSent = recipient.status == 'accepted' || recipient.status == 'sent' || recipient.status == 'delivered';
-    final Color statusColor = isSent ? Colors.green : Colors.red;
-    final String statusLabel = isSent ? 'Delivered' : 'Failed';
+    final status = (recipient.status ?? 'sent').toLowerCase();
+    final meta = _statusMeta[status] ?? _statusMeta['sent']!;
+    final color = meta.$1;
+    final icon  = meta.$2;
+    final label = meta.$3;
+
+    String? timestamp;
+    if (recipient.readAt != null) {
+      timestamp = 'Read at ${_fmtTime(recipient.readAt!)}';
+    } else if (recipient.deliveredAt != null) {
+      timestamp = 'Delivered at ${_fmtTime(recipient.deliveredAt!)}';
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -1184,7 +1365,7 @@ class _RecipientTile extends StatelessWidget {
             radius: 18,
             backgroundColor: VividColors.brightBlue.withValues(alpha: 0.2),
             child: Builder(builder: (context) {
-              final initials = _getInitials(recipient.displayName);
+              final initials = getInitials(recipient.displayName);
               return Text(
                 initials,
                 textDirection: isArabicText(initials) ? TextDirection.rtl : TextDirection.ltr,
@@ -1203,46 +1384,32 @@ class _RecipientTile extends StatelessWidget {
               children: [
                 Text(
                   recipient.displayName,
-                  style: TextStyle(
-                    color: vc.textPrimary,
-                    fontWeight: FontWeight.w500,
-                  ),
+                  style: TextStyle(color: vc.textPrimary, fontWeight: FontWeight.w500),
                 ),
-                if (recipient.customerPhone != null &&
-                    recipient.customerName != null)
+                if (recipient.customerPhone != null && recipient.customerName != null)
                   Text(
                     recipient.customerPhone!,
-                    style: TextStyle(
-                      color: vc.textMuted,
-                      fontSize: 12,
-                    ),
+                    style: TextStyle(color: vc.textMuted, fontSize: 12),
                   ),
+                if (timestamp != null) ...[
+                  const SizedBox(height: 2),
+                  Text(timestamp, style: TextStyle(color: vc.textMuted.withValues(alpha: 0.65), fontSize: 11)),
+                ],
               ],
             ),
           ),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: statusColor.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(12),
+              color: color.withValues(alpha: 0.13),
+              borderRadius: BorderRadius.circular(10),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  isSent ? Icons.check_circle : Icons.error_outline,
-                  size: 12,
-                  color: statusColor,
-                ),
+                Icon(icon, size: 12, color: color),
                 const SizedBox(width: 4),
-                Text(
-                  statusLabel,
-                  style: TextStyle(
-                    color: statusColor,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+                Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600)),
               ],
             ),
           ),
@@ -1251,7 +1418,13 @@ class _RecipientTile extends StatelessWidget {
     );
   }
 
-  String _getInitials(String name) => getInitials(name);
+  String _fmtTime(DateTime dt) {
+    final bh = dt.toUtc().add(const Duration(hours: 3));
+    final h = bh.hour > 12 ? bh.hour - 12 : (bh.hour == 0 ? 12 : bh.hour);
+    final m = bh.minute.toString().padLeft(2, '0');
+    final ampm = bh.hour >= 12 ? 'PM' : 'AM';
+    return '$h:$m $ampm';
+  }
 }
 
 /// Public dialog for composing or scheduling a broadcast.
@@ -1380,6 +1553,7 @@ class _ComposeBroadcastDialogState extends State<ComposeBroadcastDialog> {
         scheduledBht,
         editBroadcastId: widget.editBroadcast?.id,
         templateName: _selectedTemplate?.name,
+        templateImageUrl: _selectedTemplate?.headerMediaUrl,
       );
       if (!mounted) return;
       if (success) {
@@ -1392,7 +1566,11 @@ class _ComposeBroadcastDialogState extends State<ComposeBroadcastDialog> {
         );
       }
     } else {
-      success = await provider.sendBroadcast(text, templateName: _selectedTemplate?.name);
+      success = await provider.sendBroadcast(
+        text,
+        templateName: _selectedTemplate?.name,
+        templateImageUrl: _selectedTemplate?.headerMediaUrl,
+      );
       if (!mounted) return;
       if (success) {
         Navigator.of(context).pop();
