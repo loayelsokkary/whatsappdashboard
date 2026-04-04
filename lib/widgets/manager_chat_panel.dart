@@ -9,7 +9,9 @@ import '../theme/vivid_theme.dart';
 import '../utils/date_formatter.dart';
 import '../services/impersonate_service.dart';
 import '../services/supabase_service.dart';
+import '../services/query_result_service.dart';
 import 'broadcasts_panel.dart' show ComposeBroadcastDialog;
+import 'customer_table_card.dart';
 
 /// Manager Chatbot Panel with ChatGPT-style session history sidebar
 class ManagerChatPanel extends StatefulWidget {
@@ -23,6 +25,12 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final FocusNode _focusNode = FocusNode();
+
+  // Cache of query results keyed by the manager-chat message ID that triggered them.
+  // Populated lazily after each new AI response arrives.
+  final Map<String, QueryResultData> _queryResultCache = {};
+  // Track the last AI message ID we already tried to fetch for (avoid re-fetching).
+  String? _lastFetchedAiMessageId;
 
   @override
   void initState() {
@@ -211,6 +219,7 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
 
         final displayItems = <_ChatDisplayItem>[];
         const _broadcastRe = r'\[BROADCAST: ([^\]]+)\]';
+        String? latestAiMessageId;
         for (final msg in messages) {
           if (msg.userMessage != null && msg.userMessage!.isNotEmpty) {
             displayItems.add(_ChatDisplayItem(
@@ -221,15 +230,31 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
           }
           if (msg.aiResponse != null && msg.aiResponse!.isNotEmpty) {
             final raw = msg.aiResponse!;
-            final match = RegExp(_broadcastRe).firstMatch(raw);
-            final cleanText = raw.replaceAll(RegExp(_broadcastRe), '').trim();
+            final broadcastMatch = RegExp(_broadcastRe).firstMatch(raw);
+            final cleaned = raw.replaceAll(RegExp(_broadcastRe), '').trim();
             displayItems.add(_ChatDisplayItem(
-              text: cleanText.isNotEmpty ? cleanText : raw,
+              text: cleaned.isNotEmpty ? cleaned : raw,
               isUser: false,
               createdAt: msg.createdAt,
-              broadcastInstruction: match?.group(1),
+              broadcastInstruction: broadcastMatch?.group(1),
+              messageId: msg.id,
+              queryResult: _queryResultCache[msg.id],
             ));
+            latestAiMessageId = msg.id;
           }
+        }
+
+        // If the most recent AI message hasn't been fetched yet, do so now
+        if (latestAiMessageId != null &&
+            latestAiMessageId != _lastFetchedAiMessageId) {
+          _lastFetchedAiMessageId = latestAiMessageId;
+          final capturedId = latestAiMessageId;
+          Future.microtask(() async {
+            final result = await QueryResultService.fetchRecentResult();
+            if (result != null && mounted) {
+              setState(() => _queryResultCache[capturedId] = result);
+            }
+          });
         }
 
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -259,7 +284,15 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
                 if (showDateDivider)
                   _buildDateDivider(
                       DateFormatter.formatChatDate(item.createdAt)),
-                _MessageBubble(item: item),
+                _MessageBubble(
+                  item: item,
+                  onPrefillInput: (text) {
+                    _messageController.text = text;
+                    _messageController.selection = TextSelection.fromPosition(
+                      TextPosition(offset: text.length),
+                    );
+                  },
+                ),
               ],
             );
           },
@@ -807,13 +840,19 @@ class _ChatDisplayItem {
   final String text;
   final bool isUser;
   final DateTime createdAt;
-  final String? broadcastInstruction; // extracted from [BROADCAST: ...] in AI response
+  final String? broadcastInstruction;
+  // DB row ID of the ManagerChatMessage — used to key the query-result cache
+  final String? messageId;
+  // Populated from the cache after fetch
+  QueryResultData? queryResult;
 
   _ChatDisplayItem({
     required this.text,
     required this.isUser,
     required this.createdAt,
     this.broadcastInstruction,
+    this.messageId,
+    this.queryResult,
   });
 }
 
@@ -823,8 +862,9 @@ class _ChatDisplayItem {
 
 class _MessageBubble extends StatelessWidget {
   final _ChatDisplayItem item;
+  final void Function(String)? onPrefillInput;
 
-  const _MessageBubble({required this.item});
+  const _MessageBubble({required this.item, this.onPrefillInput});
 
   @override
   Widget build(BuildContext context) {
@@ -1014,6 +1054,14 @@ class _MessageBubble extends StatelessWidget {
                     ],
                   ),
                 ),
+                // TABLE card — rendered below the bubble, inside the same column
+                if (!isUser && item.queryResult != null) ...[
+                  const SizedBox(height: 8),
+                  CustomerTableCard(
+                    data: item.queryResult!,
+                    onSendOffer: onPrefillInput,
+                  ),
+                ],
               ],
             ),
           ),
