@@ -482,12 +482,22 @@ class BroadcastsProvider extends ChangeNotifier {
 
   Future<void> fetchRecipients(String broadcastId) async {
     try {
-      final response = await SupabaseService.adminClient
-          .from(_recipientsTable)
-          .select('id, customer_name, customer_phone, status, wamid, delivered_at, read_at')
-          .eq('broadcast_id', broadcastId);
-      final rows = List<Map<String, dynamic>>.from(response as List);
-      _recipients = rows.map((json) => BroadcastRecipient.fromJson(json)).toList();
+      // Supabase default row limit is 1000 — fetch in batches of 1000 until exhausted.
+      const batchSize = 1000;
+      final allRows = <Map<String, dynamic>>[];
+      int offset = 0;
+      while (true) {
+        final response = await SupabaseService.adminClient
+            .from(_recipientsTable)
+            .select('id, customer_name, customer_phone, status, wamid, delivered_at, read_at')
+            .eq('broadcast_id', broadcastId)
+            .range(offset, offset + batchSize - 1);
+        final batch = List<Map<String, dynamic>>.from(response as List);
+        allRows.addAll(batch);
+        if (batch.length < batchSize) break;
+        offset += batchSize;
+      }
+      _recipients = allRows.map((json) => BroadcastRecipient.fromJson(json)).toList();
       notifyListeners();
     } catch (e) {
       debugPrint('Fetch recipients error: $e');
