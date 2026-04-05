@@ -624,16 +624,16 @@ class ManagerChatProvider extends ChangeNotifier {
 
   Future<void> _pollForResponse() async {
     try {
-      final userId = _currentUserId;
-      if (userId == null) return;
+      // Prefer querying by session_id — n8n may not write user_id on the AI response row
+      if (_currentSessionId == null) return;
 
       // Use adminClient to bypass RLS on per-client tables
       final response = await SupabaseService.adminClient
           .from(_managerChatsTable!)
           .select()
-          .eq('user_id', userId)
+          .eq('session_id', _currentSessionId!)
           .order('created_at', ascending: true)
-          .limit(500);
+          .limit(100);
 
       final freshMessages = (response as List)
           .map((json) => ManagerChatMessage.fromJson(json))

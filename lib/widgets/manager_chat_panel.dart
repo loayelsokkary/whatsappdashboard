@@ -31,6 +31,9 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
   final Map<String, QueryResultData> _queryResultCache = {};
   // Track the last AI message ID we already tried to fetch for (avoid re-fetching).
   String? _lastFetchedAiMessageId;
+  // Track the createdAt of the last stored query result so follow-up queries
+  // don't return the same row (BUG 2).
+  DateTime? _lastQueryResultAt;
 
   @override
   void initState() {
@@ -249,10 +252,25 @@ class _ManagerChatPanelState extends State<ManagerChatPanel> {
             latestAiMessageId != _lastFetchedAiMessageId) {
           _lastFetchedAiMessageId = latestAiMessageId;
           final capturedId = latestAiMessageId;
+          // Snapshot the threshold so the async closure captures the right value.
+          // Any result must be strictly newer than the previously stored one (BUG 2 fix).
+          final threshold = _lastQueryResultAt;
           Future.microtask(() async {
-            final result = await QueryResultService.fetchRecentResult();
+            QueryResultData? result;
+            for (int attempt = 0; attempt < 3; attempt++) {
+              final candidate = await QueryResultService.fetchRecentResult();
+              if (candidate != null &&
+                  (threshold == null || candidate.createdAt.isAfter(threshold))) {
+                result = candidate;
+                break;
+              }
+              if (attempt < 2) await Future.delayed(const Duration(seconds: 2));
+            }
             if (result != null && mounted) {
-              setState(() => _queryResultCache[capturedId] = result);
+              setState(() {
+                _queryResultCache[capturedId] = result!;
+                _lastQueryResultAt = result.createdAt;
+              });
             }
           });
         }
