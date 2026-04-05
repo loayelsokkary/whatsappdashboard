@@ -1074,23 +1074,6 @@ class _RecipientDetailsState extends State<_RecipientDetails> {
                             return _RecipientTile(recipient: recipient);
                           },
                         ),
-                        if (provider.hasMoreRecipients)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                            child: provider.isLoadingMoreRecipients
-                                ? const Center(
-                                    child: Padding(
-                                      padding: EdgeInsets.all(8),
-                                      child: CircularProgressIndicator(strokeWidth: 2),
-                                    ),
-                                  )
-                                : OutlinedButton(
-                                    onPressed: () => provider.loadMoreRecipients(),
-                                    child: Text(
-                                      'Load more (${provider.recipients.length} of ${provider.selectedBroadcast?.totalRecipients ?? '?'})',
-                                    ),
-                                  ),
-                          ),
                       ],
                     ),
                 ],

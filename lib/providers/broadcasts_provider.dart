@@ -131,17 +131,12 @@ class BroadcastsProvider extends ChangeNotifier {
   Broadcast? _selectedBroadcast;
   bool _isLoading = false;
   bool _isLoadingRecipients = false;
-  bool _isLoadingMoreRecipients = false;
-  bool _hasMoreRecipients = false;
-  int _recipientOffset = 0;
   int _recipientSentCount = 0;
   bool _isSending = false;
   String? _error;
   String? _sendError;
   int _monthlySentCount = 0;
 
-  static const int _recipientsPageSize = 100;
-  
   RealtimeChannel? _broadcastsChannel;
   RealtimeChannel? _recipientsChannel;
   Timer? _sendingPollTimer;
@@ -151,8 +146,6 @@ class BroadcastsProvider extends ChangeNotifier {
   Broadcast? get selectedBroadcast => _selectedBroadcast;
   bool get isLoading => _isLoading;
   bool get isLoadingRecipients => _isLoadingRecipients;
-  bool get isLoadingMoreRecipients => _isLoadingMoreRecipients;
-  bool get hasMoreRecipients => _hasMoreRecipients;
   int get recipientSentCount => _recipientSentCount;
   bool get isSending => _isSending;
   String? get error => _error;
@@ -345,7 +338,6 @@ class BroadcastsProvider extends ChangeNotifier {
       final recipient = BroadcastRecipient.fromJson(data);
       if (!_recipients.any((r) => r.id == recipient.id)) {
         _recipients.insert(0, recipient);
-        _recipientOffset += 1;
         // Increment total count in selected broadcast
         if (_selectedBroadcast != null) {
           final updated = _selectedBroadcast!.copyWith(
@@ -420,28 +412,25 @@ class BroadcastsProvider extends ChangeNotifier {
   Future<void> _enrichRecipientCounts() async {
     if (_broadcasts.isEmpty) return;
     try {
-      final rows = await SupabaseService.adminClient
-          .from(_recipientsTable)
-          .select('broadcast_id');
-
-      // Count rows per broadcast_id
-      final counts = <String, int>{};
-      for (final row in (rows as List)) {
-        final id = row['broadcast_id']?.toString();
-        if (id != null) counts[id] = (counts[id] ?? 0) + 1;
-      }
-
+      // Use per-broadcast COUNT queries in parallel — avoids Supabase's 1000-row
+      // default limit that would truncate a single all-rows fetch.
       bool changed = false;
-      for (int i = 0; i < _broadcasts.length; i++) {
-        final actual = counts[_broadcasts[i].id] ?? 0;
-        if (actual > 0 && actual != _broadcasts[i].totalRecipients) {
-          _broadcasts[i] = _broadcasts[i].copyWith(totalRecipients: actual);
-          if (_selectedBroadcast?.id == _broadcasts[i].id) {
-            _selectedBroadcast = _broadcasts[i];
+      await Future.wait(_broadcasts.map((broadcast) async {
+        final result = await SupabaseService.adminClient
+            .from(_recipientsTable)
+            .select()
+            .eq('broadcast_id', broadcast.id)
+            .count(CountOption.exact);
+        final actual = result.count;
+        final idx = _broadcasts.indexWhere((b) => b.id == broadcast.id);
+        if (idx != -1 && actual != _broadcasts[idx].totalRecipients) {
+          _broadcasts[idx] = _broadcasts[idx].copyWith(totalRecipients: actual);
+          if (_selectedBroadcast?.id == broadcast.id) {
+            _selectedBroadcast = _broadcasts[idx];
           }
           changed = true;
         }
-      }
+      }));
       if (changed) notifyListeners();
     } catch (e) {
       debugPrint('📢 _enrichRecipientCounts error: $e');
@@ -451,8 +440,6 @@ class BroadcastsProvider extends ChangeNotifier {
   Future<void> selectBroadcast(Broadcast broadcast) async {
     _selectedBroadcast = broadcast;
     _recipients = [];
-    _recipientOffset = 0;
-    _hasMoreRecipients = false;
     _recipientSentCount = 0;
     _isLoadingRecipients = true;
     notifyListeners();
@@ -495,46 +482,16 @@ class BroadcastsProvider extends ChangeNotifier {
 
   Future<void> fetchRecipients(String broadcastId) async {
     try {
-      // Use adminClient to bypass RLS on per-client tables
       final response = await SupabaseService.adminClient
           .from(_recipientsTable)
           .select('id, customer_name, customer_phone, status, wamid, delivered_at, read_at')
-          .eq('broadcast_id', broadcastId)
-          .range(0, _recipientsPageSize - 1);
+          .eq('broadcast_id', broadcastId);
       final rows = List<Map<String, dynamic>>.from(response as List);
       _recipients = rows.map((json) => BroadcastRecipient.fromJson(json)).toList();
-      _recipientOffset = rows.length;
-      _hasMoreRecipients = rows.length >= _recipientsPageSize;
       notifyListeners();
     } catch (e) {
       debugPrint('Fetch recipients error: $e');
     }
-  }
-
-  Future<void> loadMoreRecipients() async {
-    if (!_hasMoreRecipients || _isLoadingMoreRecipients || _selectedBroadcast == null) return;
-    _isLoadingMoreRecipients = true;
-    notifyListeners();
-    try {
-      final broadcastId = _selectedBroadcast!.id;
-      // Use adminClient to bypass RLS on per-client tables
-      final response = await SupabaseService.adminClient
-          .from(_recipientsTable)
-          .select('id, customer_name, customer_phone, status, wamid, delivered_at, read_at')
-          .eq('broadcast_id', broadcastId)
-          .range(_recipientOffset, _recipientOffset + _recipientsPageSize - 1);
-      final rows = List<Map<String, dynamic>>.from(response as List);
-      _recipients = [
-        ..._recipients,
-        ...rows.map((json) => BroadcastRecipient.fromJson(json)),
-      ];
-      _recipientOffset += rows.length;
-      _hasMoreRecipients = rows.length >= _recipientsPageSize;
-    } catch (e) {
-      debugPrint('Load more recipients error: $e');
-    }
-    _isLoadingMoreRecipients = false;
-    notifyListeners();
   }
 
   Future<void> _fetchRecipientStats(String broadcastId) async {
