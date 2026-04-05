@@ -1151,10 +1151,8 @@ class _StatusBreakdown extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final vc = context.vividColors;
-    final reached = sentCount + deliveredCount + readCount;
-    final deliveryRate = total > 0 ? reached / total * 100 : 0.0;
-    final deliveredOnDevice = deliveredCount + readCount;
-    final readRate = deliveredOnDevice > 0 ? readCount / deliveredOnDevice * 100 : 0.0;
+    final deliveryRate = total > 0 ? (deliveredCount + readCount) / total * 100 : 0.0;
+    final readRate = total > 0 ? readCount / total * 100 : 0.0;
 
     // Segments for stacked bar: sent=blue, delivered=green, read=cyan, failed=red
     // Values are proportional to total
@@ -1253,7 +1251,7 @@ class _DeliveryProgressBars extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final deliveryRate = total > 0 ? delivered / total : 0.0;
-    final readRate = delivered > 0 ? read / delivered : 0.0;
+    final readRate = total > 0 ? read / total : 0.0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1274,7 +1272,7 @@ class _DeliveryProgressBars extends StatelessWidget {
             ),
             const SizedBox(width: 6),
             Text(
-              '$delivered/$total delivered',
+              '$delivered/$total reached',
               style: TextStyle(color: vc.textMuted, fontSize: 10),
             ),
           ],
