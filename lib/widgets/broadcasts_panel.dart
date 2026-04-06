@@ -1159,6 +1159,26 @@ class _RecipientDetailsState extends State<_RecipientDetails> {
   }
 }
 
+/// Maps raw Meta/WhatsApp error messages to user-friendly descriptions.
+/// Returns [rawError] unchanged if no known pattern matches.
+String getFriendlyErrorMessage(String rawError) {
+  final lower = rawError.toLowerCase();
+  if (lower.contains('131049') ||
+      lower.contains('healthy ecosystem') ||
+      lower.contains('maintain healthy')) {
+    return 'Marketing message blocked — WhatsApp is protecting this customer from message overload. Try again later.';
+  }
+  if (lower.contains('131026') ||
+      lower.contains('message undeliverable')) {
+    return 'Number not reachable — this number may not be on WhatsApp or is no longer active.';
+  }
+  if (lower.contains('part of an experiment') ||
+      lower.contains('experiment')) {
+    return 'WhatsApp is blocking promotions to this number as part of a temporary test. No action needed.';
+  }
+  return rawError;
+}
+
 class _StatusBreakdown extends StatelessWidget {
   final int sentCount;
   final int deliveredCount;
@@ -1181,8 +1201,9 @@ class _StatusBreakdown extends StatelessWidget {
     if (failed.isEmpty) return '';
     final counts = <String, int>{};
     for (final r in failed) {
-      final msg = r.errorMessage ?? 'Unknown error';
-      final short = msg.length > 40 ? '${msg.substring(0, 40)}…' : msg;
+      final raw = r.errorMessage ?? 'Unknown error';
+      final msg = getFriendlyErrorMessage(raw);
+      final short = msg.length > 120 ? '${msg.substring(0, 120)}…' : msg;
       counts[short] = (counts[short] ?? 0) + 1;
     }
     final parts = counts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
@@ -1651,8 +1672,8 @@ class _RecipientTileState extends State<_RecipientTile> {
               padding: const EdgeInsets.fromLTRB(42, 0, 12, 10),
               child: Text(
                 r.errorCode != null
-                    ? 'Error ${r.errorCode}: ${r.errorMessage ?? 'Unknown error'}'
-                    : r.errorMessage ?? 'Failed — unknown error',
+                    ? 'Error ${r.errorCode}: ${getFriendlyErrorMessage(r.errorMessage ?? 'Unknown error')}'
+                    : getFriendlyErrorMessage(r.errorMessage ?? 'Failed — unknown error'),
                 style: TextStyle(color: Colors.redAccent.withValues(alpha: 0.85), fontSize: 11),
               ),
             ),

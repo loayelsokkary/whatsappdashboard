@@ -3,7 +3,6 @@ import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:web/web.dart' as web;
 import '../providers/conversations_provider.dart';
@@ -18,6 +17,7 @@ import 'voice_message_bubble.dart';
 import '../utils/initials_helper.dart';
 import '../services/impersonate_service.dart';
 import 'side_profile_panel.dart';
+import '../utils/media_download_helper.dart';
 
 /// Set to true from outside (e.g. conversation list note icon) to open the
 /// side profile panel for whichever conversation is currently shown.
@@ -1975,44 +1975,21 @@ class _MessageBubbleState extends State<_MessageBubble>
         duration: const Duration(seconds: 2),
       );
 
-      // Fetch file bytes
-      final response = await http.get(Uri.parse(fileUrl));
-      if (response.statusCode != 200) {
-        throw Exception('Failed to download: ${response.statusCode}');
-      }
+      final result = await downloadMedia(fileUrl);
 
-      // Extract filename from URL path
-      final uri = Uri.parse(fileUrl);
-      final segments = uri.pathSegments;
-      String filename = segments.isNotEmpty ? segments.last : 'download';
-      filename = filename.split('?').first; // Remove query params
-
-      // Determine MIME type
-      final ext = filename.toLowerCase().split('.').last;
-      final mimeType = switch (ext) {
-        'jpg' || 'jpeg' => 'image/jpeg',
-        'png' => 'image/png',
-        'gif' => 'image/gif',
-        'webp' => 'image/webp',
-        'pdf' => 'application/pdf',
-        _ => 'application/octet-stream',
-      };
-
-      // Create blob and trigger download
       final blob = web.Blob(
-        [response.bodyBytes.toJS].toJS,
-        web.BlobPropertyBag(type: mimeType),
+        [result.bytes.toJS].toJS,
+        web.BlobPropertyBag(type: result.mimeType),
       );
       final blobUrl = web.URL.createObjectURL(blob);
       final anchor = web.HTMLAnchorElement()
         ..href = blobUrl
-        ..download = filename
+        ..download = result.filename
         ..style.display = 'none';
 
       web.document.body!.append(anchor);
       anchor.click();
 
-      // Cleanup
       Future.delayed(const Duration(milliseconds: 150), () {
         anchor.remove();
         web.URL.revokeObjectURL(blobUrl);
@@ -2020,15 +1997,15 @@ class _MessageBubbleState extends State<_MessageBubble>
 
       if (mounted) {
         VividToast.show(context,
-          message: 'Downloaded: $filename',
+          message: 'Downloaded: ${result.filename}',
           type: ToastType.success,
         );
       }
     } catch (e) {
-      debugPrint('Download error: $e');
+      debugPrint('[_downloadFile] Error: $e');
       if (mounted) {
         VividToast.show(context,
-          message: 'Download failed: $e',
+          message: 'Download failed. Please try again.',
           type: ToastType.error,
         );
       }

@@ -1,9 +1,9 @@
 import 'dart:html' as html;
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
+import '../utils/media_download_helper.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import '../models/outreach_models.dart';
 import '../providers/outreach_provider.dart';
@@ -1695,27 +1695,16 @@ class _MessageBubbleState extends State<_MessageBubble> {
 
   Future<void> _downloadFile(String fileUrl) async {
     try {
-      final response = await http.get(Uri.parse(fileUrl));
-      if (response.statusCode != 200) return;
+      final result = await downloadMedia(fileUrl);
 
-      final filename =
-          fileUrl.split('/').last.split('?').first;
-      final ext = filename.split('.').last.toLowerCase();
-      final mimeType = switch (ext) {
-        'jpg' || 'jpeg' => 'image/jpeg',
-        'png' => 'image/png',
-        'pdf' => 'application/pdf',
-        _ => 'application/octet-stream',
-      };
-
-      final blob = html.Blob([response.bodyBytes], mimeType);
+      final blob = html.Blob([result.bytes], result.mimeType);
       final url = html.Url.createObjectUrlFromBlob(blob);
-      final anchor = html.AnchorElement(href: url)
-        ..setAttribute('download', filename)
+      html.AnchorElement(href: url)
+        ..setAttribute('download', result.filename)
         ..click();
       html.Url.revokeObjectUrl(url);
     } catch (e) {
-      debugPrint('OUTREACH: download error: $e');
+      debugPrint('[_downloadFile] OUTREACH error: $e');
     }
   }
 
