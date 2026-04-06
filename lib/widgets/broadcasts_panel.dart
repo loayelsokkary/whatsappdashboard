@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/models.dart';
@@ -675,16 +676,61 @@ class _RecipientDetailsState extends State<_RecipientDetails> {
   late TextEditingController _nameController;
   bool _isSaving = false;
 
+  // Filter state
+  String? _statusFilter; // null = all, 'sent', 'delivered', 'read', 'failed'
+  String _searchQuery = '';
+  String _sortBy = 'time'; // 'time', 'name', 'status'
+  Timer? _searchDebounce;
+  late TextEditingController _searchController;
+
   @override
   void initState() {
     super.initState();
     _nameController = TextEditingController();
+    _searchController = TextEditingController();
   }
 
   @override
   void dispose() {
     _nameController.dispose();
+    _searchController.dispose();
+    _searchDebounce?.cancel();
     super.dispose();
+  }
+
+  List<BroadcastRecipient> _applyFilters(List<BroadcastRecipient> recipients) {
+    var filtered = recipients.toList();
+    if (_statusFilter != null) {
+      if (_statusFilter == 'sent') {
+        filtered = filtered.where((r) {
+          final s = r.status?.toLowerCase() ?? '';
+          return s == 'sent' || s == 'accepted';
+        }).toList();
+      } else {
+        filtered = filtered.where((r) => r.status?.toLowerCase() == _statusFilter).toList();
+      }
+    }
+    if (_searchQuery.isNotEmpty) {
+      final q = _searchQuery.toLowerCase();
+      filtered = filtered.where((r) =>
+        (r.customerName ?? '').toLowerCase().contains(q) ||
+        (r.customerPhone ?? '').contains(q),
+      ).toList();
+    }
+    switch (_sortBy) {
+      case 'name':
+        filtered.sort((a, b) => a.displayName.compareTo(b.displayName));
+      case 'status':
+        const order = {'failed': 0, 'sent': 1, 'accepted': 1, 'delivered': 2, 'read': 3};
+        filtered.sort((a, b) {
+          final av = order[a.status?.toLowerCase() ?? ''] ?? 5;
+          final bv = order[b.status?.toLowerCase() ?? ''] ?? 5;
+          return av.compareTo(bv);
+        });
+      default: // 'time' — keep original order (newest first from DB)
+        break;
+    }
+    return filtered;
   }
 
   void _startEditing(String currentName) {
@@ -1002,34 +1048,19 @@ class _RecipientDetailsState extends State<_RecipientDetails> {
                           children: [
                             Text(
                               'Recipients',
-                              style: TextStyle(
-                                color: vc.textPrimary,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
+                              style: TextStyle(color: vc.textPrimary, fontSize: 16, fontWeight: FontWeight.w600),
                             ),
                             const SizedBox(width: 8),
                             if (provider.isLoadingRecipients)
-                              SizedBox(
-                                width: 14,
-                                height: 14,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 1.5,
-                                  color: vc.textMuted,
-                                ),
-                              )
+                              SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 1.5, color: vc.textMuted))
                             else
                               Text(
                                 '(${provider.selectedBroadcast?.totalRecipients ?? provider.recipients.length})',
-                                style: TextStyle(
-                                  color: vc.textMuted,
-                                  fontSize: 14,
-                                ),
+                                style: TextStyle(color: vc.textMuted, fontSize: 14),
                               ),
                           ],
                         ),
-                        if (!provider.isLoadingRecipients &&
-                            provider.recipients.isNotEmpty) ...[
+                        if (!provider.isLoadingRecipients && provider.recipients.isNotEmpty) ...[
                           const SizedBox(height: 16),
                           _StatusBreakdown(
                             sentCount: provider.recipientsSent,
@@ -1037,6 +1068,7 @@ class _RecipientDetailsState extends State<_RecipientDetails> {
                             readCount: provider.recipientsRead,
                             failedCount: provider.recipientsFailed,
                             total: provider.selectedBroadcast?.totalRecipients ?? provider.recipients.length,
+                            recipients: provider.recipients,
                           ),
                         ],
                       ],
@@ -1051,30 +1083,24 @@ class _RecipientDetailsState extends State<_RecipientDetails> {
                   else if (provider.recipients.isEmpty)
                     Padding(
                       padding: const EdgeInsets.all(40),
-                      child: Center(
-                        child: Text(
-                          'No recipients yet',
-                          style: TextStyle(
-                            color: vc.textMuted,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
+                      child: Center(child: Text('No recipients yet', style: TextStyle(color: vc.textMuted, fontSize: 14))),
                     )
                   else
-                    Column(
-                      children: [
-                        ListView.builder(
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: provider.recipients.length,
-                          itemBuilder: (context, index) {
-                            final recipient = provider.recipients[index];
-                            return _RecipientTile(recipient: recipient);
-                          },
-                        ),
-                      ],
+                    _RecipientListSection(
+                      recipients: provider.recipients,
+                      statusFilter: _statusFilter,
+                      searchQuery: _searchQuery,
+                      sortBy: _sortBy,
+                      searchController: _searchController,
+                      onStatusFilter: (s) => setState(() => _statusFilter = s),
+                      onSearch: (q) {
+                        _searchDebounce?.cancel();
+                        _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+                          if (mounted) setState(() => _searchQuery = q);
+                        });
+                      },
+                      onSort: (s) => setState(() => _sortBy = s),
+                      applyFilters: _applyFilters,
                     ),
                 ],
               ),
@@ -1139,6 +1165,7 @@ class _StatusBreakdown extends StatelessWidget {
   final int readCount;
   final int failedCount;
   final int total;
+  final List<BroadcastRecipient> recipients;
 
   const _StatusBreakdown({
     required this.sentCount,
@@ -1146,7 +1173,21 @@ class _StatusBreakdown extends StatelessWidget {
     required this.readCount,
     required this.failedCount,
     required this.total,
+    required this.recipients,
   });
+
+  String _buildErrorSummary() {
+    final failed = recipients.where((r) => r.status?.toLowerCase() == 'failed').toList();
+    if (failed.isEmpty) return '';
+    final counts = <String, int>{};
+    for (final r in failed) {
+      final msg = r.errorMessage ?? 'Unknown error';
+      final short = msg.length > 40 ? '${msg.substring(0, 40)}…' : msg;
+      counts[short] = (counts[short] ?? 0) + 1;
+    }
+    final parts = counts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    return parts.map((e) => '${e.value} × ${e.key}').join('\n');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1154,14 +1195,14 @@ class _StatusBreakdown extends StatelessWidget {
     final deliveryRate = total > 0 ? (deliveredCount + readCount) / total * 100 : 0.0;
     final readRate = total > 0 ? readCount / total * 100 : 0.0;
 
-    // Segments for stacked bar: sent=blue, delivered=green, read=cyan, failed=red
-    // Values are proportional to total
     final segments = [
       (sentCount, VividColors.brightBlue),
       (deliveredCount, Colors.green),
       (readCount, VividColors.cyan),
       (failedCount, Colors.redAccent),
     ];
+
+    final errorSummary = failedCount > 0 ? _buildErrorSummary() : '';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1176,10 +1217,7 @@ class _StatusBreakdown extends StatelessWidget {
                 children: segments.map((seg) {
                   final flex = (seg.$1 / total * 1000).round();
                   if (flex == 0) return const SizedBox.shrink();
-                  return Expanded(
-                    flex: flex,
-                    child: Container(color: seg.$2),
-                  );
+                  return Expanded(flex: flex, child: Container(color: seg.$2));
                 }).toList(),
               ),
             ),
@@ -1193,7 +1231,25 @@ class _StatusBreakdown extends StatelessWidget {
             _statChip('Sent', sentCount, VividColors.brightBlue, vc),
             _statChip('Delivered', deliveredCount, Colors.green, vc),
             _statChip('Read', readCount, VividColors.cyan, vc),
-            _statChip('Failed', failedCount, Colors.redAccent, vc),
+            // Failed chip with optional error summary tooltip
+            if (failedCount > 0)
+              Tooltip(
+                message: errorSummary,
+                preferBelow: true,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(width: 8, height: 8, decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle)),
+                    const SizedBox(width: 5),
+                    Text('Failed: ', style: TextStyle(color: vc.textMuted, fontSize: 12)),
+                    Text('$failedCount', style: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.w600)),
+                    const SizedBox(width: 4),
+                    Icon(Icons.info_outline, size: 13, color: Colors.redAccent.withValues(alpha: 0.7)),
+                  ],
+                ),
+              )
+            else
+              _statChip('Failed', failedCount, Colors.redAccent, vc),
           ],
         ),
         const SizedBox(height: 10),
@@ -1304,14 +1360,196 @@ class _DeliveryProgressBars extends StatelessWidget {
   }
 }
 
-class _RecipientTile extends StatelessWidget {
-  final BroadcastRecipient recipient;
+// ── Recipient list section with filter bar ────────────────────────────────────
 
+class _RecipientListSection extends StatelessWidget {
+  final List<BroadcastRecipient> recipients;
+  final String? statusFilter;
+  final String searchQuery;
+  final String sortBy;
+  final TextEditingController searchController;
+  final ValueChanged<String?> onStatusFilter;
+  final ValueChanged<String> onSearch;
+  final ValueChanged<String> onSort;
+  final List<BroadcastRecipient> Function(List<BroadcastRecipient>) applyFilters;
+
+  const _RecipientListSection({
+    required this.recipients,
+    required this.statusFilter,
+    required this.searchQuery,
+    required this.sortBy,
+    required this.searchController,
+    required this.onStatusFilter,
+    required this.onSearch,
+    required this.onSort,
+    required this.applyFilters,
+  });
+
+  int _countStatus(String s) => recipients.where((r) {
+    final st = r.status?.toLowerCase() ?? '';
+    if (s == 'sent') return st == 'sent' || st == 'accepted';
+    return st == s;
+  }).length;
+
+  @override
+  Widget build(BuildContext context) {
+    final vc = context.vividColors;
+    final filtered = applyFilters(recipients);
+
+    final statusChips = [
+      (null, 'All', Colors.white70, recipients.length),
+      ('sent', 'Sent', VividColors.brightBlue, _countStatus('sent')),
+      ('delivered', 'Delivered', Colors.green, _countStatus('delivered')),
+      ('read', 'Read', VividColors.cyan, _countStatus('read')),
+      ('failed', 'Failed', Colors.redAccent, _countStatus('failed')),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── Filter bar ──
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Search + sort row
+              Row(
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 36,
+                      child: TextField(
+                        controller: searchController,
+                        onChanged: onSearch,
+                        style: TextStyle(color: vc.textPrimary, fontSize: 13),
+                        decoration: InputDecoration(
+                          hintText: 'Search name or phone…',
+                          hintStyle: TextStyle(color: vc.textMuted, fontSize: 13),
+                          prefixIcon: Icon(Icons.search, size: 16, color: vc.textMuted),
+                          filled: true,
+                          fillColor: vc.surfaceAlt,
+                          contentPadding: EdgeInsets.zero,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: vc.border),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: vc.border),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(color: VividColors.cyan),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  // Sort dropdown
+                  Container(
+                    height: 36,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    decoration: BoxDecoration(
+                      color: vc.surfaceAlt,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: vc.border),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: sortBy,
+                        dropdownColor: vc.surface,
+                        style: TextStyle(color: vc.textPrimary, fontSize: 12),
+                        icon: Icon(Icons.sort, size: 14, color: vc.textMuted),
+                        items: const [
+                          DropdownMenuItem(value: 'time', child: Text('Time')),
+                          DropdownMenuItem(value: 'name', child: Text('Name A–Z')),
+                          DropdownMenuItem(value: 'status', child: Text('Failed first')),
+                        ],
+                        onChanged: (v) { if (v != null) onSort(v); },
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              // Status chips
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: statusChips.map((chip) {
+                    final isSelected = statusFilter == chip.$1;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: GestureDetector(
+                        onTap: () => onStatusFilter(isSelected ? null : chip.$1),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: isSelected ? chip.$3.withValues(alpha: 0.18) : vc.surfaceAlt,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: isSelected ? chip.$3 : vc.border,
+                              width: isSelected ? 1.5 : 1,
+                            ),
+                          ),
+                          child: Text(
+                            '${chip.$2} (${chip.$4})',
+                            style: TextStyle(
+                              color: isSelected ? chip.$3 : vc.textMuted,
+                              fontSize: 12,
+                              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              // Showing count
+              Text(
+                searchQuery.isNotEmpty || statusFilter != null
+                    ? 'Showing ${filtered.length} of ${recipients.length} recipients'
+                    : '${recipients.length} recipients',
+                style: TextStyle(color: vc.textMuted, fontSize: 11),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        // ── List ──
+        ListView.builder(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: filtered.length,
+          itemBuilder: (context, index) => _RecipientTile(recipient: filtered[index]),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Recipient tile ─────────────────────────────────────────────────────────────
+
+class _RecipientTile extends StatefulWidget {
+  final BroadcastRecipient recipient;
   const _RecipientTile({required this.recipient});
+
+  @override
+  State<_RecipientTile> createState() => _RecipientTileState();
+}
+
+class _RecipientTileState extends State<_RecipientTile> {
+  bool _errorExpanded = false;
 
   static const _statusMeta = {
     'sent':      (Colors.blue,        Icons.send,              'Sent'),
-    'accepted':  (Color(0xFFF59E0B),  Icons.pending_outlined,  'Accepted'),
+    'accepted':  (Colors.blue,        Icons.send,              'Sent'),
     'delivered': (Colors.green,       Icons.done_all,          'Delivered'),
     'read':      (VividColors.cyan,   Icons.visibility,        'Read'),
     'failed':    (Colors.redAccent,   Icons.error_outline,     'Failed'),
@@ -1320,80 +1558,104 @@ class _RecipientTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final vc = context.vividColors;
-    final status = (recipient.status ?? 'sent').toLowerCase();
+    final r = widget.recipient;
+    final status = (r.status ?? 'sent').toLowerCase();
     final meta = _statusMeta[status] ?? _statusMeta['sent']!;
     final color = meta.$1;
     final icon  = meta.$2;
     final label = meta.$3;
+    final isFailed = status == 'failed';
 
     String? timestamp;
-    if (recipient.readAt != null) {
-      timestamp = 'Read at ${_fmtTime(recipient.readAt!)}';
-    } else if (recipient.deliveredAt != null) {
-      timestamp = 'Delivered at ${_fmtTime(recipient.deliveredAt!)}';
+    if (r.readAt != null) {
+      timestamp = 'Read at ${_fmtTime(r.readAt!)}';
+    } else if (r.deliveredAt != null) {
+      timestamp = 'Delivered at ${_fmtTime(r.deliveredAt!)}';
     }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: vc.surfaceAlt,
         borderRadius: BorderRadius.circular(8),
+        border: isFailed ? Border.all(color: Colors.redAccent.withValues(alpha: 0.25)) : null,
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CircleAvatar(
-            radius: 18,
-            backgroundColor: VividColors.brightBlue.withValues(alpha: 0.2),
-            child: Builder(builder: (context) {
-              final initials = getInitials(recipient.displayName);
-              return Text(
-                initials,
-                textDirection: isArabicText(initials) ? TextDirection.rtl : TextDirection.ltr,
-                style: const TextStyle(
-                  color: VividColors.cyan,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              );
-            }),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  recipient.displayName,
-                  style: TextStyle(color: vc.textPrimary, fontWeight: FontWeight.w500),
-                ),
-                if (recipient.customerPhone != null && recipient.customerName != null)
-                  Text(
-                    recipient.customerPhone!,
-                    style: TextStyle(color: vc.textMuted, fontSize: 12),
-                  ),
-                if (timestamp != null) ...[
-                  const SizedBox(height: 2),
-                  Text(timestamp, style: TextStyle(color: vc.textMuted.withValues(alpha: 0.65), fontSize: 11)),
-                ],
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.13),
-              borderRadius: BorderRadius.circular(10),
-            ),
+          Padding(
+            padding: const EdgeInsets.all(12),
             child: Row(
-              mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(icon, size: 12, color: color),
-                const SizedBox(width: 4),
-                Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600)),
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: VividColors.brightBlue.withValues(alpha: 0.2),
+                  child: Builder(builder: (context) {
+                    final initials = getInitials(r.displayName);
+                    return Text(
+                      initials,
+                      textDirection: isArabicText(initials) ? TextDirection.rtl : TextDirection.ltr,
+                      style: const TextStyle(color: VividColors.cyan, fontSize: 12, fontWeight: FontWeight.w600),
+                    );
+                  }),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(r.displayName, style: TextStyle(color: vc.textPrimary, fontWeight: FontWeight.w500)),
+                      if (r.customerPhone != null && r.customerName != null)
+                        Text(r.customerPhone!, style: TextStyle(color: vc.textMuted, fontSize: 12)),
+                      if (timestamp != null) ...[
+                        const SizedBox(height: 2),
+                        Text(timestamp, style: TextStyle(color: vc.textMuted.withValues(alpha: 0.65), fontSize: 11)),
+                      ],
+                    ],
+                  ),
+                ),
+                // Badge — tappable for failed to expand error
+                GestureDetector(
+                  onTap: isFailed ? () => setState(() => _errorExpanded = !_errorExpanded) : null,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.13),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(icon, size: 12, color: color),
+                        const SizedBox(width: 4),
+                        Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600)),
+                        if (isFailed) ...[
+                          const SizedBox(width: 4),
+                          Icon(
+                            _errorExpanded ? Icons.expand_less : Icons.expand_more,
+                            size: 12,
+                            color: color,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
+          // Expandable error message for failed
+          if (isFailed && _errorExpanded)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(42, 0, 12, 10),
+              child: Text(
+                r.errorCode != null
+                    ? 'Error ${r.errorCode}: ${r.errorMessage ?? 'Unknown error'}'
+                    : r.errorMessage ?? 'Failed — unknown error',
+                style: TextStyle(color: Colors.redAccent.withValues(alpha: 0.85), fontSize: 11),
+              ),
+            ),
         ],
       ),
     );

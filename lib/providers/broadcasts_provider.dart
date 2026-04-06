@@ -90,6 +90,8 @@ class BroadcastRecipient {
   final String? wamid;
   final DateTime? deliveredAt;
   final DateTime? readAt;
+  final String? errorCode;
+  final String? errorMessage;
 
   const BroadcastRecipient({
     required this.id,
@@ -101,6 +103,8 @@ class BroadcastRecipient {
     this.wamid,
     this.deliveredAt,
     this.readAt,
+    this.errorCode,
+    this.errorMessage,
   });
 
   factory BroadcastRecipient.fromJson(Map<String, dynamic> json) {
@@ -118,6 +122,8 @@ class BroadcastRecipient {
       readAt: json['read_at'] != null
           ? DateTime.tryParse(json['read_at'] as String)
           : null,
+      errorCode: json['error_code']?.toString(),
+      errorMessage: json['error_message']?.toString(),
     );
   }
 
@@ -489,7 +495,7 @@ class BroadcastsProvider extends ChangeNotifier {
       while (true) {
         final response = await SupabaseService.adminClient
             .from(_recipientsTable)
-            .select('id, customer_name, customer_phone, status, wamid, delivered_at, read_at')
+            .select('id, customer_name, customer_phone, status, wamid, delivered_at, read_at, error_code, error_message')
             .eq('broadcast_id', broadcastId)
             .range(offset, offset + batchSize - 1);
         final batch = List<Map<String, dynamic>>.from(response as List);
