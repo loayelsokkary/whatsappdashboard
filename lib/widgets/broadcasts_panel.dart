@@ -1716,6 +1716,7 @@ class _ComposeBroadcastDialogState extends State<ComposeBroadcastDialog> {
   late DateTime _scheduledDate;
   late TimeOfDay _scheduledTime;
   WhatsAppTemplate? _selectedTemplate;
+  bool _templateError = false;
 
   bool get _isEditing => widget.editBroadcast != null;
 
@@ -1787,6 +1788,15 @@ class _ComposeBroadcastDialogState extends State<ComposeBroadcastDialog> {
   }
 
   Future<void> _confirm() async {
+    if (_selectedTemplate == null) {
+      setState(() => _templateError = true);
+      VividToast.show(context,
+        message: 'Please select a template',
+        type: ToastType.error,
+      );
+      return;
+    }
+
     final typed = _controller.text.trim();
     // If no instruction typed but a template is selected, use the template
     // label as the instruction so n8n knows what to do.
@@ -2019,7 +2029,10 @@ class _ComposeBroadcastDialogState extends State<ComposeBroadcastDialog> {
                       decoration: BoxDecoration(
                         color: vc.background,
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: vc.border),
+                        border: Border.all(
+                          color: _templateError ? Colors.red : vc.border,
+                          width: _templateError ? 2.0 : 1.0,
+                        ),
                       ),
                       constraints: const BoxConstraints(maxHeight: 200),
                       child: ListView.separated(
@@ -2039,8 +2052,10 @@ class _ComposeBroadcastDialogState extends State<ComposeBroadcastDialog> {
                           );
                           return InkWell(
                             borderRadius: radius,
-                            onTap: () => setState(
-                                () => _selectedTemplate = isSelected ? null : t),
+                            onTap: () => setState(() {
+                              _selectedTemplate = isSelected ? null : t;
+                              if (_selectedTemplate != null) _templateError = false;
+                            }),
                             child: Container(
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 14, vertical: 13),

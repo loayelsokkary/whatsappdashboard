@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -606,6 +607,91 @@ class BroadcastsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ─── Broadcast result polling ──────────────────────────────
+
+  /// Polls the broadcasts + recipients tables until all recipients are processed,
+  /// then updates the manager chat row with a delivery summary.
+  /// Runs fire-and-forget — never awaited by the caller.
+  Future<void> _pollBroadcastResults({
+    required String broadcastName,
+    required String templateName,
+    required String chatRowId,
+  }) async {
+    final managerChatsTable = ClientConfig.managerChatsTable;
+    if (managerChatsTable == null) return;
+
+    const maxAttempts = 30;
+    const pollInterval = Duration(seconds: 10);
+
+    for (int attempt = 0; attempt < maxAttempts; attempt++) {
+      await Future.delayed(pollInterval);
+
+      try {
+        // Find the most recent broadcast row whose campaign_name starts with broadcastName
+        final broadcastRows = await SupabaseService.adminClient
+            .from(_broadcastsTable)
+            .select('id, status, total_recipients, campaign_name')
+            .ilike('campaign_name', '${broadcastName.substring(0, broadcastName.length.clamp(0, 40))}%')
+            .order('sent_at', ascending: false)
+            .limit(1);
+
+        if ((broadcastRows as List).isEmpty) continue;
+
+        final broadcastId = broadcastRows[0]['id'].toString();
+
+        // Count recipients by status
+        final recipients = await SupabaseService.adminClient
+            .from(_recipientsTable)
+            .select('status')
+            .eq('broadcast_id', broadcastId);
+
+        final rows = recipients as List;
+        if (rows.isEmpty) continue;
+
+        final total = rows.length;
+        final sent = rows.where((r) {
+          final s = (r['status'] as String?)?.toLowerCase() ?? '';
+          return s == 'sent' || s == 'delivered' || s == 'read';
+        }).length;
+        final failed = rows.where((r) =>
+            (r['status'] as String?)?.toLowerCase() == 'failed').length;
+        final pending = total - sent - failed;
+
+        final isLastAttempt = attempt == maxAttempts - 1;
+
+        if (pending == 0 || isLastAttempt) {
+          String summary;
+          if (failed == 0) {
+            summary = '✅ Broadcast complete!\n'
+                '📨 Template: $templateName\n'
+                '👥 Recipients: $total\n'
+                '✅ Sent: $sent';
+          } else {
+            summary = '⚠️ Broadcast complete with issues.\n'
+                '📨 Template: $templateName\n'
+                '👥 Recipients: $total\n'
+                '✅ Sent: $sent\n'
+                '❌ Failed: $failed';
+          }
+          if (pending > 0) {
+            summary += '\n⏳ Still pending: $pending (timed out waiting)';
+          }
+
+          await SupabaseService.adminClient
+              .from(managerChatsTable)
+              .update({'ai_response': summary})
+              .eq('id', chatRowId);
+
+          return;
+        }
+      } catch (e) {
+        debugPrint('[_pollBroadcastResults] Attempt ${attempt + 1} failed: $e');
+      }
+    }
+  }
+
+  // ─── Send Broadcast ────────────────────────────────────────
+
   Future<bool> sendBroadcast(String instruction, {String? templateName, String? templateImageUrl}) async {
     if (instruction.trim().isEmpty) {
       _sendError = 'Please enter a broadcast instruction';
@@ -685,9 +771,9 @@ class BroadcastsProvider extends ChangeNotifier {
         if (managerChatsTable != null && managerChatsTable.isNotEmpty) {
           try {
             final confirmText = templateName != null && templateName.isNotEmpty
-                ? '📢 Broadcast queued! Template "$templateName" is being sent. You\'ll see delivery results shortly.'
-                : '📢 Broadcast queued and being processed. You\'ll see delivery results shortly.';
-            await SupabaseService.adminClient
+                ? '📢 Broadcast queued! Template "$templateName" is being sent to recipients. Checking delivery status...'
+                : '📢 Broadcast queued and being processed. Checking delivery status...';
+            final insertedRows = await SupabaseService.adminClient
                 .from(managerChatsTable)
                 .insert({
                   'client_id': client?.id,
@@ -695,7 +781,22 @@ class BroadcastsProvider extends ChangeNotifier {
                   'user_name': ClientConfig.currentUserName,
                   'user_message': instruction,
                   'ai_response': confirmText,
-                });
+                })
+                .select('id');
+            if ((insertedRows as List).isNotEmpty &&
+                templateName != null &&
+                templateName.isNotEmpty) {
+              final chatRowId = insertedRows[0]['id'].toString();
+              final broadcastName = instruction.trim().length > 60
+                  ? '${instruction.trim().substring(0, 60)}...'
+                  : instruction.trim();
+              // Fire and forget — runs in background while dialog closes
+              _pollBroadcastResults(
+                broadcastName: broadcastName,
+                templateName: templateName,
+                chatRowId: chatRowId,
+              );
+            }
           } catch (e) {
             debugPrint('[sendBroadcast] Chat confirmation insert failed: $e');
           }
@@ -712,6 +813,31 @@ class BroadcastsProvider extends ChangeNotifier {
       } else {
         _sendError = 'Server error (${response.statusCode}). Please try again.';
         debugPrint('📢 [sendBroadcast] Server error: ${response.statusCode} ${response.body}');
+
+        final managerChatsTable = ClientConfig.managerChatsTable;
+        if (managerChatsTable != null && managerChatsTable.isNotEmpty) {
+          try {
+            String errorDetail = 'Server returned status ${response.statusCode}';
+            try {
+              final body = jsonDecode(response.body);
+              if (body is Map && body.containsKey('message')) {
+                errorDetail = body['message'].toString();
+              } else if (body is Map && body.containsKey('error')) {
+                errorDetail = body['error'].toString();
+              }
+            } catch (_) {}
+            await SupabaseService.adminClient
+                .from(managerChatsTable)
+                .insert({
+                  'client_id': client?.id,
+                  'user_id': ClientConfig.currentUser?.id,
+                  'user_name': ClientConfig.currentUserName,
+                  'user_message': instruction,
+                  'ai_response': '❌ Broadcast failed — $errorDetail',
+                });
+          } catch (_) {}
+        }
+
         _isSending = false;
         notifyListeners();
         return false;
@@ -721,6 +847,22 @@ class BroadcastsProvider extends ChangeNotifier {
       _sendError = e.toString().contains('XMLHttpRequest')
           ? 'Network error — could not reach the broadcast server. Check webhook URL.'
           : 'Failed to send: $e';
+
+      final managerChatsTable = ClientConfig.managerChatsTable;
+      if (managerChatsTable != null && managerChatsTable.isNotEmpty) {
+        try {
+          await SupabaseService.adminClient
+              .from(managerChatsTable)
+              .insert({
+                'client_id': ClientConfig.currentClient?.id,
+                'user_id': ClientConfig.currentUser?.id,
+                'user_name': ClientConfig.currentUserName,
+                'user_message': instruction,
+                'ai_response': '❌ Broadcast failed — ${_sendError ?? "Unknown error"}',
+              });
+        } catch (_) {}
+      }
+
       _isSending = false;
       notifyListeners();
       return false;
@@ -854,6 +996,22 @@ class BroadcastsProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('📢 [scheduleBroadcast] Error: $e');
       _sendError = 'Failed to schedule: $e';
+
+      final managerChatsTable = ClientConfig.managerChatsTable;
+      if (managerChatsTable != null && managerChatsTable.isNotEmpty) {
+        try {
+          await SupabaseService.adminClient
+              .from(managerChatsTable)
+              .insert({
+                'client_id': ClientConfig.currentClient?.id,
+                'user_id': ClientConfig.currentUser?.id,
+                'user_name': ClientConfig.currentUserName,
+                'user_message': instruction,
+                'ai_response': '❌ Broadcast scheduling failed — ${_sendError ?? "Unknown error"}',
+              });
+        } catch (_) {}
+      }
+
       _isSending = false;
       notifyListeners();
       return false;
