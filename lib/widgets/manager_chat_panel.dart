@@ -1077,7 +1077,14 @@ class _MessageBubble extends StatelessWidget {
                   const SizedBox(height: 8),
                   CustomerTableCard(
                     data: item.queryResult!,
-                    onSendOffer: onPrefillInput,
+                    onSendOffer: (prefillText) {
+                      showDialog(
+                        context: context,
+                        builder: (_) => ComposeBroadcastDialog(
+                          initialInstruction: prefillText,
+                        ),
+                      );
+                    },
                   ),
                 ],
               ],
