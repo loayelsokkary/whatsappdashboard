@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../models/models.dart';
 
 class QueryResultData {
   final String id;
@@ -37,7 +38,10 @@ class QueryResultData {
 class QueryResultService {
   static final _supabase = Supabase.instance.client;
 
-  static const _table = 'hob_query_results';
+  static String get _table {
+    final t = ClientConfig.queryResultsTable;
+    return (t != null && t.isNotEmpty) ? t : 'hob_query_results';
+  }
   static const _windowSeconds = 60;
 
   /// Fetch the most recent query result created within the last [_windowSeconds].

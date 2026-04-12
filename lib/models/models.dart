@@ -849,6 +849,9 @@ class ClientConfig {
   static String? get customerPredictionsTable => _currentClient?.customerPredictionsTable;
   static String? get customerPredictionsTableName => _currentClient?.customerPredictionsTable;
 
+  /// Query results table name (e.g., 'hob_query_results')
+  static String? get queryResultsTable => _currentClient?.queryResultsTable;
+
   /// Broadcast recipients table name alias (nullable getter for HEAD callers)
   static String? get broadcastRecipientsTableName => _currentClient?.broadcastRecipientsTable;
 
@@ -1035,6 +1038,7 @@ class Client {
   final String? broadcastRecipientsTable;
   final String? aiSettingsTable;
   final String? customerPredictionsTable;
+  final String? queryResultsTable;
 
   // Per-client Meta API credentials (override global defaults when non-null)
   final String? wabaId;
@@ -1082,6 +1086,7 @@ class Client {
     this.broadcastRecipientsTable,
     this.aiSettingsTable,
     this.customerPredictionsTable,
+    this.queryResultsTable,
     this.wabaId,
     this.metaAccessToken,
     this.conversationsPhone,
@@ -1126,6 +1131,7 @@ class Client {
       broadcastRecipientsTable: json['broadcast_recipients_table'] as String?,
       aiSettingsTable: json['ai_settings_table'] as String?,
       customerPredictionsTable: json['customer_predictions_table'] as String?,
+      queryResultsTable: json['query_results_table'] as String?,
       wabaId: json['waba_id'] as String?,
       metaAccessToken: json['meta_access_token'] as String?,
       conversationsPhone: conversationsPhone,
@@ -1160,6 +1166,7 @@ class Client {
       'broadcast_recipients_table': broadcastRecipientsTable,
       'ai_settings_table': aiSettingsTable,
       'customer_predictions_table': customerPredictionsTable,
+      'query_results_table': queryResultsTable,
       'waba_id': wabaId,
       'meta_access_token': metaAccessToken,
       'conversations_phone': conversationsPhone,
