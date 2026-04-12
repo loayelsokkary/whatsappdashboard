@@ -876,6 +876,9 @@ class BroadcastsProvider extends ChangeNotifier {
     String? templateName,
     String? templateImageUrl,
   }) async {
+    // TEMP DEBUG — remove after diagnosing HOB silent failure
+    debugPrint('[scheduleBroadcast] CALLED — _broadcastsTable="$_broadcastsTable" client=${ClientConfig.currentClient?.name}');
+
     if (instruction.trim().isEmpty) {
       _sendError = 'Please enter a broadcast instruction';
       notifyListeners();
@@ -928,7 +931,13 @@ class BroadcastsProvider extends ChangeNotifier {
           ? '${instruction.trim().substring(0, 60)}...'
           : instruction.trim();
 
+      // TEMP DEBUG — remove after diagnosing HOB silent failure
+      debugPrint('[scheduleBroadcast] _broadcastsTable="$_broadcastsTable"');
+      debugPrint('[scheduleBroadcast] editBroadcastId=$editBroadcastId');
+      debugPrint('[scheduleBroadcast] payload=$payload');
+
       if (editBroadcastId != null) {
+        debugPrint('[scheduleBroadcast] Updating existing broadcast id=$editBroadcastId');
         await SupabaseService.adminClient
             .from(_broadcastsTable)
             .update({
@@ -937,21 +946,25 @@ class BroadcastsProvider extends ChangeNotifier {
               'campaign_name': campaignName,
             })
             .eq('id', editBroadcastId);
+        debugPrint('[scheduleBroadcast] Update complete');
       } else {
+        final insertPayload = {
+          'client_id': client?.id,
+          'campaign_name': campaignName,
+          'status': 'scheduled',
+          'scheduled_at': scheduledAtUtc.toIso8601String(),
+          'webhook_payload': payload,
+          'total_recipients': 0,
+          'sent_at': DateTime.now().toUtc().toIso8601String(),
+          'created_by': ClientConfig.currentUserName,
+          if (templateImageUrl != null && templateImageUrl.isNotEmpty)
+            'photo': templateImageUrl,
+        };
+        debugPrint('[scheduleBroadcast] Inserting into "$_broadcastsTable": $insertPayload');
         await SupabaseService.adminClient
             .from(_broadcastsTable)
-            .insert({
-              'client_id': client?.id,
-              'campaign_name': campaignName,
-              'status': 'scheduled',
-              'scheduled_at': scheduledAtUtc.toIso8601String(),
-              'webhook_payload': payload,
-              'total_recipients': 0,
-              'sent_at': DateTime.now().toUtc().toIso8601String(),
-              'created_by': ClientConfig.currentUserName,
-              if (templateImageUrl != null && templateImageUrl.isNotEmpty)
-                'photo': templateImageUrl,
-            });
+            .insert(insertPayload);
+        debugPrint('[scheduleBroadcast] Insert complete');
       }
 
       await SupabaseService.instance.log(
@@ -993,8 +1006,11 @@ class BroadcastsProvider extends ChangeNotifier {
       _isSending = false;
       notifyListeners();
       return true;
-    } catch (e) {
-      debugPrint('📢 [scheduleBroadcast] Error: $e');
+    } catch (e, stack) {
+      // TEMP DEBUG — remove after diagnosing HOB silent failure
+      debugPrint('[scheduleBroadcast] CAUGHT EXCEPTION: $e');
+      debugPrint('[scheduleBroadcast] _broadcastsTable at time of failure: "$_broadcastsTable"');
+      debugPrint('[scheduleBroadcast] Stack trace:\n$stack');
       _sendError = 'Failed to schedule: $e';
 
       final managerChatsTable = ClientConfig.managerChatsTable;
