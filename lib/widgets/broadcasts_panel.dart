@@ -1882,6 +1882,9 @@ class _ComposeBroadcastDialogState extends State<ComposeBroadcastDialog> {
         width: MediaQuery.of(context).size.width < 550
             ? MediaQuery.of(context).size.width * 0.9
             : 500,
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.85,
+        ),
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
           color: vc.surface,
@@ -1899,6 +1902,11 @@ class _ComposeBroadcastDialogState extends State<ComposeBroadcastDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
             // Header
             Row(
               children: [
@@ -2229,6 +2237,10 @@ class _ComposeBroadcastDialogState extends State<ComposeBroadcastDialog> {
                 ),
               ),
             ],
+                  ], // end inner Column children
+                ),   // end inner Column
+              ),     // end SingleChildScrollView
+            ),       // end Flexible
             const SizedBox(height: 20),
 
             // Action buttons
