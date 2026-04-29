@@ -5119,7 +5119,53 @@ class _ClientDialogState extends State<_ClientDialog> {
                 const SizedBox(height: 12),
                 _buildTextField(context, _accessTokenController, 'Meta Access Token', 'Meta API access token', required: false),
                 const SizedBox(height: 12),
-                _buildTextField(context, _broadcastLimitController, 'Broadcast Limit', 'Max broadcasts per day (e.g., 1000)', required: false),
+                _buildTextField(context, _broadcastLimitController, 'Broadcast Limit', 'Max broadcasts per month (e.g., 18000)', required: false),
+                if (widget.client != null) ...[
+                  const SizedBox(height: 8),
+                  Builder(builder: (context) {
+                    final vc = context.vividColors;
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: vc.surfaceAlt,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: vc.popupBorder),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Current rollover balance',
+                                  style: TextStyle(color: vc.textMuted, fontSize: 12),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${widget.client!.rolloverBalance}',
+                                  style: TextStyle(
+                                    color: vc.textPrimary,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              'Auto-calculated monthly. Capped at 1× base limit.',
+                              style: TextStyle(color: vc.textMuted, fontSize: 11),
+                              textAlign: TextAlign.right,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
                 const SizedBox(height: 4),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,

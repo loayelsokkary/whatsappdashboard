@@ -241,9 +241,13 @@ class _BroadcastsList extends StatelessWidget {
 
   Widget _buildMonthlyCounter(BuildContext context, BroadcastsProvider provider) {
     final vc = context.vividColors;
-    final sent = provider.monthlySentCount;
-    final limit = provider.monthlyLimit;
-    final progress = limit > 0 ? (sent / limit).clamp(0.0, 1.0) : 0.0;
+    final sent      = provider.monthlySentCount;
+    final failed    = provider.monthlyFailedCount;
+    final limit     = provider.monthlyLimit;        // effectiveLimit = base + rollover
+    final rollover  = provider.rolloverBalance;
+    final baseLimit = limit - rollover;
+    final remaining = provider.remainingBroadcasts;
+    final progress  = limit > 0 ? (sent / limit).clamp(0.0, 1.0) : 0.0;
     final isAtLimit = provider.isAtLimit;
 
     final Color barColor;
@@ -255,6 +259,15 @@ class _BroadcastsList extends StatelessWidget {
       barColor = VividColors.cyan;
     }
 
+    // Previous month name for the rollover annotation
+    final nowBahrain = DateTime.now().toUtc().add(const Duration(hours: 3));
+    final prevMonth = DateTime(nowBahrain.year, nowBahrain.month - 1);
+    const monthNames = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    final prevMonthName = monthNames[(prevMonth.month - 1) % 12];
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       decoration: BoxDecoration(
@@ -262,14 +275,13 @@ class _BroadcastsList extends StatelessWidget {
             ? VividColors.statusUrgent.withValues(alpha: 0.05)
             : Colors.transparent,
         border: Border(
-          bottom: BorderSide(
-            color: vc.border,
-          ),
+          bottom: BorderSide(color: vc.border),
         ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ── Header row ──────────────────────────────────────────────────
           Row(
             children: [
               Icon(
@@ -288,7 +300,7 @@ class _BroadcastsList extends StatelessWidget {
               ),
               const Spacer(),
               Text(
-                '$sent / $limit',
+                '$remaining left  •  $sent / $limit used',
                 style: TextStyle(
                   color: barColor,
                   fontSize: 11,
@@ -298,15 +310,50 @@ class _BroadcastsList extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: progress,
-              minHeight: 6,
-              backgroundColor: vc.surfaceAlt,
-              valueColor: AlwaysStoppedAnimation<Color>(barColor),
-            ),
+          // ── Two-tone progress bar ────────────────────────────────────────
+          // Background: base-capacity in surfaceAlt; rollover portion in muted teal.
+          // Foreground: LinearProgressIndicator drawn transparently over the top.
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final totalWidth = constraints.maxWidth;
+              final baseFraction = (limit > 0 && rollover > 0)
+                  ? (baseLimit / limit).clamp(0.0, 1.0)
+                  : 1.0;
+              final rolloverWidth = totalWidth * (1.0 - baseFraction);
+
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: SizedBox(
+                  height: 6,
+                  child: Stack(
+                    children: [
+                      // Full-width base background
+                      Container(
+                        width: totalWidth,
+                        color: vc.surfaceAlt,
+                      ),
+                      // Rollover portion background (muted teal, right-aligned)
+                      if (rollover > 0)
+                        Positioned(
+                          right: 0,
+                          child: Container(
+                            width: rolloverWidth,
+                            height: 6,
+                            color: const Color(0xFF054D73).withValues(alpha: 0.45),
+                          ),
+                        ),
+                      // Usage progress overlay
+                      FractionallySizedBox(
+                        widthFactor: progress,
+                        child: Container(color: barColor),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
           ),
+          // ── Sub-labels ──────────────────────────────────────────────────
           if (isAtLimit) ...[
             const SizedBox(height: 6),
             const Text(
@@ -316,6 +363,23 @@ class _BroadcastsList extends StatelessWidget {
                 fontSize: 10,
                 fontWeight: FontWeight.w500,
               ),
+            ),
+          ],
+          if (rollover > 0) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Includes $rollover rolled over from $prevMonthName',
+              style: TextStyle(
+                color: const Color(0xFF054D73).withValues(alpha: 0.9),
+                fontSize: 10,
+              ),
+            ),
+          ],
+          if (failed > 0) ...[
+            const SizedBox(height: 4),
+            Text(
+              '$failed failed (not counted)',
+              style: TextStyle(color: vc.textMuted, fontSize: 10),
             ),
           ],
         ],
@@ -706,6 +770,8 @@ class _RecipientDetailsState extends State<_RecipientDetails> {
           final s = r.status?.toLowerCase() ?? '';
           return s == 'sent' || s == 'accepted';
         }).toList();
+      } else if (_statusFilter == 'replied') {
+        filtered = filtered.where((r) => r.replyText != null).toList();
       } else {
         filtered = filtered.where((r) => r.status?.toLowerCase() == _statusFilter).toList();
       }
@@ -1412,6 +1478,8 @@ class _RecipientListSection extends StatelessWidget {
     return st == s;
   }).length;
 
+  int _countReplied() => recipients.where((r) => r.replyText != null).length;
+
   @override
   Widget build(BuildContext context) {
     final vc = context.vividColors;
@@ -1422,6 +1490,7 @@ class _RecipientListSection extends StatelessWidget {
       ('sent', 'Sent', VividColors.brightBlue, _countStatus('sent')),
       ('delivered', 'Delivered', Colors.green, _countStatus('delivered')),
       ('read', 'Read', VividColors.cyan, _countStatus('read')),
+      ('replied', 'Replied', VividColors.cyan, _countReplied()),
       ('failed', 'Failed', Colors.redAccent, _countStatus('failed')),
     ];
 
@@ -1567,6 +1636,7 @@ class _RecipientTile extends StatefulWidget {
 
 class _RecipientTileState extends State<_RecipientTile> {
   bool _errorExpanded = false;
+  bool _replyExpanded = false;
 
   static const _statusMeta = {
     'sent':      (Colors.blue,        Icons.send,              'Sent'),
@@ -1665,6 +1735,43 @@ class _RecipientTileState extends State<_RecipientTile> {
               ],
             ),
           ),
+          // Reply preview — only shown when reply_text is populated
+          if (r.replyText != null)
+            GestureDetector(
+              onTap: () => setState(() => _replyExpanded = !_replyExpanded),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(42, 0, 12, 10),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.reply, size: 12, color: context.vividColors.textMuted),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        _replyExpanded
+                            ? r.replyText!
+                            : (r.replyText!.length > 50
+                                ? '${r.replyText!.substring(0, 50)}…'
+                                : r.replyText!),
+                        style: TextStyle(
+                          color: context.vividColors.textMuted,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                    if (r.replyText!.length > 50) ...[
+                      const SizedBox(width: 4),
+                      Icon(
+                        _replyExpanded ? Icons.expand_less : Icons.expand_more,
+                        size: 12,
+                        color: context.vividColors.textMuted,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
           // Expandable error message for failed
           if (isFailed && _errorExpanded)
             Container(

@@ -93,6 +93,10 @@ class BroadcastRecipient {
   final DateTime? readAt;
   final String? errorCode;
   final String? errorMessage;
+  final String? replyText;
+  final DateTime? repliedAt;
+  final double? amountPaid;
+  final DateTime? paidAt;
 
   const BroadcastRecipient({
     required this.id,
@@ -106,6 +110,10 @@ class BroadcastRecipient {
     this.readAt,
     this.errorCode,
     this.errorMessage,
+    this.replyText,
+    this.repliedAt,
+    this.amountPaid,
+    this.paidAt,
   });
 
   factory BroadcastRecipient.fromJson(Map<String, dynamic> json) {
@@ -125,6 +133,14 @@ class BroadcastRecipient {
           : null,
       errorCode: json['error_code']?.toString(),
       errorMessage: json['error_message']?.toString(),
+      replyText: json['reply_text'] as String?,
+      repliedAt: json['replied_at'] != null
+          ? DateTime.tryParse(json['replied_at'] as String)
+          : null,
+      amountPaid: (json['amount_paid'] as num?)?.toDouble(),
+      paidAt: json['paid_at'] != null
+          ? DateTime.tryParse(json['paid_at'] as String)
+          : null,
     );
   }
 
@@ -143,6 +159,7 @@ class BroadcastsProvider extends ChangeNotifier {
   String? _error;
   String? _sendError;
   int _monthlySentCount = 0;
+  int _monthlyFailedCount = 0;
 
   RealtimeChannel? _broadcastsChannel;
   RealtimeChannel? _recipientsChannel;
@@ -158,7 +175,9 @@ class BroadcastsProvider extends ChangeNotifier {
   String? get error => _error;
   String? get sendError => _sendError;
   int get monthlySentCount => _monthlySentCount;
-  int get monthlyLimit => ClientConfig.currentClient?.broadcastLimit ?? 0;
+  int get monthlyFailedCount => _monthlyFailedCount;
+  int get monthlyLimit => ClientConfig.currentClient?.effectiveLimit ?? 0;
+  int get rolloverBalance => ClientConfig.currentClient?.rolloverBalance ?? 0;
   int get remainingBroadcasts => (monthlyLimit - _monthlySentCount).clamp(0, monthlyLimit);
   bool get hasLimit => monthlyLimit > 0;
   bool get isAtLimit => hasLimit && _monthlySentCount >= monthlyLimit;
@@ -496,7 +515,7 @@ class BroadcastsProvider extends ChangeNotifier {
       while (true) {
         final response = await SupabaseService.adminClient
             .from(_recipientsTable)
-            .select('id, customer_name, customer_phone, status, wamid, delivered_at, read_at, error_code, error_message')
+            .select('id, customer_name, customer_phone, status, wamid, delivered_at, read_at, error_code, error_message, reply_text, replied_at, amount_paid, paid_at')
             .eq('broadcast_id', broadcastId)
             .range(offset, offset + batchSize - 1);
         final batch = List<Map<String, dynamic>>.from(response as List);
@@ -529,8 +548,12 @@ class BroadcastsProvider extends ChangeNotifier {
 
   Future<void> fetchMonthlySentCount() async {
     try {
-      final now = DateTime.now();
-      final startOfMonth = DateTime(now.year, now.month, 1).toIso8601String();
+      // Compute month start in Asia/Bahrain (UTC+3) to match the pg_cron rollover
+      // boundaries. Using device local time would drift for users outside UTC+3.
+      final nowBahrain = DateTime.now().toUtc().add(const Duration(hours: 3));
+      final startOfMonthUtc = DateTime.utc(nowBahrain.year, nowBahrain.month, 1)
+          .subtract(const Duration(hours: 3));
+      final startOfMonth = startOfMonthUtc.toIso8601String();
 
       // Use adminClient to bypass RLS on per-client tables
       final broadcastsResponse = await SupabaseService.adminClient
@@ -549,13 +572,22 @@ class BroadcastsProvider extends ChangeNotifier {
         return;
       }
 
-      // Count actual recipients for those broadcasts (adminClient bypasses RLS)
+      // Count only non-failed recipients — failed ones never received the message
       final countResult = await SupabaseService.adminClient
           .from(_recipientsTable)
           .select()
           .inFilter('broadcast_id', ids)
+          .neq('status', 'failed')
           .count(CountOption.exact);
       _monthlySentCount = countResult.count;
+
+      final failedResult = await SupabaseService.adminClient
+          .from(_recipientsTable)
+          .select()
+          .inFilter('broadcast_id', ids)
+          .eq('status', 'failed')
+          .count(CountOption.exact);
+      _monthlyFailedCount = failedResult.count;
       notifyListeners();
     } catch (e) {
       debugPrint('Error fetching monthly broadcast count: $e');

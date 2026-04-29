@@ -1056,6 +1056,13 @@ class Client {
 
   final int? broadcastLimit;
 
+  /// Unused messages rolled over from the previous month (capped at 1× broadcastLimit).
+  /// Updated automatically by the process_monthly_rollover() pg_cron function.
+  final int rolloverBalance;
+
+  /// Effective monthly limit = base broadcastLimit + rollover carried from last month.
+  int get effectiveLimit => (broadcastLimit ?? 0) + rolloverBalance;
+
   /// Product type: 'retention' (Karisma-style broadcasts) or 'chatbot' (AI chatbot, no broadcasts)
   final String productType;
 
@@ -1097,6 +1104,7 @@ class Client {
     this.remindersWebhookUrl,
     this.managerChatWebhookUrl,
     this.broadcastLimit,
+    this.rolloverBalance = 0,
     this.productType = 'retention',
     this.predictionsRefreshWebhookUrl,
     this.hasAiConversations = true,
@@ -1142,6 +1150,7 @@ class Client {
       remindersWebhookUrl: json['reminders_webhook_url'] as String?,
       managerChatWebhookUrl: json['manager_chat_webhook_url'] as String?,
       broadcastLimit: json['broadcast_limit'] as int?,
+      rolloverBalance: json['rollover_balance'] as int? ?? 0,
       productType: json['product_type'] as String? ?? 'retention',
       predictionsRefreshWebhookUrl: json['predictions_refresh_webhook_url'] as String?,
       hasAiConversations: json['has_ai_conversations'] as bool? ?? true,
@@ -1177,6 +1186,7 @@ class Client {
       'reminders_webhook_url': remindersWebhookUrl,
       'manager_chat_webhook_url': managerChatWebhookUrl,
       'broadcast_limit': broadcastLimit,
+      'rollover_balance': rolloverBalance,
       'product_type': productType,
       'predictions_refresh_webhook_url': predictionsRefreshWebhookUrl,
       'has_ai_conversations': hasAiConversations,
