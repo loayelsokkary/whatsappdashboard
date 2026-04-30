@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/models.dart';
 import '../services/supabase_service.dart';
 
@@ -279,21 +280,21 @@ class AnalyticsProvider extends ChangeNotifier {
         throw StateError('broadcast_recipients_table not configured');
       }
 
-      // adminClient bypasses RLS on per-client tables
-      final recipientsResponse = await SupabaseService.adminClient
+      // Two count-only queries — zero rows transferred, Content-Range header
+      // carries the count. Replaces select('status') which was silently
+      // capped at 1000 rows by Supabase (actual table size: 26,168+).
+      final sentResult = await SupabaseService.adminClient
           .from(recipientsTable)
-          .select('status');
-
-      final allRecipients = recipientsResponse as List;
-      for (final r in allRecipients) {
-        final status = (r['status']?.toString() ?? '').toLowerCase().trim();
-        if (status == 'failed') {
-          totalFailed++;
-        } else {
-          // NULL, empty, 'accepted', 'sent', 'delivered', etc. → sent successfully
-          totalSent++;
-        }
-      }
+          .select()
+          .neq('status', 'failed')
+          .count(CountOption.exact);
+      final failedResult = await SupabaseService.adminClient
+          .from(recipientsTable)
+          .select()
+          .eq('status', 'failed')
+          .count(CountOption.exact);
+      totalSent = sentResult.count;
+      totalFailed = failedResult.count;
     } catch (e) {
       print('Error fetching broadcast recipients for delivery stats: $e');
     }
