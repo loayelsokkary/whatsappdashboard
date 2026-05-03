@@ -1046,28 +1046,28 @@ class SupabaseService {
         return [];
       }
 
-      // Paginate to fetch ALL rows (Supabase default limit is 1000)
-      const pageSize = 1000;
-      List<Map<String, dynamic>> allRows = [];
-      int from = 0;
+      // Single-query fetch — replaces 34 sequential round-trips with one.
+      // .range(0, 999999) overrides the SDK's implicit 1000-row page cap;
+      // PostgREST returns all matching rows within the range ceiling.
+      // Column projection omits label_set_at (write-only column not consumed
+      // by RawExchange.fromJson()).
+      // 'Voice_Response' capitalization must match the DB column name exactly.
+      const projection =
+          'id,ai_phone,customer_phone,customer_name,'
+          'customer_message,Voice_Response,ai_response,'
+          'manager_response,label,media_url,media_type,'
+          'media_filename,is_voice_message,voice_note_url,'
+          'sent_by,created_at';
 
-      while (true) {
-        final response = await client
-            .from(tableName)
-            .select()
-            .eq('ai_phone', businessPhone)
-            .order('created_at', ascending: true)
-            .range(from, from + pageSize - 1);
+      final response = await client
+          .from(tableName)
+          .select(projection)
+          .eq('ai_phone', businessPhone)
+          .order('created_at', ascending: true)
+          .range(0, 999999);
 
-        final rows = List<Map<String, dynamic>>.from(response as List);
-        allRows.addAll(rows);
-
-        if (rows.length < pageSize) break; // Last page
-        from += pageSize;
-      }
-
-      _cachedExchanges = allRows
-          .map((json) => RawExchange.fromJson(json))
+      _cachedExchanges = (response as List)
+          .map((json) => RawExchange.fromJson(json as Map<String, dynamic>))
           .toList();
 
       debugPrint('Fetched ${_cachedExchanges.length} exchanges from $tableName');
