@@ -1079,6 +1079,184 @@ class SupabaseService {
   }
 
   // ============================================
+  // PAGINATED CONVERSATION LOADING (Phase 1)
+  // ============================================
+
+  /// Seeds _cachedExchanges with the exchanges loaded by _fetchInitialLoad()
+  /// so the real-time stream listener has a valid base state in Phase 1.
+  /// Without this seed, the first INSERT would emit a list of [1 exchange]
+  /// and overwrite all loaded data.
+  /// Removed in Phase 3 when the stream listener is fully reworked.
+  void seedExchangeCache(List<RawExchange> exchanges) {
+    _cachedExchanges = List.from(exchanges);
+    _cachedExchanges.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    print('[SupabaseService] seedExchangeCache: ${_cachedExchanges.length} exchanges');
+  }
+
+  /// Returns the most recently active customer phones for the current
+  /// client's ai_phone, paginated by [page] (0-indexed) and [pageSize].
+  /// Backed by the get_latest_customer_phones RPC (Phase 0 migration).
+  Future<List<String>> fetchLatestCustomerPhones({
+    int page = 0,
+    int pageSize = 100,
+  }) async {
+    final tableName = ClientConfig.messagesTableName;
+    final businessPhone = ClientConfig.conversationsPhone;
+
+    if (tableName == null || businessPhone == null) {
+      print('[SupabaseService] fetchLatestCustomerPhones: missing table or phone');
+      return [];
+    }
+
+    try {
+      final result = await client.rpc(
+        'get_latest_customer_phones',
+        params: {
+          'p_ai_phone': businessPhone,
+          'p_limit': pageSize,
+          'p_offset': page * pageSize,
+        },
+      );
+
+      final phones = (result as List)
+          .map((row) => row['customer_phone'] as String)
+          .toList();
+
+      print('[SupabaseService] fetchLatestCustomerPhones: '
+          'page=$page, pageSize=$pageSize, returned=${phones.length}');
+
+      return phones;
+    } catch (e) {
+      print('[SupabaseService] fetchLatestCustomerPhones error: $e');
+      rethrow;
+    }
+  }
+
+  /// Fetches all messages for a given list of customer_phones.
+  /// Returns RawExchanges sorted by created_at ASC.
+  /// Uses column projection to skip unreferenced columns.
+  Future<List<RawExchange>> fetchExchangesForPhones(
+    List<String> phones,
+  ) async {
+    if (phones.isEmpty) return [];
+
+    final tableName = ClientConfig.messagesTableName;
+    final businessPhone = ClientConfig.conversationsPhone;
+
+    if (tableName == null || businessPhone == null) {
+      print('[SupabaseService] fetchExchangesForPhones: missing table or phone');
+      return [];
+    }
+
+    const projection =
+        'id,ai_phone,customer_phone,customer_name,'
+        'customer_message,Voice_Response,ai_response,'
+        'manager_response,label,media_url,media_type,'
+        'media_filename,is_voice_message,voice_note_url,'
+        'sent_by,created_at';
+
+    try {
+      const pageSize = 1000;
+      final List<RawExchange> allExchanges = [];
+      int from = 0;
+
+      while (true) {
+        final response = await client
+            .from(tableName)
+            .select(projection)
+            .eq('ai_phone', businessPhone)
+            .inFilter('customer_phone', phones)
+            .order('created_at', ascending: true)
+            .range(from, from + pageSize - 1);
+
+        final page = (response as List)
+            .map((json) => RawExchange.fromJson(json as Map<String, dynamic>))
+            .toList();
+
+        allExchanges.addAll(page);
+
+        if (page.length < pageSize) break;
+        from += pageSize;
+      }
+
+      print('[SupabaseService] fetchExchangesForPhones: '
+          'phones=${phones.length}, exchanges=${allExchanges.length}');
+
+      return allExchanges;
+    } catch (e) {
+      print('[SupabaseService] fetchExchangesForPhones error: $e');
+      rethrow;
+    }
+  }
+
+  /// Returns the total count of unique customer_phones for the current
+  /// ai_phone. Used by the conversation counter badge in the header.
+  Future<int> fetchTotalConversationCount() async {
+    final businessPhone = ClientConfig.conversationsPhone;
+
+    if (businessPhone == null) {
+      print('[SupabaseService] fetchTotalConversationCount: missing phone');
+      return 0;
+    }
+
+    try {
+      final result = await client.rpc(
+        'get_conversation_count',
+        params: {'p_ai_phone': businessPhone},
+      );
+
+      final count = (result as num).toInt();
+      print('[SupabaseService] fetchTotalConversationCount: $count');
+      return count;
+    } catch (e) {
+      print('[SupabaseService] fetchTotalConversationCount error: $e');
+      rethrow;
+    }
+  }
+
+  /// Returns the total count of conversations that need a manager reply
+  /// for the current ai_phone. Uses the server-side RPC so the count
+  /// is not capped by the loaded page.
+  Future<int> fetchNeedsReplyCount() async {
+    final businessPhone = ClientConfig.conversationsPhone;
+    if (businessPhone == null) return 0;
+    try {
+      final result = await client.rpc(
+        'get_needs_reply_count',
+        params: {'p_ai_phone': businessPhone},
+      );
+      return (result as num).toInt();
+    } catch (e) {
+      print('[SupabaseService] fetchNeedsReplyCount error: $e');
+      return 0;
+    }
+  }
+
+  /// Returns up to [pageSize] customer phones that need a reply, ordered by
+  /// last message descending. [page] is 0-indexed.
+  Future<List<String>> fetchNeedsReplyPhones({
+    int page = 0,
+    int pageSize = 100,
+  }) async {
+    final businessPhone = ClientConfig.conversationsPhone;
+    if (businessPhone == null) return [];
+    try {
+      final result = await client.rpc(
+        'get_needs_reply_phones',
+        params: {
+          'p_ai_phone': businessPhone,
+          'p_limit': pageSize,
+          'p_offset': page * pageSize,
+        },
+      );
+      return (result as List).map((row) => row['customer_phone'] as String).toList();
+    } catch (e) {
+      print('[SupabaseService] fetchNeedsReplyPhones error: $e');
+      return [];
+    }
+  }
+
+  // ============================================
   // MESSAGE SEARCH (SUPABASE ilike)
   // ============================================
 

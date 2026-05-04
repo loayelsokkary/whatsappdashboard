@@ -21,6 +21,7 @@ class ConversationListPanel extends StatefulWidget {
 
 class _ConversationListPanelState extends State<ConversationListPanel> {
   final _searchController = TextEditingController();
+  final _scrollController = ScrollController();
   Timer? _debounce;
   List<MessageSearchResult> _searchResults = [];
   bool _isSearching = false;
@@ -30,13 +31,28 @@ class _ConversationListPanelState extends State<ConversationListPanel> {
   void initState() {
     super.initState();
     ensurePhonesWithNotesInitialized();
+    _scrollController.addListener(_onScroll);
   }
 
   @override
   void dispose() {
+    _scrollController.dispose();
     _searchController.dispose();
     _debounce?.cancel();
     super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels <
+        _scrollController.position.maxScrollExtent - 200) {
+      return;
+    }
+    final provider = context.read<ConversationsProvider>();
+    if (provider.isNeedsReplyFilterActive) {
+      provider.loadMoreNeedsReply();
+    } else {
+      provider.loadMoreConversations();
+    }
   }
 
   void _onSearchChanged(String query) {
@@ -147,7 +163,7 @@ class _ConversationListPanelState extends State<ConversationListPanel> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
-                  provider.conversations.length.toString(),
+                  provider.totalConversationCount.toString(),
                   style: TextStyle(
                     color: vc.background,
                     fontWeight: FontWeight.bold,
@@ -193,7 +209,9 @@ class _ConversationListPanelState extends State<ConversationListPanel> {
           ),
 
           // Needs Reply filter chip (only when not searching)
-          if (!_isSearchActive && provider.needsReplyCount > 0) ...[
+          if (!_isSearchActive &&
+              (provider.needsReplyCount > 0 ||
+                  provider.isNeedsReplyFilterActive)) ...[
             const SizedBox(height: 12),
             _buildNeedsReplyChip(context, provider),
           ],
@@ -277,13 +295,17 @@ class _ConversationListPanelState extends State<ConversationListPanel> {
 
   Widget _buildNeedsReplyChip(BuildContext context, ConversationsProvider provider) {
     final vc = context.vividColors;
-    final isActive = provider.statusFilter == ConversationStatus.needsReply;
+    final isActive = provider.isNeedsReplyFilterActive;
     final count = provider.needsReplyCount;
 
     return GestureDetector(
-      onTap: () => provider.setStatusFilter(
-        isActive ? null : ConversationStatus.needsReply,
-      ),
+      onTap: () {
+        if (isActive) {
+          provider.deactivateNeedsReplyFilter();
+        } else {
+          provider.activateNeedsReplyFilter();
+        }
+      },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -418,10 +440,32 @@ class _ConversationListPanelState extends State<ConversationListPanel> {
       );
     }
 
+    final convs = provider.conversations;
+    final showFooter = provider.isLoadingMore ||
+        (provider.isNeedsReplyFilterActive
+            ? provider.needsReplyHasMorePages
+            : provider.hasMorePages);
+
     return ListView.builder(
-      itemCount: provider.conversations.length,
+      controller: _scrollController,
+      itemCount: convs.length + (showFooter ? 1 : 0),
       itemBuilder: (context, index) {
-        final conversation = provider.conversations[index];
+        if (index == convs.length) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: VividColors.cyan,
+                ),
+              ),
+            ),
+          );
+        }
+        final conversation = convs[index];
         final isSelected = provider.selectedConversation?.id == conversation.id;
 
         return _ConversationCard(

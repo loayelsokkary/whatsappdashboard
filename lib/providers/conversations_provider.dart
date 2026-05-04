@@ -13,6 +13,13 @@ class ConversationsProvider extends ChangeNotifier {
   // ============================================
 
   List<RawExchange> _allExchanges = [];
+  // Phase 1: phone-keyed exchange map and pagination state
+  final Map<String, List<RawExchange>> _exchangesByPhone = {};
+  int _totalConversationCount = 0;
+  bool _initialPageLoaded = false; // ignore: unused_field — read in Phase 3
+  // Tracks phones whose history is being fetched right now, to prevent
+  // duplicate fetches when multiple real-time events fire rapidly.
+  final Set<String> _phonesBeingFetched = {};
   List<Conversation> _conversations = [];
   List<Message> _pendingMessages = []; // For optimistic updates
   String? _selectedCustomerPhone;
@@ -27,7 +34,17 @@ class ConversationsProvider extends ChangeNotifier {
   bool _soundEnabled = true;
   bool _browserNotificationsEnabled = false;
   Set<String> _knownExchangeIds = {};
-  bool _initialLoadDone = false;
+  bool _initialLoadDone = false; // ignore: unused_field — read in Phase 3
+
+  // Infinite scroll + global Needs Reply filter
+  int _needsReplyCount = 0;
+  bool _isLoadingMore = false;
+  int _currentPage = 0;
+  bool _hasMorePages = true;
+  bool _isNeedsReplyFilterActive = false;
+  List<String> _needsReplyPhones = [];
+  int _needsReplyCurrentPage = 0;
+  bool _needsReplyHasMorePages = true;
 
   StreamSubscription<List<RawExchange>>? _exchangesSubscription;
 
@@ -38,7 +55,11 @@ class ConversationsProvider extends ChangeNotifier {
   List<Conversation> get conversations {
     var filtered = _conversations;
 
-    if (_statusFilter != null) {
+    if (_isNeedsReplyFilterActive) {
+      final needsReplySet = _needsReplyPhones.toSet();
+      filtered =
+          filtered.where((c) => needsReplySet.contains(c.customerPhone)).toList();
+    } else if (_statusFilter != null) {
       filtered = filtered.where((c) => c.status == _statusFilter).toList();
     }
 
@@ -92,9 +113,8 @@ class ConversationsProvider extends ChangeNotifier {
   List<Message> get messages {
     if (_selectedCustomerPhone == null) return [];
 
-    final customerExchanges = _allExchanges
-        .where((ex) => ex.customerPhone == _selectedCustomerPhone)
-        .toList();
+    final customerExchanges =
+        _exchangesByPhone[_selectedCustomerPhone] ?? <RawExchange>[];
 
     customerExchanges.sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
@@ -199,8 +219,13 @@ class ConversationsProvider extends ChangeNotifier {
   bool get isSending => _isSending;
 
   int get totalCount => _conversations.length;
-  int get needsReplyCount => _conversations.where((c) => c.status == ConversationStatus.needsReply).length;
+  int get totalConversationCount => _totalConversationCount;
+  int get needsReplyCount => _needsReplyCount;
   int get repliedCount => _conversations.where((c) => c.status == ConversationStatus.replied).length;
+  bool get isLoadingMore => _isLoadingMore;
+  bool get hasMorePages => _hasMorePages;
+  bool get isNeedsReplyFilterActive => _isNeedsReplyFilterActive;
+  bool get needsReplyHasMorePages => _needsReplyHasMorePages;
   int get totalUnreadCount => _conversations.fold<int>(0, (sum, c) => sum + c.unreadCount);
   bool get soundEnabled => _soundEnabled;
 
@@ -217,36 +242,42 @@ class ConversationsProvider extends ChangeNotifier {
 
     try {
       final service = SupabaseService.instance;
-      _allExchanges = await service.fetchAllExchanges();
+      await _fetchInitialLoad();
       _isConnected = true;
-      _knownExchangeIds = _allExchanges.map((e) => e.id).toSet();
-      _initialLoadDone = true;
+      // _initialLoadDone restored in Phase 3 when notification logic is reworked
       _buildConversations();
 
       service.subscribeToExchanges();
       _exchangesSubscription = service.exchangesStream.listen((exchanges) {
-        final previousIds = _knownExchangeIds;
-        _allExchanges = exchanges;
-        _knownExchangeIds = exchanges.map((e) => e.id).toSet();
+        _allExchanges = exchanges; // shim: keep _allExchanges in sync
 
-        // Detect new customer messages (only after initial load)
-        if (_initialLoadDone) {
-          final newIds = _knownExchangeIds.difference(previousIds);
-          for (final newId in newIds) {
-            try {
-              final exchange = exchanges.firstWhere((e) => e.id == newId);
-              final hasCustomerMsg = exchange.customerMessage.trim().isNotEmpty || exchange.isVoiceMessage;
-              final isSelected = exchange.customerPhone == _selectedCustomerPhone;
-              if (hasCustomerMsg && !isSelected) {
-                _triggerNewMessageNotification(exchange);
-              }
-            } catch (_) {}
+        // Identify any phones in the stream not yet in our loaded set
+        final loadedPhones = _exchangesByPhone.keys.toSet();
+        final unloadedPhones = <String>{};
+        for (final ex in exchanges) {
+          if (!loadedPhones.contains(ex.customerPhone)) {
+            unloadedPhones.add(ex.customerPhone);
+          }
+        }
+
+        // Rebuild _exchangesByPhone for already-loaded phones so their
+        // conversations update and move to the top immediately
+        _exchangesByPhone.clear();
+        for (final ex in exchanges) {
+          if (loadedPhones.contains(ex.customerPhone)) {
+            _exchangesByPhone.putIfAbsent(ex.customerPhone, () => []).add(ex);
           }
         }
 
         _buildConversations();
-        _clearOldPendingMessages();
         notifyListeners();
+
+        // For each unloaded phone with new activity, fetch their full history
+        // asynchronously and insert. The helper calls _buildConversations +
+        // notifyListeners again once the fetch completes (~200-500ms later).
+        for (final phone in unloadedPhones) {
+          _fetchAndInsertUnloadedCustomer(phone);
+        }
       });
 
     } catch (e) {
@@ -259,17 +290,268 @@ class ConversationsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Phase 1: Loads the latest 100 most recently active customers + their
+  /// messages + total conversation count, in parallel.
+  /// Replaces the old fetchAllExchanges() approach for first paint.
+  Future<void> _fetchInitialLoad() async {
+    print('[ConversationsProvider] _fetchInitialLoad: starting');
+    final service = SupabaseService.instance;
+
+    // Step 1: Get latest 100 customer phones + two server counts in parallel
+    final phonesFuture = service.fetchLatestCustomerPhones(
+      page: 0,
+      pageSize: 100,
+    );
+    final countFuture = service.fetchTotalConversationCount();
+    final needsReplyCountFuture = service.fetchNeedsReplyCount();
+
+    final phones = await phonesFuture;
+    _totalConversationCount = await countFuture;
+    _needsReplyCount = await needsReplyCountFuture;
+
+    if (phones.isEmpty) {
+      print('[ConversationsProvider] _fetchInitialLoad: no phones returned');
+      _allExchanges = [];
+      _exchangesByPhone.clear();
+      _initialPageLoaded = true;
+      return;
+    }
+
+    // Step 2: Get all messages for those 100 phones
+    final exchanges = await service.fetchExchangesForPhones(phones);
+
+    // Step 3: Populate _exchangesByPhone map
+    _exchangesByPhone.clear();
+    for (final ex in exchanges) {
+      _exchangesByPhone.putIfAbsent(ex.customerPhone, () => []).add(ex);
+    }
+
+    // Step 4: SHIM — populate _allExchanges from the map so existing code
+    // paths (_buildConversations, conversations getter search filter) keep
+    // working. Phase 3 will remove this.
+    _allExchanges = _exchangesByPhone.values.expand((list) => list).toList();
+    // _knownExchangeIds restored in Phase 3 when the stream listener is reworked
+
+    // Step 5: Seed the service cache so the real-time stream listener has a
+    // valid base state. Without this the first INSERT emits a list of [1]
+    // and overwrites all loaded data. Removed in Phase 3.
+    service.seedExchangeCache(_allExchanges);
+
+    _initialPageLoaded = true;
+
+    print('[ConversationsProvider] _fetchInitialLoad: '
+        'phones=${phones.length}, '
+        'exchanges=${exchanges.length}, '
+        'total_conversations=$_totalConversationCount, '
+        'needs_reply=$_needsReplyCount');
+  }
+
+  /// Phase 1+3: Fetches the full history for a customer phone that isn't in
+  /// the loaded set yet, then inserts it into _exchangesByPhone and rebuilds
+  /// the conversation list. Called by the stream listener when a real-time
+  /// event arrives from an unloaded customer.
+  Future<void> _fetchAndInsertUnloadedCustomer(String phone) async {
+    // Guard: already loaded (race) or fetch already in flight
+    if (_exchangesByPhone.containsKey(phone)) return;
+    if (_phonesBeingFetched.contains(phone)) return;
+
+    _phonesBeingFetched.add(phone);
+
+    try {
+      print('[ConversationsProvider] _fetchAndInsertUnloadedCustomer: '
+          'fetching history for $phone');
+
+      final service = SupabaseService.instance;
+      final exchanges = await service.fetchExchangesForPhones([phone]);
+
+      if (exchanges.isEmpty) {
+        print('[ConversationsProvider] _fetchAndInsertUnloadedCustomer: '
+            'no exchanges returned for $phone');
+        return;
+      }
+
+      // Re-check: this phone might have been added by another path
+      // while we were awaiting the fetch
+      if (_exchangesByPhone.containsKey(phone)) {
+        print('[ConversationsProvider] _fetchAndInsertUnloadedCustomer: '
+            '$phone was loaded by another path during fetch, skipping');
+        return;
+      }
+
+      _exchangesByPhone[phone] = exchanges;
+      _totalConversationCount += 1;
+
+      // Keep _allExchanges shim and _knownExchangeIds in sync so the
+      // search filter and other consumers see the new exchanges
+      _allExchanges.addAll(exchanges);
+      _knownExchangeIds.addAll(exchanges.map((e) => e.id));
+
+      // Refresh server-side needs-reply count for this new conversation
+      SupabaseService.instance.fetchNeedsReplyCount().then((count) {
+        _needsReplyCount = count;
+        notifyListeners();
+      }).catchError((_) {});
+
+      _buildConversations();
+      notifyListeners();
+
+      print('[ConversationsProvider] _fetchAndInsertUnloadedCustomer: '
+          '$phone added — ${exchanges.length} exchanges, '
+          'total_conversations=$_totalConversationCount');
+    } catch (e) {
+      print('[ConversationsProvider] _fetchAndInsertUnloadedCustomer '
+          'error for $phone: $e');
+    } finally {
+      _phonesBeingFetched.remove(phone);
+    }
+  }
+
+  // ============================================
+  // INFINITE SCROLL
+  // ============================================
+
+  Future<void> loadMoreConversations() async {
+    if (_isLoadingMore || !_hasMorePages) return;
+    _isLoadingMore = true;
+    notifyListeners();
+
+    try {
+      final service = SupabaseService.instance;
+      final nextPage = _currentPage + 1;
+      final phones = await service.fetchLatestCustomerPhones(
+        page: nextPage,
+        pageSize: 100,
+      );
+
+      if (phones.isEmpty) {
+        _hasMorePages = false;
+      } else {
+        final newPhones =
+            phones.where((p) => !_exchangesByPhone.containsKey(p)).toList();
+        if (newPhones.isNotEmpty) {
+          final exchanges = await service.fetchExchangesForPhones(newPhones);
+          for (final ex in exchanges) {
+            _exchangesByPhone.putIfAbsent(ex.customerPhone, () => []).add(ex);
+          }
+          _allExchanges =
+              _exchangesByPhone.values.expand((list) => list).toList();
+          service.seedExchangeCache(_allExchanges);
+          _buildConversations();
+        }
+        _currentPage = nextPage;
+        if (phones.length < 100) _hasMorePages = false;
+      }
+    } catch (e) {
+      print('[ConversationsProvider] loadMoreConversations error: $e');
+    }
+
+    _isLoadingMore = false;
+    notifyListeners();
+  }
+
+  // ============================================
+  // GLOBAL NEEDS REPLY FILTER
+  // ============================================
+
+  Future<void> activateNeedsReplyFilter() async {
+    if (_isNeedsReplyFilterActive) return;
+    _isNeedsReplyFilterActive = true;
+    _needsReplyPhones = [];
+    _needsReplyCurrentPage = 0;
+    _needsReplyHasMorePages = true;
+    _isLoadingMore = true;
+    notifyListeners();
+
+    try {
+      final service = SupabaseService.instance;
+      final phones =
+          await service.fetchNeedsReplyPhones(page: 0, pageSize: 100);
+      _needsReplyPhones = phones;
+      if (phones.length < 100) _needsReplyHasMorePages = false;
+
+      final unloaded =
+          phones.where((p) => !_exchangesByPhone.containsKey(p)).toList();
+      if (unloaded.isNotEmpty) {
+        final exchanges = await service.fetchExchangesForPhones(unloaded);
+        for (final ex in exchanges) {
+          _exchangesByPhone.putIfAbsent(ex.customerPhone, () => []).add(ex);
+        }
+        _allExchanges =
+            _exchangesByPhone.values.expand((list) => list).toList();
+        service.seedExchangeCache(_allExchanges);
+        _buildConversations();
+      }
+    } catch (e) {
+      print('[ConversationsProvider] activateNeedsReplyFilter error: $e');
+      _isNeedsReplyFilterActive = false;
+    }
+
+    _isLoadingMore = false;
+    notifyListeners();
+  }
+
+  void deactivateNeedsReplyFilter() {
+    if (!_isNeedsReplyFilterActive) return;
+    _isNeedsReplyFilterActive = false;
+    _needsReplyPhones = [];
+    _needsReplyCurrentPage = 0;
+    _needsReplyHasMorePages = true;
+    notifyListeners();
+  }
+
+  Future<void> loadMoreNeedsReply() async {
+    if (!_isNeedsReplyFilterActive) return;
+    if (_isLoadingMore || !_needsReplyHasMorePages) return;
+    _isLoadingMore = true;
+    notifyListeners();
+
+    try {
+      final service = SupabaseService.instance;
+      final nextPage = _needsReplyCurrentPage + 1;
+      final phones =
+          await service.fetchNeedsReplyPhones(page: nextPage, pageSize: 100);
+
+      if (phones.isEmpty) {
+        _needsReplyHasMorePages = false;
+      } else {
+        final newPhones =
+            phones.where((p) => !_needsReplyPhones.contains(p)).toList();
+        _needsReplyPhones.addAll(newPhones);
+        if (phones.length < 100) _needsReplyHasMorePages = false;
+        _needsReplyCurrentPage = nextPage;
+
+        final unloaded =
+            newPhones.where((p) => !_exchangesByPhone.containsKey(p)).toList();
+        if (unloaded.isNotEmpty) {
+          final exchanges = await service.fetchExchangesForPhones(unloaded);
+          for (final ex in exchanges) {
+            _exchangesByPhone.putIfAbsent(ex.customerPhone, () => []).add(ex);
+          }
+          _allExchanges =
+              _exchangesByPhone.values.expand((list) => list).toList();
+          service.seedExchangeCache(_allExchanges);
+          _buildConversations();
+        }
+      }
+    } catch (e) {
+      print('[ConversationsProvider] loadMoreNeedsReply error: $e');
+    }
+
+    _isLoadingMore = false;
+    notifyListeners();
+  }
+
   /// Fetch conversations for a preview client — no real-time subscription.
   /// Safe to call multiple times; clears previous data on each call.
   Future<void> initializePreview() async {
     _isLoading = true;
     _allExchanges = [];
+    _exchangesByPhone.clear();
     _conversations = [];
     _error = null;
     notifyListeners();
     try {
-      final service = SupabaseService.instance;
-      _allExchanges = await service.fetchAllExchanges();
+      await _fetchInitialLoad();
       _buildConversations();
     } catch (e) {
       _error = 'Failed to load: $e';
@@ -284,8 +566,8 @@ class ConversationsProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final service = SupabaseService.instance;
-      _allExchanges = await service.fetchAllExchanges();
+      _exchangesByPhone.clear();
+      await _fetchInitialLoad();
       _isConnected = true;
       _buildConversations();
       _clearOldPendingMessages();
@@ -464,7 +746,7 @@ class ConversationsProvider extends ChangeNotifier {
       final phone = pending.id.split('_')[1]; // Extract phone from pending_PHONE_timestamp
       
       // Find exchanges for this customer
-      final customerExchanges = _allExchanges.where((ex) => ex.customerPhone == phone);
+      final customerExchanges = _exchangesByPhone[phone] ?? <RawExchange>[];
       
       // Check if any exchange has a manager_response matching our pending content
       for (final ex in customerExchanges) {
@@ -746,6 +1028,11 @@ class ConversationsProvider extends ChangeNotifier {
             setConversationLabel(customerPhone, detectedLabel);
           });
         }
+        // Refresh needs-reply count — manager reply may have resolved the conversation
+        SupabaseService.instance.fetchNeedsReplyCount().then((count) {
+          _needsReplyCount = count;
+          notifyListeners();
+        }).catchError((_) {});
       }
 
       _isSending = false;
@@ -823,6 +1110,7 @@ class ConversationsProvider extends ChangeNotifier {
     }
   }
 
+  // ignore: unused_element — restored in Phase 3 when notification logic is reworked
   void _triggerNewMessageNotification(RawExchange exchange) {
     final name = exchange.customerName ?? exchange.customerPhone;
     final message = exchange.isVoiceMessage
