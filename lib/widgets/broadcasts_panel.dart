@@ -1819,6 +1819,7 @@ class ComposeBroadcastDialog extends StatefulWidget {
 class _ComposeBroadcastDialogState extends State<ComposeBroadcastDialog> {
   late final TextEditingController _controller;
   final FocusNode _focusNode = FocusNode();
+  final ScrollController _templateScrollController = ScrollController();
   bool _isScheduled = false;
   late DateTime _scheduledDate;
   late TimeOfDay _scheduledTime;
@@ -1869,6 +1870,7 @@ class _ComposeBroadcastDialogState extends State<ComposeBroadcastDialog> {
   void dispose() {
     _controller.dispose();
     _focusNode.dispose();
+    _templateScrollController.dispose();
     super.dispose();
   }
 
@@ -2150,80 +2152,96 @@ class _ComposeBroadcastDialogState extends State<ComposeBroadcastDialog> {
                         ),
                       ),
                       constraints: const BoxConstraints(maxHeight: 200),
-                      child: ListView.separated(
-                        shrinkWrap: true,
-                        padding: EdgeInsets.zero,
-                        itemCount: templates.length,
-                        separatorBuilder: (_, __) =>
-                            Divider(height: 1, color: vc.border),
-                        itemBuilder: (context, i) {
-                          final t = templates[i];
-                          final isSelected = _selectedTemplate?.id == t.id;
-                          final isFirst = i == 0;
-                          final isLast = i == templates.length - 1;
-                          final radius = BorderRadius.vertical(
-                            top: isFirst ? const Radius.circular(10) : Radius.zero,
-                            bottom: isLast ? const Radius.circular(10) : Radius.zero,
-                          );
-                          return InkWell(
-                            borderRadius: radius,
-                            onTap: () => setState(() {
-                              _selectedTemplate = isSelected ? null : t;
-                              if (_selectedTemplate != null) _templateError = false;
-                            }),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 14, vertical: 13),
-                              decoration: BoxDecoration(
-                                color: isSelected
-                                    ? VividColors.cyan.withValues(alpha: 0.08)
-                                    : Colors.transparent,
-                                borderRadius: radius,
-                              ),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      t.label,
-                                      style: TextStyle(
-                                        color: isSelected
-                                            ? VividColors.cyan
-                                            : vc.textPrimary,
-                                        fontSize: 13,
-                                        fontWeight: isSelected
-                                            ? FontWeight.w600
-                                            : FontWeight.w400,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Container(
+                      // RTL Directionality moves the scrollbar to the left,
+                      // keeping it physically separate from the outer popup's
+                      // right-side scrollbar. Each item restores LTR so template
+                      // names and badges render correctly.
+                      child: Directionality(
+                        textDirection: TextDirection.rtl,
+                        child: Scrollbar(
+                          thumbVisibility: true,
+                          controller: _templateScrollController,
+                          child: ListView.separated(
+                            controller: _templateScrollController,
+                            shrinkWrap: false,
+                            physics: const ClampingScrollPhysics(),
+                            padding: EdgeInsets.zero,
+                            itemCount: templates.length,
+                            separatorBuilder: (_, __) =>
+                                Divider(height: 1, color: vc.border),
+                            itemBuilder: (context, i) {
+                              final t = templates[i];
+                              final isSelected = _selectedTemplate?.id == t.id;
+                              final isFirst = i == 0;
+                              final isLast = i == templates.length - 1;
+                              final radius = BorderRadius.vertical(
+                                top: isFirst ? const Radius.circular(10) : Radius.zero,
+                                bottom: isLast ? const Radius.circular(10) : Radius.zero,
+                              );
+                              return Directionality(
+                                textDirection: TextDirection.ltr,
+                                child: InkWell(
+                                  borderRadius: radius,
+                                  onTap: () => setState(() {
+                                    _selectedTemplate = isSelected ? null : t;
+                                    if (_selectedTemplate != null) _templateError = false;
+                                  }),
+                                  child: Container(
                                     padding: const EdgeInsets.symmetric(
-                                        horizontal: 6, vertical: 2),
+                                        horizontal: 14, vertical: 13),
                                     decoration: BoxDecoration(
-                                      color: VividColors.cyan.withValues(
-                                          alpha: isSelected ? 0.25 : 0.12),
-                                      borderRadius: BorderRadius.circular(4),
+                                      color: isSelected
+                                          ? VividColors.cyan.withValues(alpha: 0.08)
+                                          : Colors.transparent,
+                                      borderRadius: radius,
                                     ),
-                                    child: Text(
-                                      t.language.toUpperCase(),
-                                      style: const TextStyle(
-                                          color: VividColors.cyan,
-                                          fontSize: 9,
-                                          fontWeight: FontWeight.w600),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            t.label,
+                                            style: TextStyle(
+                                              color: isSelected
+                                                  ? VividColors.cyan
+                                                  : vc.textPrimary,
+                                              fontSize: 13,
+                                              fontWeight: isSelected
+                                                  ? FontWeight.w600
+                                                  : FontWeight.w400,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: VividColors.cyan.withValues(
+                                                alpha: isSelected ? 0.25 : 0.12),
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: Text(
+                                            t.language.toUpperCase(),
+                                            style: const TextStyle(
+                                                color: VividColors.cyan,
+                                                fontSize: 9,
+                                                fontWeight: FontWeight.w600),
+                                          ),
+                                        ),
+                                        if (isSelected) ...[
+                                          const SizedBox(width: 8),
+                                          const Icon(Icons.check_circle,
+                                              size: 16, color: VividColors.cyan),
+                                        ],
+                                      ],
                                     ),
                                   ),
-                                  if (isSelected) ...[
-                                    const SizedBox(width: 8),
-                                    const Icon(Icons.check_circle,
-                                        size: 16, color: VividColors.cyan),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          );
-                        },
+                                ),
+                              );
+                            },
+                          ),
+                        ),
                       ),
                     ),
                     if (_selectedTemplate != null &&
