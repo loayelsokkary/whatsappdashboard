@@ -93,6 +93,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   DateTime? _compareCustomStart;
   DateTime? _compareCustomEnd;
   bool _showBroadcasts = false;
+  bool _showKpis = false;
   String? _selectedCampaignId;
   int _overdueIndex = 2; // default 30 min
   bool _hasBothFeatures = false;
@@ -148,7 +149,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           broadcastsTable: ClientConfig.broadcastsTable,
           startDate: start,
           endDate: end,
-          campaignId: _showBroadcasts ? _selectedCampaignId : null,
+          campaignId: _showBroadcasts && !_showKpis ? _selectedCampaignId : null,
           compareStartDate: compStart,
           compareEndDate: compEnd,
           overdueThreshold: _overdueOptions[_overdueIndex].duration,
@@ -338,7 +339,14 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             children: [
               _buildToolbar(data),
               const SizedBox(height: 32),
-              if (_showBroadcasts)
+              if (_showKpis)
+                _KpisView(
+                  data: data,
+                  isWide: isWide,
+                  dateRangeLabel: _dateFilter.label,
+                  compareLabel: _compareEnabled ? _compareDateFilter.label : null,
+                )
+              else if (_showBroadcasts)
                 _BroadcastsView(
                   data: data,
                   isWide: isWide,
@@ -462,11 +470,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           _toggleTab(
             label: 'Conversations',
             icon: Icons.forum_outlined,
-            isSelected: !_showBroadcasts,
+            isSelected: !_showBroadcasts && !_showKpis,
             onTap: () {
-              if (_showBroadcasts) {
+              if (_showBroadcasts || _showKpis) {
                 setState(() {
                   _showBroadcasts = false;
+                  _showKpis = false;
                   _selectedCampaignId = null;
                 });
                 _loadAnalytics();
@@ -481,6 +490,22 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               if (!_showBroadcasts) {
                 setState(() {
                   _showBroadcasts = true;
+                  _showKpis = false;
+                });
+                _loadAnalytics();
+              }
+            },
+          ),
+          _toggleTab(
+            label: 'KPIs',
+            icon: Icons.query_stats_outlined,
+            isSelected: _showKpis,
+            onTap: () {
+              if (!_showKpis) {
+                setState(() {
+                  _showKpis = true;
+                  _showBroadcasts = false;
+                  _selectedCampaignId = null;
                 });
                 _loadAnalytics();
               }
@@ -1892,6 +1917,381 @@ class _HoverableRowState extends State<_HoverableRow> {
 }
 
 // ================================================================
+// KPIS VIEW
+// ================================================================
+
+class _KpisView extends StatelessWidget {
+  final AnalyticsData data;
+  final bool isWide;
+  final String dateRangeLabel;
+  final String? compareLabel;
+
+  const _KpisView({
+    required this.data,
+    required this.isWide,
+    required this.dateRangeLabel,
+    this.compareLabel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final vc = context.vividColors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textPrimary = isDark ? vc.textPrimary : const Color(0xFF1E293B);
+    final kpis = data.kpis;
+    if (kpis == null) {
+      return _buildMutedNote(context, 'No KPI data yet');
+    }
+
+    final cards = kpis.cards;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('KPIs',
+            style: TextStyle(
+                color: textPrimary, fontSize: 20, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 20),
+        _cardRow(isWide, [
+          _buildKpiCard(context, cards[0], Icons.person_add_alt_1,
+              VividColors.cyan),
+          _buildKpiCard(
+              context, cards[1], Icons.filter_alt, VividColors.brightBlue),
+        ]),
+        const SizedBox(height: 20),
+        _cardRow(isWide, [
+          _buildKpiCard(context, cards[2], Icons.groups_2_outlined,
+              const Color(0xFF8B5CF6)),
+          _buildKpiCard(context, cards[3], Icons.replay_circle_filled_outlined,
+              Colors.orange),
+        ]),
+      ],
+    );
+  }
+
+  Widget _buildKpiCard(
+    BuildContext context,
+    KpiCardData card,
+    IconData icon,
+    Color color,
+  ) {
+    final comparison = data.comparisonKpis?.cardByKey(card.key);
+    final change = comparison != null
+        ? _calcKpiChange(card, comparison)
+        : null;
+    return _MetricCard(
+      icon: icon,
+      label: card.title,
+      value: _formatKpiValue(card),
+      color: color,
+      description: card.subtitle,
+      isHighlight: card.value > 0,
+      change: change,
+      changeSuffix: card.format == KpiValueFormat.percentage ? 'pp' : '%',
+      compareLabel: compareLabel,
+      onTap: () => showDialog(
+        context: context,
+        builder: (_) => _KpiDetailDialog(
+          card: card,
+          color: color,
+          icon: icon,
+          dateRangeLabel: dateRangeLabel,
+        ),
+      ),
+    );
+  }
+
+  double? _calcKpiChange(KpiCardData current, KpiCardData previous) {
+    if (current.format == KpiValueFormat.percentage) {
+      return current.value - previous.value;
+    }
+    if (previous.value == 0) return current.value > 0 ? 100 : null;
+    return ((current.value - previous.value) / previous.value) * 100;
+  }
+}
+
+class _KpiDetailDialog extends StatelessWidget {
+  final KpiCardData card;
+  final Color color;
+  final IconData icon;
+  final String dateRangeLabel;
+
+  const _KpiDetailDialog({
+    required this.card,
+    required this.color,
+    required this.icon,
+    required this.dateRangeLabel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final vc = context.vividColors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textPrimary = isDark ? vc.textPrimary : const Color(0xFF1E293B);
+    final textSecondary = isDark ? vc.textSecondary : const Color(0xFF475569);
+    final textMuted = isDark ? vc.textMuted : const Color(0xFF94A3B8);
+    final divColor = isDark ? vc.borderSubtle : const Color(0xFFE2E8F0);
+
+    return Dialog(
+      backgroundColor: isDark ? vc.background : Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 760, maxHeight: 720),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                Icon(icon, color: color, size: 22),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(card.title,
+                      style: TextStyle(
+                          color: textPrimary,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold)),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(_formatKpiValue(card),
+                      style: TextStyle(
+                          color: color,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600)),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: Icon(Icons.close, color: textMuted, size: 20),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ]),
+              const SizedBox(height: 16),
+              _detailBlock(context, 'Definition', card.definition),
+              const SizedBox(height: 10),
+              _detailBlock(context, 'Formula', card.formula),
+              const SizedBox(height: 10),
+              _detailBlock(context, 'Date Range', dateRangeLabel),
+              const SizedBox(height: 16),
+              _componentGrid(context),
+              const SizedBox(height: 18),
+              Text(_tableTitle,
+                  style: TextStyle(
+                      color: textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700)),
+              const SizedBox(height: 8),
+              Expanded(
+                child: _isReengagement
+                    ? _buildReengagementList(
+                        context, textPrimary, textSecondary, textMuted, divColor)
+                    : _buildCustomerList(
+                        context, textPrimary, textSecondary, textMuted, divColor),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  bool get _isReengagement => card.key == 'reengagement_rate';
+
+  String get _tableTitle {
+    if (card.key == 'unique_conversion_rate') {
+      return 'Contributing Lead Events';
+    }
+    if (_isReengagement) return 'Re-engaged Customers';
+    return 'Contributing Records';
+  }
+
+  Widget _detailBlock(BuildContext context, String label, String value) {
+    final vc = context.vividColors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: isDark ? vc.surface : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: isDark ? vc.border : const Color(0xFFE2E8F0)),
+      ),
+      child: RichText(
+        text: TextSpan(
+          style: TextStyle(
+              color: isDark ? vc.textSecondary : const Color(0xFF475569),
+              fontSize: 12),
+          children: [
+            TextSpan(
+              text: '$label: ',
+              style: TextStyle(
+                  color: isDark ? vc.textPrimary : const Color(0xFF1E293B),
+                  fontWeight: FontWeight.w700),
+            ),
+            TextSpan(text: value),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _componentGrid(BuildContext context) {
+    final vc = context.vividColors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final entries = card.components.entries.toList();
+    if (entries.isEmpty) return const SizedBox.shrink();
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: entries.map((entry) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color.withValues(alpha: 0.18)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(_componentLabel(entry.key),
+                  style: TextStyle(
+                      color: isDark ? vc.textMuted : const Color(0xFF64748B),
+                      fontSize: 11)),
+              const SizedBox(height: 3),
+              Text(_formatComponent(entry.value),
+                  style: TextStyle(
+                      color: color, fontSize: 15, fontWeight: FontWeight.w700)),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildCustomerList(
+    BuildContext context,
+    Color textPrimary,
+    Color textSecondary,
+    Color textMuted,
+    Color divColor,
+  ) {
+    final rows = card.customers;
+    if (rows.isEmpty) {
+      return Center(
+        child: Text('No contributing customers in this period',
+            style: TextStyle(color: textMuted, fontSize: 13)),
+      );
+    }
+    return ListView.separated(
+      itemCount: rows.length,
+      separatorBuilder: (_, __) => Divider(height: 1, color: divColor),
+      itemBuilder: (context, i) {
+        final c = rows[i];
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 4),
+          child: Row(children: [
+            _avatar(c.displayName, color),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(c.displayName,
+                      style: TextStyle(
+                          color: textPrimary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500),
+                      overflow: TextOverflow.ellipsis),
+                  if (c.name != null)
+                    Text(c.phone,
+                        style: TextStyle(color: textMuted, fontSize: 11)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(_fmtDate(c.primaryDate),
+                    style: TextStyle(color: textSecondary, fontSize: 12)),
+                if (c.source != null)
+                  Text(c.source!,
+                      style: TextStyle(color: textMuted, fontSize: 10)),
+              ],
+            ),
+          ]),
+        );
+      },
+    );
+  }
+
+  Widget _buildReengagementList(
+    BuildContext context,
+    Color textPrimary,
+    Color textSecondary,
+    Color textMuted,
+    Color divColor,
+  ) {
+    final rows = card.reengagements;
+    if (rows.isEmpty) {
+      return Center(
+        child: Text('No re-engaged customers in this period',
+            style: TextStyle(color: textMuted, fontSize: 13)),
+      );
+    }
+    return ListView.separated(
+      itemCount: rows.length,
+      separatorBuilder: (_, __) => Divider(height: 1, color: divColor),
+      itemBuilder: (context, i) {
+        final r = rows[i];
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 4),
+          child: Row(children: [
+            _avatar(r.displayName, color),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(r.displayName,
+                      style: TextStyle(
+                          color: textPrimary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500),
+                      overflow: TextOverflow.ellipsis),
+                  Text(r.name != null ? r.phone : (r.source ?? 'Outreach'),
+                      style: TextStyle(color: textMuted, fontSize: 11),
+                      overflow: TextOverflow.ellipsis),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text('Outreach ${_fmtDate(r.outreachAt)}',
+                    style: TextStyle(color: textSecondary, fontSize: 12)),
+                Text(
+                    'Last ${r.lastActivityBeforeOutreach != null ? _fmtDate(r.lastActivityBeforeOutreach!) : 'none'} · Reply ${r.replyAt != null ? _fmtDate(r.replyAt!) : '-'}',
+                    style: TextStyle(color: textMuted, fontSize: 10)),
+              ],
+            ),
+          ]),
+        );
+      },
+    );
+  }
+}
+
+// ================================================================
 // BROADCASTS VIEW
 // ================================================================
 
@@ -2915,6 +3315,59 @@ String _fmtWaitTime(Duration d) {
   return '${d.inMinutes}m';
 }
 
+String _fmtDate(DateTime date) {
+  return '${date.day}/${date.month}/${date.year}';
+}
+
+String _formatKpiValue(KpiCardData card) {
+  if (card.format == KpiValueFormat.percentage) {
+    return '${card.value.toStringAsFixed(1)}%';
+  }
+  return card.value.toInt().toString();
+}
+
+String _formatComponent(num value) {
+  if (value is double && value % 1 != 0) {
+    return value.toStringAsFixed(1);
+  }
+  return value.toInt().toString();
+}
+
+String _componentLabel(String key) {
+  switch (key) {
+    case 'count':
+      return 'Count';
+    case 'uniqueCustomersReached':
+      return 'Unique Customers Reached';
+    case 'successfulBroadcastMessagesSent':
+      return 'Received Broadcast Messages';
+    case 'receivedBroadcastMessages':
+      return 'Received Broadcast Messages';
+    case 'totalLeads':
+      return 'Total Leads';
+    case 'broadcastLeads':
+      return 'Broadcast Leads';
+    case 'organicLeads':
+      return 'Organic Leads';
+    case 'uniqueLeadCustomers':
+      return 'Unique Lead Customers';
+    case 'uniqueBroadcastLeadCustomers':
+      return 'Unique Broadcast Leads';
+    case 'uniqueOrganicLeadCustomers':
+      return 'Unique Organic Leads';
+    case 'reengagedCustomers':
+      return 'Re-engaged Customers';
+    case 'inactiveCustomersContacted':
+      return 'Inactive Customers Contacted';
+    case 'inactivityWindowDays':
+      return 'Inactivity Window';
+    case 'responseWindowDays':
+      return 'Response Window';
+    default:
+      return key;
+  }
+}
+
 // ================================================================
 // TABLE HEADER
 // ================================================================
@@ -3094,6 +3547,7 @@ class _MetricCard extends StatelessWidget {
   final String? description;
   final bool isHighlight;
   final double? change;
+  final String changeSuffix;
   final bool invertChange;
   final String? compareLabel;
   final bool pulse;
@@ -3107,6 +3561,7 @@ class _MetricCard extends StatelessWidget {
     this.description,
     this.isHighlight = false,
     this.change,
+    this.changeSuffix = '%',
     this.invertChange = false,
     this.compareLabel,
     this.pulse = false,
@@ -3205,7 +3660,7 @@ class _MetricCard extends StatelessWidget {
     }
     // Arrow shows actual direction of change; color shows good/bad
     final arrow = isPositive ? '\u25B2' : '\u25BC';
-    final text = '${change!.abs().toStringAsFixed(0)}%';
+    final text = '${change!.abs().toStringAsFixed(changeSuffix == 'pp' ? 1 : 0)}$changeSuffix';
     return Wrap(
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [

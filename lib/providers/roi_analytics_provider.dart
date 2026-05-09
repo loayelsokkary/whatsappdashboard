@@ -41,9 +41,23 @@ class RoiAnalyticsProvider extends ChangeNotifier {
 
     try {
       // ------- Fetch messages (paginated — Supabase default limit is 1000) -------
+      List<Map<String, dynamic>> allMessages = [];
       List<Map<String, dynamic>> messages = [];
       if (messagesTable != null) {
         const pageSize = 1000;
+        int allFrom = 0;
+        while (true) {
+          final raw = await _supabase
+              .from(messagesTable)
+              .select()
+              .order('created_at', ascending: true)
+              .range(allFrom, allFrom + pageSize - 1);
+          final rows = List<Map<String, dynamic>>.from(raw);
+          allMessages.addAll(rows);
+          if (rows.length < pageSize) break;
+          allFrom += pageSize;
+        }
+
         int from = 0;
         while (true) {
           var q = _supabase.from(messagesTable).select();
@@ -161,6 +175,14 @@ class RoiAnalyticsProvider extends ChangeNotifier {
         overdueThreshold: overdueThreshold,
         now: now,
       );
+      final currentKpis = _computeKpis(
+        allMessages: allMessages,
+        periodLeads: current.leadContributors,
+        campaigns: campaigns,
+        recipients: recipients,
+        startDate: startDate,
+        endDate: endDate,
+      );
 
       // ------- Compute comparison period (paginated) -------
       _ComputedMetrics? comparison;
@@ -221,6 +243,19 @@ class RoiAnalyticsProvider extends ChangeNotifier {
           now: now,
         );
       }
+      KpiAnalytics? comparisonKpis;
+      if (compareStartDate != null && compareEndDate != null) {
+        final compLeadContributors =
+            comparison?.leadContributors ?? const <LeadContributor>[];
+        comparisonKpis = _computeKpis(
+          allMessages: allMessages,
+          periodLeads: compLeadContributors,
+          campaigns: campaigns,
+          recipients: recipients,
+          startDate: compareStartDate,
+          endDate: compareEndDate,
+        );
+      }
 
       // ------- Campaign performance -------
       final campaignPerformance = _buildCampaignPerformance(
@@ -278,6 +313,8 @@ class RoiAnalyticsProvider extends ChangeNotifier {
         automatedMessageCount: current.automatedMessageCount,
         inboundCustomers: current.inboundCustomers,
         employeePerformance: current.employeePerformance,
+        kpis: currentKpis,
+        comparisonKpis: comparisonKpis,
       );
     } catch (e, st) {
       _error = 'Failed to load analytics: $e';
@@ -875,6 +912,275 @@ class RoiAnalyticsProvider extends ChangeNotifier {
     return DateTime.tryParse(m['created_at']?.toString() ?? '');
   }
 
+  KpiAnalytics _computeKpis({
+    required List<Map<String, dynamic>> allMessages,
+    required List<LeadContributor> periodLeads,
+    required List<Map<String, dynamic>> campaigns,
+    required List<Map<String, dynamic>> recipients,
+    DateTime? startDate,
+    DateTime? endDate,
+  }) {
+    final effectiveStart = startDate ?? DateTime(2020, 1, 1);
+    final effectiveEnd = endDate ?? DateTime.now();
+
+    bool inRange(DateTime? value) {
+      if (value == null) return false;
+      return !value.isBefore(effectiveStart) && !value.isAfter(effectiveEnd);
+    }
+
+    final campaignById = <String, Map<String, dynamic>>{};
+    for (final c in campaigns) {
+      final id = c['id']?.toString();
+      if (id != null && id.isNotEmpty) campaignById[id] = c;
+    }
+
+    final receivedBroadcastEventsByIdentity = <String, _BroadcastReachEvent>{};
+    for (final r in recipients) {
+      if (!isReceivedBroadcastStatus(r['status'])) continue;
+      final broadcastId = r['broadcast_id']?.toString();
+      final campaign = broadcastId == null ? null : campaignById[broadcastId];
+      final sentAt = campaign?['sent_at'] != null
+          ? DateTime.tryParse(campaign!['sent_at'].toString())
+          : null;
+      if (!inRange(sentAt)) continue;
+      final phone = r['customer_phone']?.toString() ?? '';
+      final phoneKey = _phoneKey(phone);
+      if (phoneKey.isEmpty) continue;
+      final identity = '${broadcastId ?? r['id']?.toString() ?? ''}|$phoneKey';
+      final event = _BroadcastReachEvent(
+        phone: phone,
+        phoneKey: phoneKey,
+        name: r['customer_name']?.toString() ?? r['name']?.toString(),
+        sentAt: sentAt!,
+        broadcastName: campaign?['campaign_name']?.toString() ??
+            campaign?['name']?.toString() ??
+            'Broadcast',
+        status: r['status']?.toString(),
+      );
+      final existing = receivedBroadcastEventsByIdentity[identity];
+      if (existing == null || _preferReceivedEvent(event, existing)) {
+        receivedBroadcastEventsByIdentity[identity] = event;
+      }
+    }
+    final receivedBroadcastEvents = receivedBroadcastEventsByIdentity.values.toList()
+      ..sort((a, b) => a.sentAt.compareTo(b.sentAt));
+
+    final reachedByPhone = <String, _BroadcastReachEvent>{};
+    for (final event in receivedBroadcastEvents) {
+      final existing = reachedByPhone[event.phoneKey];
+      if (existing == null || event.sentAt.isAfter(existing.sentAt)) {
+        reachedByPhone[event.phoneKey] = event;
+      }
+    }
+    final reachedCustomers = reachedByPhone.values
+        .map((e) => KpiCustomerRecord(
+              phone: e.phone,
+              name: e.name,
+              primaryDate: e.sentAt,
+              source: e.broadcastName,
+            ))
+        .toList()
+      ..sort((a, b) => b.primaryDate.compareTo(a.primaryDate));
+
+    final totalLeads = periodLeads.length;
+    final byPhoneAll = <String, List<Map<String, dynamic>>>{};
+    for (final m in allMessages) {
+      final phone = m['customer_phone']?.toString() ?? '';
+      final phoneKey = _phoneKey(phone);
+      if (phoneKey.isEmpty) continue;
+      byPhoneAll.putIfAbsent(phoneKey, () => []).add(m);
+    }
+    for (final list in byPhoneAll.values) {
+      list.sort((a, b) {
+        final aDate = _parseDate(a) ?? DateTime(2020);
+        final bDate = _parseDate(b) ?? DateTime(2020);
+        return aDate.compareTo(bDate);
+      });
+    }
+
+    final inactiveContacts = <String, KpiReengagementRecord>{};
+    final reengaged = <String, KpiReengagementRecord>{};
+    for (final event in receivedBroadcastEvents) {
+      final history = byPhoneAll[event.phoneKey] ?? const <Map<String, dynamic>>[];
+      DateTime? lastActivityBeforeOutreach;
+      for (final m in history) {
+        final createdAt = _parseDate(m);
+        if (createdAt == null || !createdAt.isBefore(event.sentAt)) continue;
+        if (_hasCustomerMessage(m)) {
+          lastActivityBeforeOutreach = createdAt;
+        }
+      }
+      final isInactive = lastActivityBeforeOutreach == null ||
+          event.sentAt.difference(lastActivityBeforeOutreach).inDays >= 30;
+      if (!isInactive) continue;
+
+      DateTime? replyAt;
+      for (final m in history) {
+        if (!_hasCustomerMessage(m)) continue;
+        final createdAt = _parseDate(m);
+        if (createdAt == null) continue;
+        final diff = createdAt.difference(event.sentAt);
+        if (diff >= Duration.zero && diff <= const Duration(days: 7)) {
+          replyAt = createdAt;
+          break;
+        }
+      }
+
+      final existingContact = inactiveContacts[event.phoneKey];
+      if (existingContact != null && reengaged.containsKey(event.phoneKey)) {
+        continue;
+      }
+      if (existingContact != null && replyAt == null) {
+        continue;
+      }
+
+      final record = KpiReengagementRecord(
+        phone: event.phone,
+        name: event.name,
+        lastActivityBeforeOutreach: lastActivityBeforeOutreach,
+        outreachAt: event.sentAt,
+        replyAt: replyAt,
+        source: event.broadcastName,
+      );
+      inactiveContacts[event.phoneKey] = existingContact ?? record;
+      if (replyAt != null) {
+        inactiveContacts[event.phoneKey] = record;
+        reengaged[event.phoneKey] = record;
+      }
+    }
+
+    final inactiveContactList = inactiveContacts.values.toList()
+      ..sort((a, b) => b.outreachAt.compareTo(a.outreachAt));
+    final reengagedList = reengaged.values.toList()
+      ..sort((a, b) => (b.replyAt ?? b.outreachAt)
+          .compareTo(a.replyAt ?? a.outreachAt));
+
+    final receivedBroadcastMessages = receivedBroadcastEvents.length;
+    final organicLeadCount = periodLeads.where((l) => l.isOrganic).length;
+    final broadcastLeadCount = totalLeads - organicLeadCount;
+
+    // Guardrails: broadcast denominators are built only from deduped
+    // delivered/read broadcast_recipient rows. Agent replies, AI replies,
+    // failed/pending/accepted/sent recipients, and organic conversations never
+    // increase these counts.
+    assert(reachedCustomers.length <= receivedBroadcastMessages);
+
+    final conversionRate = receivedBroadcastMessages > 0
+        ? totalLeads / receivedBroadcastMessages * 100
+        : 0.0;
+    final uniqueConversionRate = reachedCustomers.isNotEmpty
+        ? totalLeads / reachedCustomers.length * 100
+        : 0.0;
+    final reengagementRate = inactiveContactList.isNotEmpty
+        ? reengagedList.length / inactiveContactList.length * 100
+        : 0.0;
+
+    return KpiAnalytics(
+      newUniqueCustomers: KpiCardData(
+        key: 'new_unique_customers',
+        title: 'Unique Customers Reached',
+        value: reachedCustomers.length.toDouble(),
+        format: KpiValueFormat.number,
+        subtitle: 'Distinct customers who received at least one delivered/read broadcast in this period',
+        definition:
+            'Distinct customers or phone numbers who received at least one delivered/read broadcast message during the selected date range.',
+        formula:
+            'COUNT(DISTINCT customer phone) from delivered/read broadcast recipient rows where broadcast sent date is inside selected range',
+        components: {
+          'uniqueCustomersReached': reachedCustomers.length,
+          'receivedBroadcastMessages': receivedBroadcastMessages,
+        },
+        customers: reachedCustomers,
+      ),
+      conversionRate: KpiCardData(
+        key: 'conversion_rate',
+        title: 'Conversion Rate',
+        value: conversionRate,
+        format: KpiValueFormat.percentage,
+        subtitle: 'Total leads divided by received broadcast messages',
+        definition:
+            'Total lead sessions, including broadcast-generated and organic leads, divided by delivered/read broadcast recipient messages during the selected date range.',
+        formula: 'Total Leads / Received Broadcast Messages x 100',
+        components: {
+          'totalLeads': totalLeads,
+          'broadcastLeads': broadcastLeadCount,
+          'organicLeads': organicLeadCount,
+          'receivedBroadcastMessages': receivedBroadcastMessages,
+        },
+        customers: periodLeads
+            .map((l) => KpiCustomerRecord(
+                  phone: l.phone,
+                  name: l.name,
+                  primaryDate: l.date,
+                  source: l.isOrganic ? 'Organic' : 'Broadcast',
+                ))
+            .toList(),
+      ),
+      uniqueConversionRate: KpiCardData(
+        key: 'unique_conversion_rate',
+        title: 'Unique Conversion Rate',
+        value: uniqueConversionRate,
+        format: KpiValueFormat.percentage,
+        subtitle: 'Total leads divided by unique customers reached',
+        definition:
+            'Total lead events divided by distinct customers reached through delivered/read broadcasts.',
+        formula: 'Total Leads / Unique Customers Reached x 100',
+        components: {
+          'totalLeads': totalLeads,
+          'broadcastLeads': broadcastLeadCount,
+          'organicLeads': organicLeadCount,
+          'uniqueCustomersReached': reachedCustomers.length,
+        },
+        customers: periodLeads
+            .map((l) => KpiCustomerRecord(
+                  phone: l.phone,
+                  name: l.name,
+                  primaryDate: l.date,
+                  source: l.isOrganic ? 'Organic' : 'Broadcast',
+                ))
+            .toList(),
+        secondaryCustomers: reachedCustomers,
+      ),
+      reengagementRate: KpiCardData(
+        key: 'reengagement_rate',
+        title: 'Re-engagement Rate',
+        value: reengagementRate,
+        format: KpiValueFormat.percentage,
+        subtitle: 'Inactive customers who replied after receiving a broadcast',
+        definition:
+            'Inactive customers reached by a delivered/read broadcast in this period who replied within 7 days.',
+        formula:
+            'Re-engaged Customers / Inactive Customers Contacted x 100',
+        components: {
+          'reengagedCustomers': reengagedList.length,
+          'inactiveCustomersContacted': inactiveContactList.length,
+          'inactivityWindowDays': 30,
+          'responseWindowDays': 7,
+        },
+        reengagements: reengagedList,
+        inactiveContacts: inactiveContactList,
+      ),
+    );
+  }
+
+  bool isReceivedBroadcastStatus(dynamic status) {
+    final normalized = (status?.toString() ?? '').toLowerCase().trim();
+    const receivedStatuses = {'delivered', 'read'};
+    return receivedStatuses.contains(normalized);
+  }
+
+  bool _preferReceivedEvent(_BroadcastReachEvent candidate, _BroadcastReachEvent existing) {
+    final candidateStatus = candidate.status?.toLowerCase().trim();
+    final existingStatus = existing.status?.toLowerCase().trim();
+    if (candidateStatus == 'read' && existingStatus != 'read') return true;
+    if (candidateStatus != 'read' && existingStatus == 'read') return false;
+    return candidate.sentAt.isAfter(existing.sentAt);
+  }
+
+  String _phoneKey(String phone) {
+    return phone.replaceAll(RegExp(r'[^0-9]'), '');
+  }
+
   // ============================================================
   // FILL MISSING DAYS
   // ============================================================
@@ -1095,6 +1401,24 @@ class _EmpAccumulator {
   double revenueAttributed = 0;
 }
 
+class _BroadcastReachEvent {
+  final String phone;
+  final String phoneKey;
+  final String? name;
+  final DateTime sentAt;
+  final String broadcastName;
+  final String? status;
+
+  _BroadcastReachEvent({
+    required this.phone,
+    required this.phoneKey,
+    this.name,
+    required this.sentAt,
+    required this.broadcastName,
+    this.status,
+  });
+}
+
 class _ComputedMetrics {
   final OverviewMetrics overview;
   final List<DailyBreakdown> daily;
@@ -1174,6 +1498,8 @@ class AnalyticsData {
   final int automatedMessageCount;
   final List<InboundCustomer> inboundCustomers;
   final List<EmployeePerformance> employeePerformance;
+  final KpiAnalytics? kpis;
+  final KpiAnalytics? comparisonKpis;
 
   AnalyticsData({
     required this.current,
@@ -1192,7 +1518,105 @@ class AnalyticsData {
     this.automatedMessageCount = 0,
     this.inboundCustomers = const [],
     this.employeePerformance = const [],
+    this.kpis,
+    this.comparisonKpis,
   });
+}
+
+enum KpiValueFormat { number, percentage }
+
+class KpiAnalytics {
+  final KpiCardData newUniqueCustomers;
+  final KpiCardData conversionRate;
+  final KpiCardData uniqueConversionRate;
+  final KpiCardData reengagementRate;
+
+  KpiAnalytics({
+    required this.newUniqueCustomers,
+    required this.conversionRate,
+    required this.uniqueConversionRate,
+    required this.reengagementRate,
+  });
+
+  List<KpiCardData> get cards => [
+        newUniqueCustomers,
+        conversionRate,
+        uniqueConversionRate,
+        reengagementRate,
+      ];
+
+  KpiCardData? cardByKey(String key) {
+    for (final card in cards) {
+      if (card.key == key) return card;
+    }
+    return null;
+  }
+}
+
+class KpiCardData {
+  final String key;
+  final String title;
+  final double value;
+  final KpiValueFormat format;
+  final String subtitle;
+  final String definition;
+  final String formula;
+  final Map<String, num> components;
+  final List<KpiCustomerRecord> customers;
+  final List<KpiCustomerRecord> secondaryCustomers;
+  final List<KpiReengagementRecord> reengagements;
+  final List<KpiReengagementRecord> inactiveContacts;
+
+  KpiCardData({
+    required this.key,
+    required this.title,
+    required this.value,
+    required this.format,
+    required this.subtitle,
+    required this.definition,
+    required this.formula,
+    this.components = const {},
+    this.customers = const [],
+    this.secondaryCustomers = const [],
+    this.reengagements = const [],
+    this.inactiveContacts = const [],
+  });
+}
+
+class KpiCustomerRecord {
+  final String phone;
+  final String? name;
+  final DateTime primaryDate;
+  final String? source;
+
+  KpiCustomerRecord({
+    required this.phone,
+    this.name,
+    required this.primaryDate,
+    this.source,
+  });
+
+  String get displayName => name == null || name!.trim().isEmpty ? phone : name!;
+}
+
+class KpiReengagementRecord {
+  final String phone;
+  final String? name;
+  final DateTime? lastActivityBeforeOutreach;
+  final DateTime outreachAt;
+  final DateTime? replyAt;
+  final String? source;
+
+  KpiReengagementRecord({
+    required this.phone,
+    this.name,
+    this.lastActivityBeforeOutreach,
+    required this.outreachAt,
+    this.replyAt,
+    this.source,
+  });
+
+  String get displayName => name == null || name!.trim().isEmpty ? phone : name!;
 }
 
 class OverviewMetrics {
